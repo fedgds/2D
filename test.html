@@ -125,31 +125,57 @@
     const skillTitle = document.querySelector('#skillTitle');
     const skillMeta = document.querySelector('#skillMeta');
     const weaponButtons = [...document.querySelectorAll('.weapon-option')];
+    // spriteAxis = the direction the painted effect faces inside its own PNG
+    // (0 = +X / right, +Y = down). drawSlash rotates by angle - spriteAxis, which
+    // lands that axis exactly on the crosshair line, so every skill fires straight.
+    // -PI/2 means "the art points up", which is what the pixel-art sets do.
+    const SPRITE_UP = -Math.PI / 2;
     const WEAPONS = [
       {
         id: 'kiem', label: 'KIẾM', skill: 'SEPHIRIA SLASH', folder: 'kiem-frames',
         hitFrames: [3, 6, 10, 13], range: 265, arc: 1.5, effectSize: 410,
-        rotation: 0, travel: 0, push: 8,
+        spriteAxis: SPRITE_UP, travel: 0, push: 8,
       },
       {
         id: 'cung', label: 'CUNG', skill: 'CELESTIAL ARROW', folder: 'cung-frames',
         hitFrames: [8], range: 650, arc: .55, effectSize: 350,
-        rotation: -Math.PI / 4, travel: 430, push: 18,
+        // Measured off the frames: the crescent bulges right and ~30 deg down.
+        spriteAxis: .515, travel: 430, push: 18,
+        // The arc drifts across its 338px canvas frame to frame. Anchor every frame
+        // at its own centre of curvature so the swing pivots on one fixed point
+        // instead of sliding sideways as the crescent grows.
+        frameBox: 338,
+        pivots: [
+          [.5646, .5886], [.4256, .4809], [.4004, .5667], [.3104, .5920],
+          [.5477, .5349], [.5277, .5470], [.3802, .5261], [.3527, .5277],
+          [.5930, .4610], [.4992, .4915], [.4562, .5054], [.4144, .5171],
+          [.5464, .3693], [.4505, .3790], [.4142, .4012], [.3634, .4033],
+        ],
       },
       {
         id: 'dao', label: 'ĐAO', skill: 'MOON TIDE', folder: 'dao-frames',
-        hitFrames: [4, 8, 12], range: 285, arc: 1.55, effectSize: 405,
-        rotation: 0, travel: 20, push: 10,
+        hitFrames: [4, 8, 12], range: 285, arc: 1.55, effectSize: 455,
+        spriteAxis: -.072, travel: 20, push: 10,
+        // These frames are trimmed to their painted bounds, so they all differ in
+        // size. frameBox scales them against one shared box (a small frame stays
+        // small) and pivots keeps the swing centre still.
+        frameBox: 303,
+        pivots: [
+          [.5126, .4259], [.5052, .4521], [.5370, .5147], [.4851, .5067],
+          [.4700, .5075], [.5361, .4894], [.4758, .4756], [.5438, .4894],
+          [.4757, .4944], [.4779, .4912], [.4753, .5278], [.5022, .5112],
+          [.5440, .5181], [.4687, .5001], [.4294, .5098], [.5709, .4981],
+        ],
       },
       {
         id: 'gang', label: 'GĂNG', skill: 'ABYSSAL FIST', folder: 'gang-frames',
         hitFrames: [2, 5, 8, 11, 14], range: 205, arc: 1.15, effectSize: 340,
-        rotation: 0, travel: 55, push: 5,
+        spriteAxis: SPRITE_UP, travel: 55, push: 5,
       },
       {
         id: 'luoi-hai', label: 'LƯỠI HÁI', skill: 'REAPER SURGE', folder: 'luoi-hai-frames',
         hitFrames: [4, 9, 13], range: 335, arc: 2.25, effectSize: 430,
-        rotation: 0, travel: 35, push: 12,
+        spriteAxis: SPRITE_UP, travel: 35, push: 12,
       },
     ];
     let activeWeapon = WEAPONS[0];
@@ -375,21 +401,30 @@
       const frameIndex = Math.min(weapon.frames.length - 1, Math.floor(slash.age * fps));
       const scale = Number(controls.scale.value) / 100;
       const size = weapon.effectSize * scale;
-      const progress = frameIndex / (weapon.frames.length - 1);
+      // Keep travel continuous even though the sprite itself advances frame by frame.
+      const progress = Math.min(1, slash.age * fps / (weapon.frames.length - 1));
       const offset = 44 + weapon.travel * progress;
       ctx.save();
       ctx.translate(hero.x + Math.cos(slash.angle) * offset, hero.y + Math.sin(slash.angle) * offset);
-      ctx.rotate(slash.angle + Math.PI / 2 + weapon.rotation);
+      ctx.rotate(slash.angle - weapon.spriteAxis);
       ctx.globalCompositeOperation = 'lighter';
       for (let trail = 2; trail >= 0; trail--) {
         const index = Math.max(0, frameIndex - trail);
         const image = weapon.frames[index];
         if (!image.complete || !image.naturalWidth) continue;
-        const fit = size / Math.max(image.naturalWidth, image.naturalHeight);
+        // Scale against one shared box so trimmed frames keep their relative size.
+        const fit = size / (weapon.frameBox ?? Math.max(image.naturalWidth, image.naturalHeight));
         const drawWidth = image.naturalWidth * fit;
         const drawHeight = image.naturalHeight * fit;
+        const pivot = weapon.pivots?.[index] ?? [.5, .5];
         ctx.globalAlpha = trail === 0 ? .98 : .14 / trail;
-        ctx.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+        ctx.drawImage(
+          image,
+          -pivot[0] * drawWidth,
+          -pivot[1] * drawHeight,
+          drawWidth,
+          drawHeight,
+        );
       }
       ctx.restore();
     }
