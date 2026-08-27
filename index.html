@@ -213,7 +213,7 @@
 <body>
 <div id="app">
   <div id="topbar">
-    <h1>SKILL LAB — 5 VŨ KHÍ · 16 SKILL · ARENA PIXEL 2D</h1>
+    <h1>SKILL LAB — 5 VŨ KHÍ · 16 SKILL · 6 QUÁI CÓ CHIÊU · ARENA PIXEL 2D</h1>
     <span class="grow"></span>
     <button type="button" class="tbtn" id="btnMenu">☰ MENU (ESC)</button>
     <button type="button" class="tbtn" id="btnGuide">? HƯỚNG DẪN</button>
@@ -283,10 +283,29 @@
               là minimap: khung xanh là vùng đang thấy, đốm tím là đuốc/tinh thể để lấy mốc.
               HUD góc trên trái báo FPS, số quái, damage và HP.
             </p>
+            <div class="gsec">ĐỌC CẢNH BÁO ĐỂ NÉ</div>
+            <p class="glist">
+              Quái không đánh trộm: trước mỗi chiêu nó <b>đứng lại nạp</b> và <b>vẽ sẵn
+              vùng sắp trúng</b> lên mặt đất. Vùng đó <b>hiện đủ kích thước ngay từ khung
+              đầu</b> — không nở dần vào người bạn — nên chỉ cần bước ra khỏi viền đỏ là
+              thoát.<br>
+              <b>Viền đỏ</b> là mép vùng sát thương · <b>màu bên trong</b> là loại chiêu ·
+              <b>vạch sáng chạy từ tâm ra viền</b> là đồng hồ đếm: chạm viền là nổ ·
+              <b>nháy nhanh + tiếng tách</b> là còn 0.2 giây.<br>
+              Đứng trong vùng thì chân nhân vật có <b>vòng đỏ nhấp nháy</b> và mũi nhọn
+              trên đầu. Trên minimap, quái đang nạp là <b>dấu thập vàng</b>, kèm một đốm
+              vàng ở tâm vùng sắp nổ.<br>
+              Quái đang nạp <b>không di chuyển</b>, và <b>giết hoặc đóng băng</b> nó thì
+              chiêu <b>huỷ luôn</b> — đó là lúc dùng skill khống chế. Mặc định quái
+              <b>không trừ HP</b> (vẫn chớp sáng + kêu để bạn biết là trúng); bấm <b>G</b>
+              để bật damage thật.
+            </p>
           </div>
           <div>
             <div class="gsec">5 VŨ KHÍ · ĐÁNH THƯỜNG</div>
             <div class="gskills" id="guideWeapons" style="grid-template-columns:minmax(0,1fr)"></div>
+            <div class="gsec">6 QUÁI VẬT · CHIÊU THỨC</div>
+            <div class="gskills" id="guideFoes" style="grid-template-columns:minmax(0,1fr)"></div>
             <div class="gsec">16 SKILL</div>
             <div class="gskills" id="guideSkills"></div>
           </div>
@@ -841,6 +860,8 @@ const PAL = {};
     N: '#3b3b54', n: '#272738', M: '#55557a',
     H: '#2f6b46', h: '#1d4530', O: '#b9b2a0', o: '#7d786b',
     W: '#4a3524', w: '#2e2015', X: '#7a4cd0', x: '#4a2a80', Y: '#c9a8ff',
+    // the three later monsters: toxic chitin, ember shell, arcane lens
+    T: '#8fd94a', t: '#4a7a22', F: '#ffb84a', f: '#a3541a', I: '#7fd2ff', i: '#2f6f9c',
   };
   for (const k in raw) PAL[k] = hexc(raw[k]);
 }
@@ -858,7 +879,21 @@ const BRUTE = ["K...........K", "KK..KKKKK..KK", ".KKKRRRRRKKK.", "..KRRRRRRRK..
                "..KREERREEK..", "..KRRRRRRRK..", "..KKRRRRRKK..", ".KRRRRRRRRRK.",
                "KRRRRRRRRRRRK", "KRRrRRRRRrRRK", ".KRRRRRRRRRK.", "..KRRRRRRRK..",
                "..KRRKKKRRK..", "..KrrK.KrrK..", "..KKK...KKK.."];
-const GRIDS = { hero: HERO, slime: SLIME, wraith: WRAITH, brute: BRUTE };
+// The three casters. Each silhouette has to be readable at 11px from its shape alone,
+// because by the time you are reading the colour you have already been hit: the spitter
+// is wide and low on four spindly legs, the bomber is a ball with a fuse, and the
+// sentinel is the only tall thin thing in the game -- an eye that floats on a plinth.
+const SPITTER = ["...KKKKK...", "..KTTTTTK..", ".KTTTTTTTK.", "KTTETTTETTK",
+                 "KTTTTTTTTTK", ".KtttttttK.", "..KKKKKKK..", ".K.K...K.K.",
+                 "K...K.K...K"];
+const BOMBER = ["....F....", "...Kf....", "..KKKKK..", ".KRRRRRK.", "KRRFFFRRK",
+                "KRFEFEFRK", "KRRFFFRRK", ".KrrrrrK.", "..KKKKK.."];
+const SENTINEL = ["....KKK....", "...KXXXK...", "..KXXXXXK..", ".KXXIIIXXK.",
+                  ".KXIEEEIXK.", ".KXXIIIXXK.", "..KXXXXXK..", "...KXXXK...",
+                  "....KxK....", "...KxxxK...", "..KMMMMMK..", ".KMMMMMMMK.",
+                  "..KKKKKKK.."];
+const GRIDS = { hero: HERO, slime: SLIME, wraith: WRAITH, brute: BRUTE,
+                spitter: SPITTER, bomber: BOMBER, sentinel: SENTINEL };
 
 // '1' carries a flag and a base serif: as a bare right-hand stroke it left two blank
 // columns, so "311" printed as "3 11" and "1533" as "l533".
@@ -1308,6 +1343,34 @@ const ANIM = {};
   const bhunch = () => { const rs = rows(BRUTE); liftRows(rs, 1, 6, 1); return grid(rs); };
   ANIM.brute  = { walk: [fr(bstep(false), 0), fr(BRUTE, -1), fr(bstep(true), 0), fr(bhunch(), -1)],
                   idle: [fr(BRUTE, 0), fr(bhunch(), -1)] };
+  // The spitter's legs are two pairs (rows 7-8, cols 0-4 and 6-10) and they alternate;
+  // the abdomen dips on the frame the front pair is planted, which is what stops eight
+  // fast frames from reading as a bug on a conveyor belt.
+  const sleg = right => {
+    const rs = rows(SPITTER);
+    liftPart(rs, 7, 8, right ? 6 : 0, right ? 10 : 4);
+    return grid(rs);
+  };
+  const sdip = () => { const rs = rows(SPITTER); liftRows(rs, 1, 6, -1); return grid(rs); };
+  ANIM.spitter = { walk: [fr(sleg(false), 0), fr(sdip(), 0), fr(sleg(true), 0), fr(SPITTER, -1)],
+                   idle: [fr(SPITTER, 0), fr(sdip(), 0)] };
+  // The bomber has no legs to move, so its cycle is the shell squatting and the fuse
+  // whipping the other way -- a ball that rolls itself forward.
+  const bfuse = dx => { const rs = rows(BOMBER); slideBox(rs, 0, 1, 2, 6, dx); return grid(rs); };
+  const bsquat = () => { const rs = rows(BOMBER); liftRows(rs, 3, 8, -1); return grid(rs); };
+  ANIM.bomber = { walk: [fr(bfuse(1), 0), fr(bsquat(), -1), fr(bfuse(-1), 0), fr(BOMBER, -1)],
+                  idle: [fr(BOMBER, 0), fr(bfuse(1), -1)] };
+  // The sentinel floats, so its "walk" is the same bob as the wraith's plus a pupil that
+  // tracks sideways: the lens row is repainted rather than slid, because sliding it would
+  // punch a hole in the white of the eye.
+  const slook = dx => {
+    const rs = rows(SENTINEL);
+    for (let c = 3; c <= 7; c++) rs[4][c] = 'I';
+    for (let c = 4; c <= 6; c++) rs[4][clamp(c + dx, 3, 7)] = 'E';
+    return grid(rs);
+  };
+  ANIM.sentinel = { walk: [fr(slook(1), 0), fr(SENTINEL, -1), fr(slook(-1), -2), fr(SENTINEL, -1)],
+                    idle: [fr(SENTINEL, 0), fr(slook(1), -1), fr(SENTINEL, -2), fr(slook(-1), -1)] };
 }
 function heroFrame(h) {
   const a = ANIM.hero;
@@ -2028,6 +2091,39 @@ const SFX = (() => {
       tone({ f0: 260, f1: 62, dur: 0.24, type: 'sawtooth', gain: 0.26 });
       noise({ type: 'lowpass', f0: 1100, f1: 200, dur: 0.18, gain: 0.2 });
     },
+    // ---- monster casts: a telegraph you can hear ---------------------------
+    // Three parts, same as the picture: a swell that opens for as long as the mark is on
+    // the floor, one dry tick on the last beat (the cue you actually dodge on), then the
+    // hit. Deliberately pitched *below* the player's own skills so a warning never gets
+    // lost inside the sound of your own cast.
+    warn(shape, pan) {
+      if (!unlock() || !gate('warn', 70)) return;
+      const far = shape === 'line';
+      tone({ f0: 68, f1: far ? 250 : 172, dur: 0.62, type: 'sawtooth',
+             gain: 0.13, atk: 0.34, pan });
+      noise({ type: 'bandpass', q: 1.4, f0: 240, f1: far ? 1900 : 1200, dur: 0.55,
+              gain: 0.1, atk: 0.32, pan });
+    },
+    tick(pan) {
+      if (!ac || !gate('tick', 55)) return;
+      tone({ f0: 1750, f1: 1250, dur: 0.05, type: 'square', gain: 0.1, pan });
+    },
+    boom(kind, pan) {
+      if (!ac || !gate('boom', 40)) return;
+      if (kind === 'line') {
+        tone({ f0: 940, f1: 170, dur: 0.3, type: 'sawtooth', gain: 0.24, pan });
+        noise({ type: 'bandpass', q: 1.1, f0: 3400, f1: 640, dur: 0.26, gain: 0.2, pan });
+        return;
+      }
+      if (kind === 'big') {                            // quake and self-detonation
+        tone({ f0: 124, f1: 30, dur: 0.72, gain: 0.44, pan });
+        noise({ f0: 2400, f1: 150, dur: 0.6, gain: 0.3, q: 0.8, pan });
+        tone({ f0: 420, f1: 90, dur: 0.2, type: 'triangle', gain: 0.14, pan });
+        return;
+      }
+      tone({ f0: 210, f1: 50, dur: 0.34, type: 'triangle', gain: 0.3, pan });
+      noise({ f0: 1600, f1: 230, dur: 0.3, gain: 0.22, pan });
+    },
     step() {                                           // footfall, deliberately near-silent
       if (!ac || !gate('step', 95)) return;
       noise({ type: 'bandpass', q: 1.4, f0: rnd(320, 520), dur: 0.05, gain: 0.05 });
@@ -2066,17 +2162,43 @@ const BOUND = { x0: 26, x1: WW - 26, y0: 40, y1: WH - 26 };
 // `cyc` is how many world pixels one animation frame lasts, so the cycle is driven by
 // distance covered rather than by time: a slime at 17 px/s hopping on the same 4.2 px cadence
 // as the wraith took a full second per hop and read as gliding.
+// `abil` lists the monster's telegraphed moves (see section 6b) longest reach first, so a
+// brute that still has room quakes and only swipes once you are inside its arms. `keep` is
+// the distance a ranged monster tries to hold: without it a spitter walks into your sword
+// and its warning circle never has time to be read.
 const KIND = {
-  slime:  { hp: 90,  spd: 17, mass: 1.0, cyc: 2.0 },
-  wraith: { hp: 130, spd: 27, mass: 0.8, cyc: 4.2 },
-  brute:  { hp: 320, spd: 11, mass: 2.2, cyc: 2.6 },
+  slime:    { hp: 90,  spd: 17, mass: 1.0, cyc: 2.0, label: 'Nhớt Xanh',
+              abil: ['acid_burst'] },
+  wraith:   { hp: 130, spd: 27, mass: 0.8, cyc: 4.2, label: 'Oan Hồn',
+              abil: ['soul_lash'] },
+  brute:    { hp: 320, spd: 11, mass: 2.2, cyc: 2.6, label: 'Đại Lực',
+              abil: ['quake_slam', 'cleave'] },
+  spitter:  { hp: 150, spd: 21, mass: 0.9, cyc: 2.4, label: 'Nhện Độc',
+              keep: 84, abil: ['venom_pool'] },
+  bomber:   { hp: 110, spd: 31, mass: 0.7, cyc: 2.2, label: 'Bọ Nổ',
+              abil: ['detonate'] },
+  sentinel: { hp: 260, spd: 8,  mass: 2.6, cyc: 3.4, label: 'Mắt Canh',
+              keep: 108, abil: ['pierce_beam'] },
 };
+// Spawn weights, not an even roll: the two heavies and the suicide bomber are rare
+// enough that meeting one is an event, and the slime is still the crowd.
+const SPAWN_W = [['slime', 24], ['wraith', 18], ['spitter', 16],
+                 ['bomber', 13], ['brute', 12], ['sentinel', 9]];
+const SPAWN_TOT = SPAWN_W.reduce((s, r) => s + r[1], 0);
+function pickKind(rng) {
+  let r = rng() * SPAWN_TOT;
+  for (let i = 0; i < SPAWN_W.length; i++) { r -= SPAWN_W[i][1]; if (r <= 0) return SPAWN_W[i][0]; }
+  return 'slime';
+}
 
 function unit(kind, x, y) {
   const g = GRIDS[kind], k = KIND[kind];
   return { kind, x, y, w: g[0].length, h: g.length, vx: 0, vy: 0,
            hp: k.hp, maxhp: k.hp, spd: k.spd, mass: k.mass,
            flash: 0, flip: false, dim: 1, slow: 0, frozen: 0, dying: 0,
+           // Casting state. `acd` is staggered from the spawn position instead of from a
+           // random draw, so two monsters that walk in together do not wind up in lockstep.
+           tel: null, chg: 0, acd: 1.1 + (Math.abs((x * 31 + y * 17) | 0) % 240) / 100,
            ph: (Math.abs(x * 7 + y * 13) % 400) / 100, mv: 0 };
 }
 const midY = f => f.y - f.h * 0.5;
@@ -2106,8 +2228,8 @@ function newWorld(seed, loadout) {
     hero: { x: WW * 0.5, y: WH * 0.5, w: 11, h: 14, vx: 0, vy: 0, flash: 0, flip: false,
             hp: 400, maxhp: 400, glow: 0.5, ph: 0, it: 0, mv: 0, fi: 0, atk: -1 },
     cam: { x: 0, y: 0 }, props: PROPS, puffs: [],
-    foes: [], fxs: [], nums: [], aim: { x: 0, y: 0 },
-    kills: 0, dmg: 0, god: true, cds: new Float32Array(16),
+    foes: [], fxs: [], tels: [], nums: [], aim: { x: 0, y: 0 },
+    kills: 0, dmg: 0, taken: 0, danger: 0, god: true, cds: new Float32Array(16),
     wp: (typeof lo.wp === 'string' ? WEAPON_BY_ID[lo.wp] : lo.wp) || WEAPONS[0],
     slots: (lo.slots && lo.slots.length === 3 ? lo.slots.slice() : [0, 1, 2]),
     wcd: 0, sw: null,
@@ -2123,8 +2245,7 @@ function newWorld(seed, loadout) {
 // from off screen, which is also the only spawn that cannot pop into view.
 function spawnFoe(w, near) {
   if (w.foes.length >= 14) return;
-  const r = w.rng();
-  const kind = r < 0.5 ? 'slime' : (r < 0.83 ? 'wraith' : 'brute');
+  const kind = pickKind(w.rng);
   const h = w.hero, ang = w.rng.range(0, TAU);
   const rad = near ? w.rng.range(0.22, 0.42) : w.rng.range(0.62, 0.95);
   const x = clamp(h.x + Math.cos(ang) * W * rad, BOUND.x0, BOUND.x1);
@@ -2267,6 +2388,12 @@ function step(w, dt, inp) {
     if (e.sk.hit) e.sk.hit(w, e);
   }
   for (let i = w.fxs.length - 1; i >= 0; i--) if (w.fxs[i].t >= w.fxs[i].dur) w.fxs.splice(i, 1);
+  // Monster casts advance before the monsters do, so a telegraph that has just fired
+  // hits the hero where he was standing this frame and not one frame of movement later.
+  // `danger` is recounted from scratch every frame -- it is what the hero's own warning
+  // ring and the HUD read, and a stale count would leave a ring on screen forever.
+  w.danger = 0;
+  for (let i = w.tels.length - 1; i >= 0; i--) stepTel(w, w.tels[i], dt, i);
   // The live swing, cached for the frame: the held weapon and the hero's attack pose both
   // need it, and neither wants to walk `fxs` looking for the one entry that has a weapon.
   // Gauntlets recover (0.46s) just before their sheet ends (0.47s), so two can briefly
@@ -2318,11 +2445,23 @@ function footPuff(w, h) {
 }
 function stepFoe(w, f, dt) {
   const h = w.hero;
+  const K = KIND[f.kind];
+  if (f.acd > 0) f.acd = Math.max(0, f.acd - dt);
+  if (!f.tel && f.acd <= 0 && f.frozen <= 0) tryCast(w, f);
+  // A monster winding up is planted: the mark on the floor is a promise about where the
+  // hit lands, and a caster that kept walking would break it. Knockback still moves it,
+  // which is why hitting a caster is worth doing -- it can be shoved out of its own blast.
+  const casting = !!f.tel;
+  f.chg = casting ? c01(f.tel.t / f.tel.ab.tell) : Math.max(0, f.chg - dt * 5);
   let ax = 0, ay = 0;
-  if (f.frozen <= 0) {
+  if (f.frozen <= 0 && !casting) {
     const dx = h.x - f.x, dy = (h.y - 1) - f.y, d = Math.max(Math.hypot(dx, dy), 1e-3);
     const spd = f.spd * (f.slow > 0 ? 0.34 : 1);
-    ax = dx / d * spd; ay = dy / d * spd * 0.72;
+    // Ranged kinds hold a band instead of closing: outside it they advance, inside it
+    // they back off, and in the band they stand and shoot.
+    let want = 1;
+    if (K.keep) want = d > K.keep * 1.15 ? 1 : (d < K.keep * 0.78 ? -1 : 0);
+    ax = dx / d * spd * want; ay = dy / d * spd * 0.72 * want;
     f.flip = dx < 0;
     for (const o of w.foes) {              // light separation so they do not stack
       if (o === f || o.dying) continue;
@@ -2336,10 +2475,11 @@ function stepFoe(w, f, dt) {
   const k = Math.exp(-dt * 7);
   f.vx *= k; f.vy *= k;
   // Same rule as the hero: cycle speed comes from ground covered. A frozen or
-  // separated-but-stuck foe idles instead of pedalling.
+  // separated-but-stuck foe idles instead of pedalling, and so does one mid-cast --
+  // knockback drift must not make a planted monster look like it is walking.
   const d = Math.hypot(f.x - px, f.y - py);
-  f.mv = f.frozen > 0 ? 0 : d / Math.max(dt, 1e-4);
-  f.ph = (f.ph + (f.mv > 0.4 ? d / KIND[f.kind].cyc : dt * 1.6)) % 4;
+  f.mv = (f.frozen > 0 || casting) ? 0 : d / Math.max(dt, 1e-4);
+  f.ph = (f.ph + (f.mv > 0.4 ? d / K.cyc : dt * 1.6)) % 4;
   if (!w.god && f.frozen <= 0) {
     if (Math.hypot(f.x - h.x, (f.y - h.y) * 1.5) < 9) {
       h.hp = Math.max(0, h.hp - 22 * dt);
@@ -2382,6 +2522,10 @@ function drawFoe(f) {
   let flash = f.flash, dim = 1;
   if (f.frozen > 0) { flash = Math.max(flash, 0.26); dim = 0.86; }
   else if (f.slow > 0) dim = 0.78;
+  // A monster winding up is lit from inside and the pulse quickens as the timer fills, so
+  // the body itself says "this one is casting" even if the floor mark is off screen.
+  if (f.chg > 0 && !f.dying)
+    flash = Math.max(flash, (0.10 + 0.30 * f.chg) * (0.65 + 0.35 * Math.sin(f.chg * 26)));
   blit(fr.g, Math.round(f.x - (f.w >> 1)), Math.round(f.y - f.h) + fr.dy,
        flash, f.flip, alpha, dim);
   if (!f.dying && f.hp < f.maxhp) {
@@ -2405,6 +2549,9 @@ function renderWorld(w, out) {
     drawPropFlat(p);
   }
   for (const e of w.fxs) if (e.sk.under) e.sk.under(w, e, e.p);
+  // Monster warnings go on last of the ground layers: a mark you cannot see because a
+  // player effect is sitting on it is not a warning.
+  for (const e of w.tels) drawTellUnder(w, e);
   for (const f of w.foes)
     shadowAt(f.x, f.y - 1, f.w * 0.5, Math.max(2, f.h * 0.14),
              0.55 * (f.dying ? c01(1 - f.dying / 0.30) : 1));
@@ -2426,6 +2573,7 @@ function renderWorld(w, out) {
   order.sort((a, b) => a.y - b.y);
   for (const o of order) { if (o.tall) drawPropTall(o, w.t); else drawFoe(o); }
   for (const e of w.fxs) if (e.sk.mid) e.sk.mid(w, e, e.p);
+  for (const e of w.tels) drawTellMid(w, e);
   for (const n of w.nums) {
     const k = n.t / n.life, a = k < 0.6 ? 1 : c01((1 - k) / 0.4);
     text3x5(n.s, Math.round(n.x), Math.round(n.y), n.col, a);
@@ -2436,6 +2584,7 @@ function renderWorld(w, out) {
        h.flash, h.flip, 1, 1);
   drawHeld(w, false);
   for (const e of w.fxs) if (e.sk.over) e.sk.over(w, e, e.p);
+  if (w.danger > 0) drawHeroWarn(w);
   drawMinimap(w);
   if (out) resolve(out);
 }
@@ -2447,6 +2596,7 @@ const MM_W = 62, MM_H = 35;
 const MM = { x: W - MM_W - 4, y: H - MM_H - 4, w: MM_W + 2, h: MM_H + 2 };
 const MM_BG = hexc('#0a0a12'), MM_ED = hexc('#3b3b54'), MM_VIEW = hexc('#8fd6ff');
 const MM_FOE = hexc('#c0374a'), MM_HERO = hexc('#eaf9ff'), MM_LM = hexc('#9a5cff');
+const MM_WARN = hexc('#ffd24a');
 function drawMinimap(w) {
   const x0 = W - MM_W - 3, y0 = H - MM_H - 3;
   const sx = MM_W / WW, sy = MM_H / WH;
@@ -2474,10 +2624,25 @@ function drawMinimap(w) {
     setPixS(x0 + vx, y0 + vy + y, MM_VIEW, 0.85);
     setPixS(x0 + vx + vw, y0 + vy + y, MM_VIEW, 0.85);
   }
+  // Casters are plotted in warning yellow with a one-pixel cross: on a 62x35 map that is
+  // the difference between "there is a crowd north of me" and "something up there is
+  // charging a move". Pending marks get a dot of their own, since a spitter's pool lands
+  // nowhere near the spitter.
   for (const f of w.foes) {
     if (f.dying) continue;
-    setPixS(x0 + clamp(Math.round(f.x * sx), 0, MM_W - 1),
-            y0 + clamp(Math.round(f.y * sy), 0, MM_H - 1), MM_FOE, 0.95);
+    const warn = !!f.tel;
+    const px = x0 + clamp(Math.round(f.x * sx), 0, MM_W - 1);
+    const py = y0 + clamp(Math.round(f.y * sy), 0, MM_H - 1);
+    setPixS(px, py, warn ? MM_WARN : MM_FOE, 0.95);
+    if (warn) {
+      setPixS(px + 1, py, MM_WARN, 0.45); setPixS(px - 1, py, MM_WARN, 0.45);
+      setPixS(px, py + 1, MM_WARN, 0.45); setPixS(px, py - 1, MM_WARN, 0.45);
+    }
+  }
+  for (const e of w.tels) {
+    if (e.fired) continue;
+    setPixS(x0 + clamp(Math.round(e.x * sx), 0, MM_W - 1),
+            y0 + clamp(Math.round(e.y * sy), 0, MM_H - 1), MM_WARN, 0.8);
   }
   const hx = x0 + clamp(Math.round(w.hero.x * sx), 0, MM_W - 1);
   const hy = y0 + clamp(Math.round(w.hero.y * sy), 0, MM_H - 1);
@@ -3200,6 +3365,329 @@ SKILLS.push({
   },
 });
 // ===========================================================================
+// 6b. Monster abilities. Every monster cast is two beats: a *telegraph* that names the
+//     ground it is about to hit, and then the hit. The warning is drawn by one routine
+//     per shape rather than one per ability, so all six monsters speak the same visual
+//     language and a move you have never seen is still readable the first time:
+//
+//       * the area appears at full size on the first frame -- it never grows *into* you,
+//         because a zone you can be caught by while it expands is not a warning;
+//       * a hard red outline says where the edge is, the ability's own colour tints the
+//         inside so a poison pool still looks like poison;
+//       * one bright edge sweeps from the middle out to that outline: how far it has got
+//         is how much time is left, which is a clock you read without looking away;
+//       * the last fifth flickers, and a dry tick plays 0.20 s before impact.
+//
+//     Geometry lives in an *unsquashed* frame (world y divided by GSQ) so one metric
+//     covers discs, cones and lances; drawing squashes it back by the same factor. That
+//     is the whole trick behind "what is marked is what hurts".
+// ===========================================================================
+const GSQ = 0.50;                    // ground-ellipse squash, shared by the art and the hit test
+const HERO_R = 4.0;                  // the hero's hurt radius in that unsquashed frame
+// One warning colour for every monster, on purpose: the tint inside the shape carries the
+// flavour, the red edge carries the meaning. Two abilities that both mean "leave" must not
+// need two lessons.
+const WARN = hexc('#ff5a4a'), WARN_H = hexc('#ffe1a8');
+
+const FOE_ABIL = {
+  // `range`/`min` are the band the caster will open from, and they are kept inside the
+  // shape's own reach: a slime that starts a 30 px burst from 44 px away has warned you
+  // about a patch of floor you were never standing on.
+  acid_burst: {
+    name: 'Bọt Axit', shape: 'circle', aim: 'self', r: 30,
+    tell: 0.80, dur: 1.35, dmg: 20, shake: 1.6, range: 34,
+    cd: [3.6, 5.6], col: C.toxic, hot: C.toxicp,
+  },
+  soul_lash: {
+    name: 'Roi Hồn', shape: 'cone', aim: 'dir', r: 58, arc: 0.60,
+    tell: 0.62, dur: 1.10, dmg: 26, shake: 1.8, range: 52,
+    cd: [3.2, 4.8], col: C.vio, hot: C.viop,
+  },
+  cleave: {
+    name: 'Vung Tay', shape: 'cone', aim: 'dir', r: 46, arc: 0.85,
+    tell: 0.72, dur: 1.15, dmg: 32, shake: 2.4, range: 42,
+    cd: [3.4, 5.0], col: C.blood, hot: C.blush,
+  },
+  quake_slam: {
+    name: 'Chấn Địa', shape: 'circle', aim: 'self', r: 50,
+    tell: 1.10, dur: 1.75, dmg: 48, shake: 4.6, range: 46, min: 26,
+    cd: [5.4, 7.6], col: C.ember, hot: C.gold, boomv: 'big',
+  },
+  // The only mark that is *not* centred on its caster: it lands where you are standing
+  // when the spitter opens its mouth, so walking anywhere at all beats it.
+  venom_pool: {
+    name: 'Vũng Độc', shape: 'circle', aim: 'hero', r: 27, linger: true,
+    tell: 1.00, dur: 2.40, dmg: 11, ticks: [0, 0.38, 0.76, 1.14],
+    shake: 1.2, range: 150, min: 40, cd: [3.4, 5.2], col: C.toxic, hot: C.limeh,
+  },
+  // A bomber that has started cannot stop, and it dies either way: the move is not "dodge
+  // this attack", it is "decide right now whether this thing gets to reach you".
+  detonate: {
+    name: 'Tự Nổ', shape: 'circle', aim: 'self', r: 44,
+    tell: 1.25, dur: 1.70, dmg: 58, shake: 5.2, range: 32,
+    cd: [9, 9], col: C.ember, hot: C.holyp, suicide: true, boomv: 'big',
+  },
+  pierce_beam: {
+    name: 'Tia Xuyên', shape: 'line', aim: 'dir', len: 136, thick: 6,
+    tell: 1.15, dur: 1.60, dmg: 40, shake: 2.8, range: 120, min: 26,
+    cd: [4.0, 5.8], col: C.indigo, hot: C.indigop,
+  },
+};
+
+// The squashed world endpoint of a lance, and the hero in a cast's unsquashed local frame.
+function telEnd(e) {
+  const A = e.ab;
+  return { x: e.x + Math.cos(e.ang) * A.len, y: e.y + Math.sin(e.ang) * A.len * GSQ };
+}
+function heroLocal(w, e) {
+  const h = w.hero;
+  return { x: h.x - e.x, y: ((h.y - 1) - e.y) / GSQ };
+}
+function heroIn(w, e) {
+  const A = e.ab, l = heroLocal(w, e);
+  if (A.shape === 'line') {
+    const px = Math.cos(e.ang) * A.len, py = Math.sin(e.ang) * A.len;
+    const t = clamp((l.x * px + l.y * py) / Math.max(px * px + py * py, 1e-6), 0, 1);
+    // 0.9 of the painted half-width: on the two shapes where the drawn thickness is in
+    // screen space and the test is not, the player gets the benefit of the doubt.
+    return Math.hypot(l.x - t * px, l.y - t * py) <= A.thick * 0.9 + HERO_R;
+  }
+  const d = Math.hypot(l.x, l.y);
+  if (d > A.r + HERO_R) return false;
+  if (A.r0 && d < A.r0 - HERO_R) return false;
+  if (A.shape !== 'cone' || d < 2) return true;
+  let da = Math.atan2(l.y, l.x) - e.ang;
+  da = Math.abs(((da + Math.PI) % TAU + TAU) % TAU - Math.PI);
+  // Widened by the angle the hero's own body subtends, the same way hitCone does it, so
+  // clipping the very edge of a cone at contact range is not a coin flip.
+  return da <= A.arc + Math.atan2(HERO_R, Math.max(d, 1));
+}
+
+// The hero's damage path. God mode still flashes, still plays the hit and still counts as
+// a dodge failed -- the lab shows you exactly what would have landed, it just declines to
+// subtract the HP.
+function hitHero(w, amount, col) {
+  const h = w.hero;
+  h.flash = Math.min(0.6, h.flash + 0.5);
+  SFX.hurt();
+  if (w.god) return 0;
+  amount = Math.round(amount);
+  h.hp = Math.max(0, h.hp - amount); w.taken += amount;
+  const s = String(amount);
+  w.nums.push({ s, x: Math.round(h.x - textW(s) / 2), y: Math.round(h.y - h.h - 6),
+                col: col || WARN, t: 0, life: 0.9 });
+  return amount;
+}
+
+function tryCast(w, f) {
+  const list = KIND[f.kind].abil;
+  if (!list || !list.length) return false;
+  const h = w.hero, oy = f.y - 1;
+  const d = Math.hypot(h.x - f.x, ((h.y - 1) - oy) / GSQ);
+  for (const key of list) {                 // listed longest reach first
+    const A = FOE_ABIL[key];
+    if (!A || d > A.range || d < (A.min || 0)) continue;
+    return startCast(w, f, key);
+  }
+  return false;
+}
+function startCast(w, f, key) {
+  const A = FOE_ABIL[key], h = w.hero, ox = f.x, oy = f.y - 1;
+  const e = { ab: A, key: key, owner: f, seed: w.rng.int(1, 1e9) | 0,
+              t: 0, p: 0, pt: 0, dur: A.dur, fired: false, tick: false, ticked: 0,
+              x: ox, y: oy, ang: 0 };
+  if (A.aim === 'hero') {
+    e.x = clamp(h.x, BOUND.x0 - 10, BOUND.x1 + 10);
+    e.y = clamp(h.y - 1, BOUND.y0 - 10, BOUND.y1 + 10);
+  } else if (A.aim === 'dir') {
+    e.ang = Math.atan2(((h.y - 1) - oy) / GSQ, h.x - ox);
+  }
+  w.tels.push(e);
+  f.tel = e; f.chg = 0.001;
+  // The recharge starts now, not when the cast lands, so `cd` reads as "how often" rather
+  // than "how long after"; every entry above is comfortably longer than its own `dur`.
+  f.acd = A.cd[0] + w.rng() * (A.cd[1] - A.cd[0]);
+  f.flip = h.x < f.x;
+  SFX.warn(A.shape, clamp((e.x - w.cam.x - W * 0.5) / (W * 0.5), -1, 1));
+  return true;
+}
+
+function stepTel(w, e, dt, i) {
+  const A = e.ab, o = e.owner;
+  // Killing, freezing or otherwise stopping the caster cancels the move outright. A
+  // warning you can switch off is worth far more than one you can only run from, and it
+  // is what makes the freeze and stun skills feel like answers instead of damage.
+  if (!e.fired && o && (o.dying || o.hp <= 0 || o.frozen > 0)) {
+    if (o.tel === e) { o.tel = null; o.chg = 0; o.acd = Math.max(o.acd, 1.1); }
+    w.tels.splice(i, 1);
+    return;
+  }
+  e.pt = e.p; e.t += dt; e.p = c01(e.t / e.dur);
+  const pan = clamp((e.x - w.cam.x - W * 0.5) / (W * 0.5), -1, 1);
+  if (!e.tick && e.t >= A.tell - 0.20) { e.tick = true; SFX.tick(pan); }
+  if (!e.fired && e.t >= A.tell) {
+    e.fired = true;
+    if (o && o.tel === e) { o.tel = null; o.chg = 0; }
+    w.shake = Math.max(w.shake, A.shake || 0);
+    SFX.boom(A.boomv || A.shape, pan);
+    // The bomber goes with its own blast. Set straight to dying rather than routed through
+    // `hurt`, which would credit the player with 110 damage it never dealt.
+    if (A.suicide && o && !o.dying) { o.hp = 0; o.dying = 0.001; SFX.die(pan); }
+  }
+  if (e.fired) {
+    // Most moves land once; a lingering pool keeps asking. `ticked` is an index rather
+    // than a timer so a long frame can never swallow a tick.
+    const ticks = A.ticks || [0];
+    while (e.ticked < ticks.length && e.t >= A.tell + ticks[e.ticked]) {
+      e.ticked++;
+      if (heroIn(w, e)) hitHero(w, A.dmg, A.col);
+    }
+  } else if (heroIn(w, e)) w.danger++;
+  if (e.t >= e.dur) {
+    if (o && o.tel === e) { o.tel = null; o.chg = 0; }
+    w.tels.splice(i, 1);
+  }
+}
+
+// ---- the warning itself ----------------------------------------------------
+function drawTellUnder(w, e) {
+  const A = e.ab;
+  if (e.fired) { drawBoomUnder(w, e); return; }
+  const k = c01(e.t / A.tell);                       // how full the clock is
+  const urg = k > 0.78 ? (k - 0.78) / 0.22 : 0;      // the last beat
+  const fl = 0.55 + 0.45 * Math.sin(k * 34) * urg;   // flicker, and only at the end
+  const eg = 0.5 + 0.5 * urg;
+  if (A.shape === 'line') {
+    const t2 = telEnd(e), sa = Math.atan2(t2.y - e.y, t2.x - e.x);
+    const sl = Math.hypot(t2.x - e.x, t2.y - e.y);
+    beam(e.x, e.y, sa, 0, sl, A.thick, A.thick, A.col, 0.20 + 0.10 * urg, 0.7, 0.25);
+    for (const s of [1, -1]) {                       // the two hard edges of the lane
+      const nx = -Math.sin(sa) * A.thick * s, ny = Math.cos(sa) * A.thick * s;
+      line(e.x + nx, e.y + ny, t2.x + nx, t2.y + ny, 1.0, WARN, 0.50 * eg);
+    }
+    beam(e.x, e.y, sa, 0, Math.max(2, sl * k), A.thick * 0.45, A.thick * 0.45,
+         WARN_H, 0.40 * fl, 1.2, 0.2);
+    core(e.x + (t2.x - e.x) * k, e.y + (t2.y - e.y) * k, 3.4, WARN_H, 0.85 * fl);
+    return;
+  }
+  if (A.shape === 'cone') {
+    const sw = A.arc * 2;
+    // One thick arc centred at half the reach fills the whole wedge in a single pass;
+    // five nested thin ones cost five times as much and read exactly the same.
+    arc(e.x, e.y, A.r * 0.55, e.ang, sw, A.r * 0.60, A.col, 0.17 + 0.09 * urg, GSQ, 0.8, 1.5);
+    arc(e.x, e.y, A.r, e.ang, sw, 1.4, WARN, 0.55 * eg, GSQ, 1.4, 1.6);
+    for (const s of [1, -1])
+      line(e.x, e.y, e.x + Math.cos(e.ang + s * A.arc) * A.r,
+           e.y + Math.sin(e.ang + s * A.arc) * A.r * GSQ, 1.0, WARN, 0.45 * eg);
+    arc(e.x, e.y, Math.max(2, A.r * k), e.ang, sw, 1.9, WARN_H, 0.55 * fl, GSQ, 1.5, 1.6);
+    return;
+  }
+  puddle(e.x, e.y, A.r, A.r * GSQ, A.col, 0.16 + 0.09 * urg, e.seed, 9, 1.4);
+  if (A.r0) ring(e.x, e.y, A.r0, 1.2, WARN, 0.40 * eg, GSQ, 1.5);
+  ring(e.x, e.y, A.r, 1.5, WARN, 0.55 * eg, GSQ, 1.5);
+  dial(e.x, e.y, A.r, 12, WARN, 0.26 * eg, GSQ, 3, 1);
+  ring(e.x, e.y, Math.max(1.5, A.r * k), 1.9, WARN_H, 0.55 * fl, GSQ, 1.6);
+}
+
+// The caster's half of the warning, drawn over the sprite: light gathering inside the
+// body plus three marks closing in on it. This is the cue that survives when the floor
+// mark is behind you, and the reason a charging monster is worth interrupting.
+function drawTellMid(w, e) {
+  const A = e.ab;
+  if (e.fired) { drawBoomMid(w, e); return; }
+  const o = e.owner;
+  if (!o || o.dying) return;
+  const k = c01(e.t / A.tell), cy = midY(o);
+  core(o.x, cy, 3 + 7 * k, A.col, 0.30 + 0.45 * k, 1.7);
+  core(o.x, cy, 1.6 + 2.4 * k, WARN_H, 0.45 + 0.50 * k);
+  if (k > 0.25)
+    for (let i = 0; i < 3; i++) {
+      const a0 = e.seed * 0.011 + i / 3 * TAU + k * 4.2, rr = 4 + 14 * (1 - k);
+      chevron(o.x + Math.cos(a0) * rr, cy + Math.sin(a0) * rr * 0.7, a0, 4.2,
+              WARN, 0.5 * k, 1.0, 0.8);
+    }
+}
+
+function drawBoomUnder(w, e) {
+  const A = e.ab, span = Math.max(e.dur - A.tell, 1e-3);
+  const q = c01((e.t - A.tell) / span), fd = fade(q, 0.25);
+  if (A.shape === 'line') {
+    const t2 = telEnd(e), sa = Math.atan2(t2.y - e.y, t2.x - e.x);
+    const sl = Math.hypot(t2.x - e.x, t2.y - e.y);
+    beam(e.x, e.y, sa, 0, sl, A.thick * 0.7, A.thick * 0.4, A.col, 0.34 * fd, 1.0, 0.3);
+    cracks((e.x + t2.x) * 0.5, (e.y + t2.y) * 0.5, 7, 17, A.col, 0.30 * fd, e.seed, 0.5, 1.0);
+    return;
+  }
+  if (A.shape === 'cone') {
+    arc(e.x, e.y, A.r * 0.55, e.ang, A.arc * 2, A.r * 0.60, A.col, 0.26 * fd, GSQ, 0.9, 1.5);
+    return;
+  }
+  // A lingering pool keeps its own footprint at full strength for as long as it can still
+  // tick: it has stopped being a warning and started being terrain.
+  const lin = A.linger ? 0.32 * (1 - q * 0.55) : 0.26 * fd;
+  puddle(e.x, e.y, A.r * (A.linger ? 1 : 0.9 + 0.1 * q), A.r * GSQ, A.col, lin, e.seed, 9, 1.4);
+  if (A.linger) ring(e.x, e.y, A.r, 1.3, A.hot, 0.30 * (1 - q * 0.6), GSQ, 1.5);
+  else {
+    cracks(e.x, e.y, 9, A.r * 0.8, A.col, 0.30 * fd, e.seed + 1, 0.45, 1.1);
+    ring(e.x, e.y, A.r * (0.4 + 0.75 * eo(q)), 2.4, A.hot, 0.40 * fd, GSQ, 1.4);
+  }
+}
+
+function drawBoomMid(w, e) {
+  const A = e.ab, span = Math.max(e.dur - A.tell, 1e-3);
+  const q = c01((e.t - A.tell) / span), fd = fade(q, 0.20), g = pop(q, 0.08);
+  if (A.shape === 'line') {
+    const t2 = telEnd(e), sa = Math.atan2(t2.y - e.y, t2.x - e.x);
+    const sl = Math.hypot(t2.x - e.x, t2.y - e.y);
+    beam(e.x, e.y - 3, sa, 0, sl, A.thick * 0.55 * g, 0.8, A.hot, 1.0 * fd, 1.6, 0.35);
+    beam(e.x, e.y - 3, sa, 0, sl, 1.3 * g, 0.4, WHITE, 0.9 * fd, 1.4, 0.4);
+    core(t2.x, t2.y - 3, 8 * g, A.col, 0.8 * fd, 1.6);
+    sparks(t2.x, t2.y - 3, 12, 2, 16 + 20 * eo(q), A.hot, 0.75 * fd, e.seed + 2,
+           1.0, 0.8, 0, TAU, 5);
+    return;
+  }
+  if (A.shape === 'cone') {
+    for (let k = 0; k < 3; k++)
+      arc(e.x, e.y - 4, A.r * (0.5 + 0.5 * eo(q)) - k * 3, e.ang,
+          A.arc * 2 * (1 - k * 0.12), 3.2 - k * 0.8, k === 0 ? A.hot : A.col,
+          (0.9 - k * 0.25) * fd, 0.62, 1.5, 2.2);
+    core(e.x + Math.cos(e.ang) * A.r * 0.5, e.y - 4 + Math.sin(e.ang) * A.r * 0.5 * GSQ,
+         7 * g, A.hot, 0.7 * fd, 1.6);
+    return;
+  }
+  if (A.linger) {                                    // a pool, not a blast: it bubbles
+    const rng = mulberry32(e.seed);
+    cloud(e.x, e.y - 3, A.r * 0.7, A.col, 0.10 * (1 - q * 0.5), e.seed + 7, 7, 0.45);
+    for (let i = 0; i < 6; i++) {
+      const a0 = rng.range(0, TAU), rr = rng.range(0, A.r * 0.8);
+      const ph = (q * 2.2 + i * 0.31) % 1;
+      core(e.x + Math.cos(a0) * rr, e.y + Math.sin(a0) * rr * GSQ - 1 - 5 * ph,
+           2.2 * (1 - ph), A.hot, 0.65 * (1 - ph));
+    }
+    return;
+  }
+  const cy = e.y - 5;
+  core(e.x, cy, A.r * 0.5 * g * (1 - q * 0.4), A.col, 0.8 * fd, 1.7);
+  core(e.x, cy, A.r * 0.2 * g, A.hot, 1.1 * fd);
+  ring(e.x, cy, A.r * (0.3 + 0.95 * eo(q)), 3.0 * (1 - q * 0.6) + 0.6, A.hot, 0.7 * fd, 0.9, 1.4);
+  star(e.x, cy, A.hot, 10, 4, A.r * (0.7 + 0.6 * eo(q)), 2.4, 0.6 * fd, e.seed);
+  glare(e.x, cy, A.r * 1.4, A.r * 0.8, A.hot, 0.35 * fd);
+  sparks(e.x, e.y - 2, 16, 6, A.r * (0.7 + 0.8 * eo(q)), A.hot, 0.7 * fd, e.seed + 3,
+         1.0, 0.9, 0, TAU, 5 * (1 - q));
+}
+
+// Standing inside a mark that has not gone off yet: the hero gets a ring of his own and a
+// chevron over his head. Six monsters can bury the floor under light, and the one thing
+// that must never be lost in it is "you, right now, are in the wrong place".
+function drawHeroWarn(w) {
+  const h = w.hero, ph = (w.t * 7) % 1;
+  ring(h.x, h.y - 1, 7 + 5 * ph, 1.5, WARN, 0.55 * (1 - ph), GSQ, 1.5);
+  ring(h.x, h.y - 1, 9.5, 1.2, WARN, 0.30 + 0.25 * Math.sin(w.t * 22), GSQ, 1.6);
+  chevron(h.x, h.y - h.h - 6, Math.PI / 2, 5, WARN_H,
+          0.55 + 0.35 * Math.sin(w.t * 20), 1.2, 0.7);
+  veil(WARN, Math.min(0.016, 0.006 * w.danger));
+}
+// ===========================================================================
 // 7. Headless hook. Everything above is pure computation, so a node harness can
 //    build a world, cast, step and resolve frames with no DOM at all -- which is
 //    how this file gets verified (no browser is available here).
@@ -3211,6 +3699,8 @@ const LAB = { W, H, SCALE, SKILLS, buf, newWorld, spawnFoe, unit, cast, step,
               propLo, GRIDS, MM, DUST,
               WEAPONS, WEAPON_BY_ID, swing, hitCone, ART, stampFrame,
               HELD, blitRot, heldPose, drawHeld,
+              KIND, FOE_ABIL, GSQ, HERO_R, pickKind, tryCast, startCast, stepTel,
+              heroIn, hitHero,
               cam: () => ({ x: CAMX, y: CAMY }) };
 if (typeof globalThis !== 'undefined') globalThis.LAB = LAB;
 
@@ -3733,6 +4223,30 @@ if (typeof document !== 'undefined') {
     row.append(key, nm, md);
     guideSkills.appendChild(row);
   });
+  // Bestiary, built from the live KIND/FOE_ABIL tables: one row per monster naming its
+  // move, the shape of the mark it paints and how long you get to leave it.
+  const SHAPE_VI = { circle: 'vòng tròn', cone: 'hình quạt', line: 'đường thẳng' };
+  const guideFoes = document.getElementById('guideFoes');
+  Object.keys(KIND).forEach(k => {
+    const K = KIND[k];
+    (K.abil || []).forEach((ak, j) => {
+      const A = FOE_ABIL[ak];
+      if (!A) return;
+      const row = document.createElement('div');
+      row.className = 'gsk';
+      const key = document.createElement('kbd');
+      key.textContent = j === 0 ? String(K.hp) : '↳';
+      const nm = document.createElement('s');
+      nm.textContent = (j === 0 ? K.label : '') + ' · ' + A.name;
+      const md = document.createElement('em');
+      const size = A.shape === 'line' ? `dài ${A.len}` : `bán kính ${A.r}`;
+      md.textContent = `${SHAPE_VI[A.shape]} ${size} · báo ${A.tell.toFixed(2)}s · `
+        + `${A.dmg}${A.ticks ? '×' + A.ticks.length : ''} dmg`
+        + (A.suicide ? ' · tự sát' : '') + (A.linger ? ' · để lại vũng' : '');
+      row.append(key, nm, md);
+      guideFoes.appendChild(row);
+    });
+  });
 
   overlay.addEventListener('click', ev => {
     const b = ev.target.closest('[data-act]');
@@ -3896,7 +4410,9 @@ if (typeof document !== 'undefined') {
     if (low === 'f') { stepOnce = true; return; }
     if (low === 't') { slow = !slow; return; }
     if (low === 'r') { for (let i = 0; i < 4; i++) spawnFoe(world, true); return; }
-    if (low === 'c') { world.foes.length = 0; return; }
+    // Telegraphs go with their casters: a pending mark whose owner has been deleted
+    // outright (rather than killed) would otherwise still fire at nobody's order.
+    if (low === 'c') { world.foes.length = 0; world.tels.length = 0; world.danger = 0; return; }
     if (low === 'x') { world.cds.fill(0); world.wcd = 0; paint(); SFX.ui('click'); return; }
     if (low === 'g') { world.god = !world.god; return; }
     if (low === 'h') { toggleGuide(); return; }
@@ -3947,6 +4463,8 @@ if (typeof document !== 'undefined') {
     hud.textContent =
       'FPS ' + fps.toFixed(0) + '   vẽ ' + ms.toFixed(1) + 'ms   fx ' + world.fxs.length +
       '\nquái ' + world.foes.length + '   hạ ' + world.kills + '   dmg ' + world.dmg +
+      '\ncảnh báo ' + world.tels.length +
+      (world.danger > 0 ? '   << ĐANG ĐỨNG TRONG VÙNG (' + world.danger + ') >>' : '') +
       '\nvũ khí ' + world.wp.label + ' · hồi ' + world.wcd.toFixed(2) + 's' +
       '\nô ' + (sel === 0 ? 'chuột' : sel) + ' · ' + slotName +
       '\nHP ' + Math.round(world.hero.hp) + '/' + world.hero.maxhp +
