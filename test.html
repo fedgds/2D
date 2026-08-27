@@ -31,7 +31,18 @@
       border: 1px solid #27434d; box-shadow: 0 18px 50px #0008;
     }
     h1 { margin: 0; color: #fff; font-size: 19px; letter-spacing: .05em; }
-    .sub { margin: 5px 0 18px; color: #71dce7; font-size: 11px; letter-spacing: .13em; }
+    .sub { margin: 5px 0 14px; color: #71dce7; font-size: 11px; letter-spacing: .13em; }
+    .skill-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 17px; }
+    .skill-picker .weapon-option {
+      min-width: 0; margin: 0; padding: 8px 6px; color: #9bbbc2; font-size: 11px; font-weight: 750;
+      letter-spacing: .035em; background: #101e26; border: 1px solid #2d4c56; box-shadow: none;
+    }
+    .skill-picker .weapon-option:last-child:nth-child(odd) { grid-column: 1 / -1; }
+    .skill-picker .weapon-option:hover { color: #e9fdff; border-color: #55909c; }
+    .skill-picker .weapon-option.active {
+      color: #061216; background: linear-gradient(#c5fbff, #5bd8e6); border-color: #9cf9ff;
+      box-shadow: inset 0 -2px 0 #24899a;
+    }
     .control { margin: 15px 0; }
     .control label { display: flex; justify-content: space-between; color: #a9c3c9; font-size: 12px; }
     output { color: #fff; font-variant-numeric: tabular-nums; }
@@ -42,6 +53,7 @@
       box-shadow: 0 4px 0 #176777;
     }
     button:active { transform: translateY(3px); box-shadow: 0 1px 0 #176777; }
+    button:disabled { opacity: .45; cursor: wait; transform: none; box-shadow: none; }
     .keys { margin-top: 18px; padding-top: 14px; border-top: 1px solid #ffffff14; color: #8ca4aa; font-size: 12px; line-height: 1.8; }
     kbd { padding: 2px 5px; color: #dffcff; background: #152a31; border: 1px solid #385662; border-bottom-width: 2px; }
     .status { margin-top: 14px; min-height: 34px; color: #d9fbff; font-size: 12px; line-height: 1.5; }
@@ -56,13 +68,21 @@
 <body>
   <main class="app">
     <section class="game-shell">
-      <canvas id="game" width="720" height="960" aria-label="Phòng thử skill chém Sephiria"></canvas>
-      <div class="badge"><b>SEPHIRIA · SLASH TEST</b><span>16-FRAME COMBO / TOP-DOWN ARENA</span></div>
+      <canvas id="game" width="720" height="960" aria-label="Phòng thử skill vũ khí"></canvas>
+      <div class="badge"><b id="skillTitle">SEPHIRIA · SLASH</b><span id="skillMeta">KIẾM / 16-FRAME COMBO</span></div>
     </section>
 
     <aside class="panel">
       <h1>PHÒNG THỬ SKILL</h1>
       <p class="sub">STANDALONE BUILD</p>
+
+      <div class="skill-picker" role="group" aria-label="Chọn vũ khí">
+        <button class="weapon-option active" data-weapon="kiem" aria-pressed="true">1 · KIẾM</button>
+        <button class="weapon-option" data-weapon="cung" aria-pressed="false">2 · CUNG</button>
+        <button class="weapon-option" data-weapon="dao" aria-pressed="false">3 · ĐAO</button>
+        <button class="weapon-option" data-weapon="gang" aria-pressed="false">4 · GĂNG</button>
+        <button class="weapon-option" data-weapon="luoi-hai" aria-pressed="false">5 · LƯỠI HÁI</button>
+      </div>
 
       <div class="control">
         <label for="fps">Tốc độ animation <output id="fpsOut">16 FPS</output></label>
@@ -77,16 +97,17 @@
         <input id="damage" type="range" min="40" max="400" step="10" value="160">
       </div>
 
-      <button id="cast">CHÉM THỬ</button>
+      <button id="cast">DÙNG SEPHIRIA SLASH</button>
       <button id="reset">HỒI PHỤC DUMMY</button>
 
       <div class="keys">
         <div><kbd>WASD</kbd> di chuyển</div>
         <div><kbd>Chuột</kbd> định hướng</div>
         <div><kbd>Click</kbd> / <kbd>Space</kbd> dùng skill</div>
+        <div><kbd>1–5</kbd> / <kbd>Q E</kbd> đổi vũ khí</div>
         <div><kbd>R</kbd> hồi phục dummy</div>
       </div>
-      <div id="status" class="status">Đang nạp 16 frame hiệu ứng…</div>
+      <div id="status" class="status">Đang nạp hiệu ứng vũ khí…</div>
     </aside>
   </main>
 
@@ -100,27 +121,91 @@
       fps: document.querySelector('#fps'), scale: document.querySelector('#scale'),
       damage: document.querySelector('#damage'), status: document.querySelector('#status'),
     };
-    const frames = Array.from({ length: 16 }, (_, i) => {
-      const image = new Image();
-      image.src = `kiem-frames/frame_${String(i + 1).padStart(2, '0')}.png`;
-      return image;
+    const castButton = document.querySelector('#cast');
+    const skillTitle = document.querySelector('#skillTitle');
+    const skillMeta = document.querySelector('#skillMeta');
+    const weaponButtons = [...document.querySelectorAll('.weapon-option')];
+    const WEAPONS = [
+      {
+        id: 'kiem', label: 'KIẾM', skill: 'SEPHIRIA SLASH', folder: 'kiem-frames',
+        hitFrames: [3, 6, 10, 13], range: 265, arc: 1.5, effectSize: 410,
+        rotation: 0, travel: 0, push: 8,
+      },
+      {
+        id: 'cung', label: 'CUNG', skill: 'CELESTIAL ARROW', folder: 'cung-frames',
+        hitFrames: [8], range: 650, arc: .55, effectSize: 350,
+        rotation: -Math.PI / 4, travel: 430, push: 18,
+      },
+      {
+        id: 'dao', label: 'ĐAO', skill: 'MOON TIDE', folder: 'dao-frames',
+        hitFrames: [4, 8, 12], range: 285, arc: 1.55, effectSize: 405,
+        rotation: 0, travel: 20, push: 10,
+      },
+      {
+        id: 'gang', label: 'GĂNG', skill: 'ABYSSAL FIST', folder: 'gang-frames',
+        hitFrames: [2, 5, 8, 11, 14], range: 205, arc: 1.15, effectSize: 340,
+        rotation: 0, travel: 55, push: 5,
+      },
+      {
+        id: 'luoi-hai', label: 'LƯỠI HÁI', skill: 'REAPER SURGE', folder: 'luoi-hai-frames',
+        hitFrames: [4, 9, 13], range: 335, arc: 2.25, effectSize: 430,
+        rotation: 0, travel: 35, push: 12,
+      },
+    ];
+    let activeWeapon = WEAPONS[0];
+
+    WEAPONS.forEach(weapon => {
+      weapon.loaded = 0;
+      weapon.failed = 0;
+      weapon.frames = Array.from({ length: 16 }, (_, i) => {
+        const image = new Image();
+        image.addEventListener('load', () => {
+          weapon.loaded++;
+          if (weapon === activeWeapon) updateWeaponStatus();
+        });
+        image.addEventListener('error', () => {
+          weapon.failed++;
+          if (weapon === activeWeapon) updateWeaponStatus();
+        });
+        image.src = `${weapon.folder}/frame_${String(i + 1).padStart(2, '0')}.png`;
+        return image;
+      });
     });
 
     const keys = new Set();
     const mouse = { x: W / 2, y: H / 3 };
     const hero = { x: W / 2, y: H * .69, angle: -Math.PI / 2, speed: 235 };
     const enemy = { x: W / 2, y: H * .31, hp: 2600, maxHp: 2600, flash: 0, deadFor: 0, bob: 0 };
-    let slash = null, shake = 0, last = performance.now(), loaded = 0;
+    let slash = null, shake = 0, last = performance.now();
     const particles = [], numbers = [];
 
-    frames.forEach(image => {
-      image.addEventListener('load', () => {
-        loaded++;
-        controls.status.textContent = loaded === 16
-          ? 'Sẵn sàng. Đưa nhân vật đến gần dummy rồi chém.'
-          : `Đang nạp frame ${loaded}/16…`;
+    function updateWeaponStatus(selected = false) {
+      castButton.disabled = activeWeapon.loaded < 16 || activeWeapon.failed > 0;
+      if (activeWeapon.failed > 0) {
+        controls.status.textContent = `Không thể nạp ${activeWeapon.failed} frame của ${activeWeapon.label.toLowerCase()}.`;
+      } else if (activeWeapon.loaded < 16) {
+        controls.status.textContent = `Đang nạp ${activeWeapon.label.toLowerCase()}: ${activeWeapon.loaded}/16 frame…`;
+      } else {
+        controls.status.textContent = selected
+          ? `Đã chọn ${activeWeapon.skill}. Sẵn sàng thi triển.`
+          : `Sẵn sàng. ${activeWeapon.skill} đã nạp đủ 16 frame.`;
+      }
+    }
+
+    function selectWeapon(id) {
+      const nextWeapon = WEAPONS.find(weapon => weapon.id === id);
+      if (!nextWeapon) return;
+      activeWeapon = nextWeapon;
+      skillTitle.textContent = activeWeapon.skill;
+      skillMeta.textContent = `${activeWeapon.label} / 16-FRAME SKILL`;
+      castButton.textContent = `DÙNG ${activeWeapon.skill}`;
+      weaponButtons.forEach(button => {
+        const active = button.dataset.weapon === activeWeapon.id;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
       });
-    });
+      updateWeaponStatus(true);
+    }
 
     function resetEnemy() {
       enemy.hp = enemy.maxHp; enemy.deadFor = 0; enemy.flash = 0;
@@ -129,10 +214,10 @@
     }
 
     function cast() {
-      if (loaded < 16 || slash) return;
+      if (activeWeapon.loaded < 16 || activeWeapon.failed > 0 || slash) return;
       hero.angle = Math.atan2(mouse.y - hero.y, mouse.x - hero.x);
-      slash = { age: 0, hit: new Set(), angle: hero.angle };
-      controls.status.textContent = 'Đang thi triển Sephiria Slash…';
+      slash = { age: 0, hit: new Set(), angle: hero.angle, weapon: activeWeapon };
+      controls.status.textContent = `Đang thi triển ${slash.weapon.skill}…`;
     }
 
     function hitEnemy(hitIndex) {
@@ -141,12 +226,12 @@
       const distance = Math.hypot(dx, dy);
       const targetAngle = Math.atan2(dy, dx);
       const diff = Math.atan2(Math.sin(targetAngle - slash.angle), Math.cos(targetAngle - slash.angle));
-      if (distance > 265 || Math.abs(diff) > 1.5) return;
+      if (distance > slash.weapon.range || Math.abs(diff) > slash.weapon.arc) return;
 
       const damage = Number(controls.damage.value);
       enemy.hp = Math.max(0, enemy.hp - damage);
       enemy.flash = .12; shake = 7;
-      const push = 8 + hitIndex * 1.5;
+      const push = slash.weapon.push + hitIndex * 1.5;
       enemy.x += Math.cos(slash.angle) * push;
       enemy.y += Math.sin(slash.angle) * push;
       numbers.push({ x: enemy.x, y: enemy.y - 55, value: damage, life: .7 });
@@ -180,15 +265,16 @@
       if (slash) {
         slash.age += dt;
         const fps = Number(controls.fps.value);
-        const frame = Math.min(15, Math.floor(slash.age * fps));
-        [3, 6, 10, 13].forEach((hitFrame, index) => {
+        const frame = Math.min(slash.weapon.frames.length - 1, Math.floor(slash.age * fps));
+        slash.weapon.hitFrames.forEach((hitFrame, index) => {
           if (frame >= hitFrame && !slash.hit.has(hitFrame)) {
             slash.hit.add(hitFrame); hitEnemy(index);
           }
         });
-        if (slash.age >= 16 / fps) {
+        if (slash.age >= slash.weapon.frames.length / fps) {
+          const completedSkill = slash.weapon.skill;
           slash = null;
-          if (enemy.hp > 0) controls.status.textContent = 'Combo hoàn tất. Có thể chém tiếp.';
+          if (enemy.hp > 0) controls.status.textContent = `${completedSkill} hoàn tất. Có thể dùng skill tiếp.`;
         }
       }
 
@@ -222,6 +308,41 @@
       void t;
     }
 
+    function drawHeldWeapon() {
+      switch (activeWeapon.id) {
+        case 'cung':
+          ctx.strokeStyle = '#79e8f4'; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.moveTo(18, -45); ctx.quadraticCurveTo(38, -17, 19, 14); ctx.stroke();
+          ctx.strokeStyle = '#d9fdff'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(18, -45); ctx.lineTo(24, -16); ctx.lineTo(19, 14); ctx.stroke();
+          ctx.fillStyle = '#ecfdff'; ctx.fillRect(22, -42, 3, 55);
+          ctx.beginPath(); ctx.moveTo(23, -49); ctx.lineTo(17, -38); ctx.lineTo(29, -38); ctx.closePath(); ctx.fill();
+          break;
+        case 'dao':
+          ctx.fillStyle = '#294b57'; ctx.fillRect(12, -4, 7, 29);
+          ctx.fillStyle = '#baf7ff';
+          ctx.beginPath(); ctx.moveTo(13, -5); ctx.lineTo(9, -48); ctx.quadraticCurveTo(31, -39, 23, -5); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = '#ffffff'; ctx.fillRect(13, -43, 3, 34);
+          break;
+        case 'gang':
+          ctx.fillStyle = '#65dcec'; ctx.fillRect(-25, -19, 13, 23); ctx.fillRect(13, -19, 13, 23);
+          ctx.fillStyle = '#d9fbff'; ctx.fillRect(-23, -23, 9, 8); ctx.fillRect(15, -23, 9, 8);
+          ctx.fillStyle = '#2d7080'; ctx.fillRect(-25, 1, 13, 6); ctx.fillRect(13, 1, 13, 6);
+          break;
+        case 'luoi-hai':
+          ctx.strokeStyle = '#28525e'; ctx.lineWidth = 6;
+          ctx.beginPath(); ctx.moveTo(17, 19); ctx.lineTo(13, -48); ctx.stroke();
+          ctx.strokeStyle = '#bdf9ff'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(13, -47); ctx.quadraticCurveTo(-18, -60, -36, -32); ctx.quadraticCurveTo(-13, -43, 14, -38); ctx.stroke();
+          ctx.fillStyle = '#eaffff'; ctx.fillRect(11, -51, 5, 8);
+          break;
+        default:
+          ctx.fillStyle = '#f4f7ff'; ctx.fillRect(10, -9, 8, 30);
+          ctx.fillStyle = '#84eafa'; ctx.fillRect(12, -36, 5, 31);
+          ctx.fillStyle = '#d8fbff'; ctx.fillRect(13, -52, 3, 19);
+      }
+    }
+
     function drawHero() {
       ctx.save(); ctx.translate(Math.round(hero.x), Math.round(hero.y));
       ctx.fillStyle = '#06101566'; ctx.beginPath(); ctx.ellipse(0, 8, 28, 12, 0, 0, Math.PI * 2); ctx.fill();
@@ -229,10 +350,8 @@
       ctx.fillStyle = '#f6c94b'; ctx.fillRect(-18, -15, 36, 30);
       ctx.fillStyle = '#fff7dc'; ctx.fillRect(-13, -24, 26, 31);
       ctx.fillStyle = '#f3a83b'; ctx.fillRect(-9, -30, 18, 8);
-      ctx.fillStyle = '#f4f7ff'; ctx.fillRect(10, -9, 8, 30);
-      ctx.fillStyle = '#84eafa'; ctx.fillRect(12, -36, 5, 31);
-      ctx.fillStyle = '#d8fbff'; ctx.fillRect(13, -52, 3, 19);
       ctx.fillStyle = '#17343f'; ctx.fillRect(-12, 7, 8, 20); ctx.fillRect(5, 7, 8, 20);
+      drawHeldWeapon();
       ctx.restore();
     }
 
@@ -252,17 +371,25 @@
     function drawSlash() {
       if (!slash) return;
       const fps = Number(controls.fps.value);
-      const frameIndex = Math.min(15, Math.floor(slash.age * fps));
+      const weapon = slash.weapon;
+      const frameIndex = Math.min(weapon.frames.length - 1, Math.floor(slash.age * fps));
       const scale = Number(controls.scale.value) / 100;
-      const size = 410 * scale;
+      const size = weapon.effectSize * scale;
+      const progress = frameIndex / (weapon.frames.length - 1);
+      const offset = 44 + weapon.travel * progress;
       ctx.save();
-      ctx.translate(hero.x + Math.cos(slash.angle) * 44, hero.y - 24 + Math.sin(slash.angle) * 44);
-      ctx.rotate(slash.angle + Math.PI / 2);
+      ctx.translate(hero.x + Math.cos(slash.angle) * offset, hero.y + Math.sin(slash.angle) * offset);
+      ctx.rotate(slash.angle + Math.PI / 2 + weapon.rotation);
       ctx.globalCompositeOperation = 'lighter';
       for (let trail = 2; trail >= 0; trail--) {
         const index = Math.max(0, frameIndex - trail);
+        const image = weapon.frames[index];
+        if (!image.complete || !image.naturalWidth) continue;
+        const fit = size / Math.max(image.naturalWidth, image.naturalHeight);
+        const drawWidth = image.naturalWidth * fit;
+        const drawHeight = image.naturalHeight * fit;
         ctx.globalAlpha = trail === 0 ? .98 : .14 / trail;
-        ctx.drawImage(frames[index], -size / 2, -size / 2, size, size);
+        ctx.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
       }
       ctx.restore();
     }
@@ -307,13 +434,21 @@
       keys.add(event.code);
       if (event.code === 'Space') { event.preventDefault(); cast(); }
       if (event.code === 'KeyR') resetEnemy();
+      if (/^Digit[1-5]$/.test(event.code)) selectWeapon(WEAPONS[Number(event.code.slice(-1)) - 1].id);
+      if (event.code === 'KeyQ' || event.code === 'KeyE') {
+        const direction = event.code === 'KeyQ' ? -1 : 1;
+        const index = WEAPONS.indexOf(activeWeapon);
+        selectWeapon(WEAPONS[(index + direction + WEAPONS.length) % WEAPONS.length].id);
+      }
     });
     window.addEventListener('keyup', event => keys.delete(event.code));
-    document.querySelector('#cast').addEventListener('click', cast);
+    weaponButtons.forEach(button => button.addEventListener('click', () => selectWeapon(button.dataset.weapon)));
+    castButton.addEventListener('click', cast);
     document.querySelector('#reset').addEventListener('click', resetEnemy);
     controls.fps.addEventListener('input', () => document.querySelector('#fpsOut').value = `${controls.fps.value} FPS`);
     controls.scale.addEventListener('input', () => document.querySelector('#scaleOut').value = `${controls.scale.value}%`);
     controls.damage.addEventListener('input', () => document.querySelector('#damageOut').value = controls.damage.value);
+    selectWeapon('kiem');
     requestAnimationFrame(loop);
   </script>
 </body>

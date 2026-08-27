@@ -23,16 +23,60 @@
     font-size: 20px; letter-spacing: .1em; color: #fff; text-shadow: 0 2px 0 #000;
     pointer-events: none; opacity: 0; transition: opacity .18s;
   }
-  #bar { display: grid; grid-template-columns: repeat(8, 150px); gap: 4px; width: 1240px }
+  #bar { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; width: 1240px }
   .cell {
-    border: 1px solid #222233; background: #0d0d16; padding: 5px 7px; cursor: pointer;
-    line-height: 1.3; user-select: none;
+    --accent: #8fd6ff; --deep: #112234;
+    position: relative; min-width: 0; min-height: 60px; display: grid;
+    grid-template-columns: 47px minmax(0, 1fr); grid-template-rows: 1fr auto;
+    grid-template-areas: "icon name" "icon meta"; column-gap: 7px;
+    border: 1px solid #24263a; background: linear-gradient(135deg, #11121d, #090a11);
+    padding: 5px; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    line-height: 1.18; user-select: none; overflow: hidden;
+    box-shadow: inset 0 1px #ffffff08, 0 2px 7px #0008;
+    transition: border-color .12s, background .12s, transform .12s, filter .12s;
   }
-  .cell:hover { border-color: #4a5a80 }
-  .cell.on { border-color: #8fd6ff; background: #141a2c }
-  .cell b { display: block; font-size: 11px; color: #e8eeff; font-weight: 600 }
-  .cell i { font-style: normal; font-size: 9px; color: #6f7f9c; letter-spacing: .06em }
-  .cell u { float: right; text-decoration: none; font-size: 9px; color: #ffd98a }
+  .cell::after {
+    content: ""; position: absolute; left: 53px; right: 6px; bottom: 0; height: 1px;
+    background: linear-gradient(90deg, var(--accent), transparent); opacity: .18;
+  }
+  .cell:hover { border-color: #536181; background: linear-gradient(135deg, #171a29, #0b0d15); transform: translateY(-1px) }
+  .cell:focus-visible { outline: 1px solid #fff; outline-offset: 1px }
+  .cell.on {
+    border-color: var(--accent); background: linear-gradient(135deg, var(--deep), #101423);
+    box-shadow: inset 0 0 13px color-mix(in srgb, var(--accent) 18%, transparent), 0 0 9px #000;
+  }
+  .cell b {
+    grid-area: name; align-self: end; min-width: 0; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    font-size: 10px; color: #edf3ff; font-weight: 700; letter-spacing: .025em;
+  }
+  .cell i {
+    grid-area: meta; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    font-style: normal; font-size: 8px; color: #73809b; letter-spacing: .045em;
+  }
+  .cell u {
+    position: absolute; z-index: 4; top: 3px; right: 4px; min-width: 15px; padding: 1px 3px;
+    border: 1px solid #ffffff1c; border-radius: 2px; background: #05060abf;
+    text-align: center; text-decoration: none; font-size: 8px; line-height: 1.2; color: #ffe29b;
+  }
+  .skill-icon-wrap {
+    grid-area: icon; position: relative; align-self: center; width: 47px; height: 47px;
+    overflow: hidden; border: 1px solid color-mix(in srgb, var(--accent) 42%, #25283a);
+    background: var(--deep); box-shadow: inset 0 0 10px #000b, 0 0 8px #0008;
+  }
+  .skill-icon { width: 45px; height: 45px; display: block; image-rendering: pixelated }
+  .cell.on .skill-icon-wrap { box-shadow: inset 0 0 8px #0009, 0 0 8px color-mix(in srgb, var(--accent) 35%, transparent) }
+  .cooldown-mask {
+    position: absolute; z-index: 2; inset: 0; transform: scaleY(0); transform-origin: top;
+    background: #03040ad6; border-bottom: 1px solid #ffffff3d; pointer-events: none;
+  }
+  .cooldown-value {
+    position: absolute; z-index: 3; inset: 0; display: grid; place-items: center;
+    color: #fff; font-size: 12px; font-weight: 800; text-shadow: 0 1px 2px #000;
+    opacity: 0; pointer-events: none;
+  }
+  .cell.cooling .skill-icon { filter: saturate(.25) brightness(.65) }
+  .cell.cooling .cooldown-value { opacity: 1 }
   #help { color: #6f7f9c; max-width: 1240px }
   #help b { color: #cdd7ea; font-weight: 600 }
 </style>
@@ -2118,6 +2162,161 @@ const LAB = { W, H, SCALE, SKILLS, buf, newWorld, spawnFoe, unit, cast, step,
               cam: () => ({ x: CAMX, y: CAMY }) };
 if (typeof globalThis !== 'undefined') globalThis.LAB = LAB;
 
+// Small hand-drawn emblems for the hotbar. They live on 32x32 canvases so the
+// browser upscales them with the same hard pixel edge as the arena sprites.
+const ICON_THEMES = {
+  star_rupture:   ['#79dcff', '#effcff', '#102a48'],
+  whirl_slash:    ['#bcd8ff', '#ffffff', '#18243a'],
+  ember_field:    ['#ff792e', '#ffe0a0', '#3c180d'],
+  frost_prison:   ['#59bdff', '#e8fbff', '#0d2b49'],
+  chain_bolt:     ['#77aaff', '#f0f6ff', '#14224b'],
+  blood_rend:     ['#e94a63', '#ffb0b8', '#3b101d'],
+  void_collapse:  ['#9562ff', '#e0cdff', '#241044'],
+  judgment_beam:  ['#ffd66f', '#fffbe1', '#3a2a0d'],
+  ricochet_shot:  ['#f3c77d', '#fff3cc', '#36230f'],
+  shadow_dash:    ['#7770ff', '#d5d2ff', '#17143d'],
+  spirit_summon:  ['#62f0c7', '#e3fff7', '#0d382f'],
+  toxic_bloom:    ['#7ee85f', '#e2ff9b', '#173713'],
+  gale_vortex:    ['#e4c58d', '#fff0cb', '#382d1c'],
+  aegis_reflect:  ['#ffd777', '#fff8d7', '#3b2a0d'],
+  arcane_rain:    ['#a77aff', '#eee0ff', '#281346'],
+  time_halt:      ['#a9d8ff', '#fff2b8', '#172b3d'],
+};
+
+function drawSkillIcon(canvas, skill) {
+  const g = canvas.getContext('2d'), t = ICON_THEMES[skill.id];
+  const accent = t[0], light = t[1], deep = t[2];
+  g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, 32, 32);
+  const bg = g.createLinearGradient(0, 0, 32, 32);
+  bg.addColorStop(0, deep); bg.addColorStop(1, '#05060b');
+  g.fillStyle = bg; g.fillRect(0, 0, 32, 32);
+  g.globalAlpha = 0.13; g.fillStyle = accent;
+  for (let y = 3; y < 32; y += 7) for (let x = (y % 3) + 1; x < 32; x += 8) g.fillRect(x, y, 1, 1);
+  g.globalAlpha = 1;
+
+  const lineIcon = (pts, width, col, close) => {
+    g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+    if (close) g.closePath();
+    if (col) { g.strokeStyle = col; g.lineWidth = width; g.stroke(); }
+  };
+  const fillIcon = (pts, col) => {
+    g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+    g.closePath(); g.fillStyle = col; g.fill();
+  };
+  const orb = (x, y, r, col, stroke) => {
+    g.beginPath(); g.arc(x, y, r, 0, TAU);
+    if (col) { g.fillStyle = col; g.fill(); }
+    if (stroke) { g.strokeStyle = stroke; g.lineWidth = 1; g.stroke(); }
+  };
+  const arcIcon = (x, y, r, a0, a1, width, col) => {
+    g.beginPath(); g.arc(x, y, r, a0, a1); g.strokeStyle = col; g.lineWidth = width; g.stroke();
+  };
+  const starIcon = (x, y, outer, inner, points, col) => {
+    const ps = [];
+    for (let i = 0; i < points * 2; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / points, r = i % 2 ? inner : outer;
+      ps.push([x + Math.cos(a) * r, y + Math.sin(a) * r]);
+    }
+    fillIcon(ps, col);
+  };
+
+  g.save();
+  g.lineCap = 'square'; g.lineJoin = 'miter';
+  g.shadowColor = accent; g.shadowBlur = 3;
+  switch (skill.id) {
+    case 'star_rupture':
+      starIcon(16, 16, 12, 4, 8, accent); starIcon(16, 16, 6, 2, 8, light);
+      orb(16, 16, 2, '#fff');
+      break;
+    case 'whirl_slash':
+      arcIcon(15, 16, 11, -2.55, 0.8, 3, accent);
+      arcIcon(17, 16, 7, 0.45, 3.5, 2, light);
+      fillIcon([[25, 8], [28, 13], [22, 12]], light);
+      break;
+    case 'ember_field':
+      fillIcon([[16, 28], [8, 24], [11, 16], [15, 20], [14, 7], [21, 14], [23, 9], [26, 20], [23, 27]], accent);
+      fillIcon([[16, 26], [13, 21], [17, 16], [18, 11], [22, 20], [20, 26]], light);
+      break;
+    case 'frost_prison':
+      fillIcon([[16, 3], [20, 13], [18, 28], [14, 28], [12, 13]], light);
+      fillIcon([[5, 11], [13, 15], [11, 28], [7, 24]], accent);
+      fillIcon([[27, 10], [21, 16], [23, 27], [27, 22]], accent);
+      lineIcon([[16, 5], [16, 26]], 1, '#fff');
+      break;
+    case 'chain_bolt':
+      lineIcon([[5, 8], [13, 11], [10, 18], [20, 16], [17, 25], [27, 22]], 3, accent);
+      lineIcon([[5, 8], [13, 11], [10, 18], [20, 16], [17, 25], [27, 22]], 1, light);
+      for (const p of [[5, 8], [20, 16], [27, 22]]) orb(p[0], p[1], 2, light, accent);
+      break;
+    case 'blood_rend':
+      for (let k = 0; k < 3; k++) {
+        const x = 7 + k * 6;
+        lineIcon([[x + 6, 5], [x + 3, 12], [x + 1, 20], [x - 3, 27]], 3, accent);
+        lineIcon([[x + 5, 6], [x + 2, 13], [x, 20]], 1, light);
+      }
+      break;
+    case 'void_collapse':
+      orb(16, 16, 10, '#030207', accent); arcIcon(16, 16, 13, -2.7, 1.0, 2, accent);
+      arcIcon(16, 16, 13, 0.45, 3.0, 1, light); orb(16, 16, 3, '#000', light);
+      break;
+    case 'judgment_beam':
+      g.globalAlpha = .42; g.fillStyle = accent; g.fillRect(11, 3, 10, 25); g.globalAlpha = 1;
+      g.fillStyle = light; g.fillRect(14, 2, 4, 26); g.fillStyle = '#fff'; g.fillRect(15, 4, 2, 23);
+      orb(16, 24, 9, null, accent); orb(16, 24, 5, null, light);
+      lineIcon([[6, 24], [26, 24]], 1, light);
+      break;
+    case 'ricochet_shot':
+      lineIcon([[5, 24], [12, 9], [21, 17], [28, 6]], 2, accent);
+      for (const p of [[5, 24], [12, 9], [21, 17]]) orb(p[0], p[1], 2, light, accent);
+      fillIcon([[28, 6], [23, 7], [27, 11]], light);
+      break;
+    case 'shadow_dash':
+      g.globalAlpha = .38; lineIcon([[4, 22], [16, 16], [27, 10]], 6, accent); g.globalAlpha = 1;
+      fillIcon([[8, 22], [19, 12], [17, 18], [27, 16], [15, 25]], light);
+      lineIcon([[3, 26], [13, 22]], 2, accent); lineIcon([[4, 17], [12, 15]], 1, accent);
+      break;
+    case 'spirit_summon':
+      orb(16, 12, 7, accent); orb(13, 11, 1.5, light); orb(19, 11, 1.5, light);
+      fillIcon([[10, 15], [7, 27], [13, 23], [16, 28], [19, 23], [25, 27], [22, 15]], accent);
+      arcIcon(16, 13, 4, .25, Math.PI - .25, 1, light);
+      break;
+    case 'toxic_bloom':
+      for (let i = 0; i < 6; i++) {
+        const a = i / 6 * TAU, x = 16 + Math.cos(a) * 7, y = 16 + Math.sin(a) * 7;
+        orb(x, y, 5, accent, deep);
+      }
+      orb(16, 16, 5, light, accent); orb(14.5, 15, 1, deep); orb(17.5, 15, 1, deep);
+      g.fillStyle = deep; g.fillRect(14, 18, 4, 1);
+      break;
+    case 'gale_vortex':
+      arcIcon(15, 9, 9, -2.8, .65, 2, light); arcIcon(16, 15, 12, -2.7, .45, 3, accent);
+      arcIcon(17, 21, 9, -2.65, .5, 2, light); lineIcon([[10, 26], [21, 26]], 2, accent);
+      break;
+    case 'aegis_reflect':
+      fillIcon([[16, 3], [27, 8], [25, 21], [16, 29], [7, 21], [5, 8]], accent);
+      fillIcon([[16, 6], [23, 10], [21, 20], [16, 25], [11, 20], [9, 10]], deep);
+      lineIcon([[16, 8], [16, 23], [11, 15], [21, 15]], 2, light);
+      break;
+    case 'arcane_rain':
+      orb(16, 24, 10, null, accent); orb(16, 24, 6, null, light);
+      for (const x of [8, 16, 24]) {
+        lineIcon([[x + 3, 3], [x, 10], [x + 2, 16]], 2, x === 16 ? light : accent);
+        fillIcon([[x + 2, 16], [x - 1, 12], [x + 5, 12]], x === 16 ? light : accent);
+      }
+      break;
+    case 'time_halt':
+      orb(16, 16, 12, deep, accent); orb(16, 16, 9, null, light);
+      lineIcon([[16, 7], [16, 17], [23, 20]], 2, light); orb(16, 16, 2, accent);
+      for (const p of [[16, 5], [27, 16], [16, 27], [5, 16]]) orb(p[0], p[1], 1, light);
+      break;
+  }
+  g.restore();
+  g.strokeStyle = '#ffffff22'; g.lineWidth = 1; g.strokeRect(.5, .5, 31, 31);
+}
+
 // ===========================================================================
 // 8. Browser shell: input, 4x nearest upscale, hotbar, slow-mo / freeze-frame.
 // ===========================================================================
@@ -2139,25 +2338,59 @@ if (typeof document !== 'undefined') {
   const titleEl = document.getElementById('title');
   let titleT = 0;
 
+  const cdMasks = [], cdValues = [];
   const cells = SKILLS.map((sk, i) => {
-    const d = document.createElement('div');
+    const d = document.createElement('button');
+    d.type = 'button';
     d.className = 'cell';
-    d.innerHTML = '<u>' + (i < 8 ? (i + 1) : '⇧' + (i - 7)) + '</u><b>' +
-                  sk.name + '</b><i>' + sk.id + '</i>';
+    d.style.setProperty('--accent', ICON_THEMES[sk.id][0]);
+    d.style.setProperty('--deep', ICON_THEMES[sk.id][2]);
+    d.setAttribute('aria-label', `Skill ${i + 1}: ${sk.name}`);
+    d.title = `${sk.name} · ${sk.id}\nHồi chiêu ${sk.cd.toFixed(2)} giây`;
+
+    const hotkey = document.createElement('u');
+    hotkey.textContent = i < 8 ? (i + 1) : '⇧' + (i - 7);
+    const iconWrap = document.createElement('span');
+    iconWrap.className = 'skill-icon-wrap';
+    const icon = document.createElement('canvas');
+    icon.className = 'skill-icon'; icon.width = 32; icon.height = 32;
+    icon.setAttribute('role', 'img'); icon.setAttribute('aria-label', `Biểu tượng ${sk.name}`);
+    drawSkillIcon(icon, sk);
+    const mask = document.createElement('span'); mask.className = 'cooldown-mask';
+    const cdValue = document.createElement('span'); cdValue.className = 'cooldown-value';
+    iconWrap.append(icon, mask, cdValue);
+    const name = document.createElement('b'); name.textContent = sk.name;
+    const meta = document.createElement('i');
+    meta.textContent = (sk.mode === 'self' ? 'BẢN THÂN' : sk.mode === 'dir' ? 'ĐỊNH HƯỚNG' : 'CHỈ ĐIỂM') +
+                       ' · ' + sk.cd.toFixed(2) + 's';
+    d.append(hotkey, iconWrap, name, meta);
     d.onclick = () => { sel = i; paint(); };
     bar.appendChild(d);
+    cdMasks.push(mask); cdValues.push(cdValue);
     return d;
   });
-  function paint() { cells.forEach((c, i) => c.classList.toggle('on', i === sel)); }
+  function paint() {
+    cells.forEach((c, i) => {
+      const selected = i === sel;
+      c.classList.toggle('on', selected);
+      c.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+  }
   paint();
-  // Cooldowns are short but not zero, so a dead key press needs a reason on screen: the
-  // cell dims while its skill is recharging. Written only on change -- 16 style writes
-  // every frame would be the one avoidable DOM cost in the loop.
+  // The dark sweep and number make a blocked cast readable without dimming its name.
+  // Only icons that are actively cooling down receive per-frame style writes.
   const ready = SKILLS.map(() => true);
   function paintCds() {
     for (let i = 0; i < 16; i++) {
-      const ok = world.cds[i] <= 0;
-      if (ok !== ready[i]) { ready[i] = ok; cells[i].style.opacity = ok ? 1 : 0.42; }
+      const left = Math.max(0, world.cds[i]), ok = left <= 0;
+      if (!ok) {
+        cdMasks[i].style.transform = `scaleY(${c01(left / SKILLS[i].cd).toFixed(3)})`;
+        cdValues[i].textContent = Math.max(0.1, left).toFixed(1);
+      }
+      if (ok !== ready[i]) {
+        ready[i] = ok; cells[i].classList.toggle('cooling', !ok);
+        if (ok) { cdMasks[i].style.transform = 'scaleY(0)'; cdValues[i].textContent = ''; }
+      }
     }
   }
 
