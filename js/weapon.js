@@ -56,16 +56,27 @@ const HELD_SQ = 0.9;
 const WEAPONS = [
   {
     id: 'kiem', name: 'Kiếm', label: 'KIẾM', skill: 'SEPHIRIA SLASH', art: 'assets/images/skills/kiem-frames',
-    desc: 'cân bằng · 4 nhịp', col: hexc('#bcd8ff'), gain: 2.1,
+    desc: 'chuỗi nhịp · 4 nhịp', col: hexc('#bcd8ff'), gain: 2.1,
     fps: 30, hits: [3, 6, 10, 13], dmg: 9, range: 44, arc: 1.50,
-    size: 90, axis: SPRITE_UP, reach: 12, travel: 0, push: 20, cd: 0.55, shake: 1.1,
+    size: 90, axis: SPRITE_UP, reach: 12, travel: 0, push: 0, pushStep: 0, cd: 0.55, shake: 1.1,
+    // Momentum. Land the fourth beat and a window opens: the next swing comes out faster and
+    // hits harder, and landing *its* fourth beat opens it again. Knockback is zero on purpose
+    // -- shoving the target out of reach would close the chain the weapon is built around, so
+    // the sword gives up the one thing the other four melee weapons all have.
+    momentum: { cd: 0.34, dmg: 1.30, win: 1.20 },
     hold: { art: 'kiem', pv: [3, 13], sweep: 1.45, ext: 4.5, rest: -0.80 },
   },
   {
     id: 'dao', name: 'Đao', label: 'ĐAO', skill: 'MOON TIDE', art: 'assets/images/skills/dao-frames',
-    desc: 'nặng · 3 nhịp', col: hexc('#baf7ff'), gain: 2.0,
+    desc: 'xử trảm · cắm chân', col: hexc('#baf7ff'), gain: 2.0,
     fps: 32, hits: [4, 8, 12], dmg: 14, range: 43, arc: 1.55,
     size: 94, axis: -0.072, reach: 11, travel: 6, push: 16, cd: 0.60, shake: 1.3,
+    // The saber commits. While the swing runs the legs are down to a shuffle -- you cannot
+    // reposition out of a telegraph you mis-read -- and in exchange the hero takes 40% less.
+    // The finisher then reads the target's own wounds: `exec` is a multiple of `dmg` scaled
+    // by the fraction of HP already gone, so it is worth nothing against a fresh brute and
+    // a great deal against the one you have been working on. Pick a target, then commit.
+    exec: 1.20, plant: 0.30, guard: 0.60,
     hold: { art: 'dao', pv: [3, 12], sweep: 1.65, ext: 4.0, rest: -0.95 },
     // These sheets are trimmed to their painted bounds, so the frames differ in size.
     // frameBox scales them all against one shared box and the pivots keep the swing
@@ -80,13 +91,39 @@ const WEAPONS = [
   },
   {
     id: 'cung', name: 'Cung', label: 'CUNG', skill: 'CELESTIAL ARROW', art: 'assets/images/skills/cung-frames',
-    desc: 'tầm xa · 1 nhịp', col: hexc('#d9fdff'), gain: 2.0,
-    fps: 28, hits: [8], dmg: 34, range: 135, arc: 0.34,
-    size: 78, axis: 0.515, reach: 13, travel: 72, push: 26, cd: 0.70, shake: 1.0,
+    desc: 'ba mũi · xuyên · càng xa càng mạnh', col: hexc('#d9fdff'), gain: 2.0,
+    fps: 28, hits: [8], range: 42, arc: 0.34,
+    size: 78, axis: 0.515, reach: 13, travel: 10, push: 0, pushStep: 0, cd: 0.70, shake: 1.0,
+    // The only weapon here that does not resolve where it is aimed on the frame it is aimed.
+    // `hits: [8]` is now the *release*: it puts an arrow in the air and the arrow decides,
+    // later, who it caught and for how much. Hence no `dmg`, no cone and no knockback of its
+    // own -- `range` is left only because `drawSwing` measures the release flourish against
+    // it, and the shove belongs to the arrow. `near`/`far` are the ends of the damage ramp
+    // and `ramp` is the distance the top is reached at, deliberately well short of `max` so
+    // the strong band is something you can hold rather than a pixel you have to find. Up
+    // close the bow is worth less than a punch; that is the trade.
+    shot: { spd: 300, max: 210, ramp: 140, near: 14, far: 46, thick: 5, push: 26,
+            // Một lần bật dây là ba mũi xoè hình nan quạt. Bản một mũi mạnh đúng ở chỗ khó
+            // giữ nhất -- xa -- còn lúc quái đã áp mặt thì 14 sát thương cho một nhịp 0.7 s
+            // không ra hình một đòn, và đó là toàn bộ cảm giác "phế": người chơi dùng cung
+            // nhiều nhất ở đúng cái tầm nó vô dụng nhất.
+            //
+            // `spread` và `side` được chọn cùng nhau để hai bất biến của cung không đổi:
+            //   · Trần một mục tiêu vẫn là `far`. Ở tầm ôm sát, ba mũi còn chồng lên cùng
+            //     một thân địch, nhưng chồng nhau chỉ tới `r / sin(spread)` ≈ 32 px (bia rộng
+            //     nhất trong game), và ở đó dải mới có `near + (far-near)·32/ramp` ≈ 21 -- nhân
+            //     `1 + 2·side` = 2.1 vẫn ra 45, tức là không hơn một mũi bắn tới độ. Xa hơn
+            //     32 px là hai mũi biên đã ra ngoài thân nó và mọi thứ về đúng như cũ.
+            //   · Áp mặt vẫn là tay yếu nhất: 37 sát thương cho 0.7 s hồi là ~53 dps, thấp
+            //     hơn cả bốn vũ khí kia, chỉ là nó không còn bằng không.
+            // Còn tiền của nan quạt trả ở tầm xa là bề rộng chứ không phải sát thương: ở cuối
+            // tầm hai mũi biên cách trục hơn 60 px, nên một đám đứng tụm là ba làn xuyên.
+            fan: 3, spread: 0.30, side: 0.55 },
     // A bow does not slash: it draws back and springs forward, so the sweep is tiny and
-    // almost all of the motion is the grip pushing out on release.
+    // almost all of the motion is the grip pushing out on release. The sheet stays with the
+    // hero (no `anchor`) because it is the *draw*, and walking while you draw should carry
+    // the bow with you -- what leaves and keeps going is the arrow, not the art.
     hold: { art: 'cung', pv: [4, 8], sweep: 0.30, ext: 3.2, rest: -0.10 },
-    anchor: 'cast',                             // an arrow leaves the bow and keeps going
     frameBox: 338,
     pivots: [
       [.5646, .5886], [.4256, .4809], [.4004, .5667], [.3104, .5920],
@@ -97,16 +134,28 @@ const WEAPONS = [
   },
   {
     id: 'luoi-hai', name: 'Lưỡi Hái', label: 'LƯỠI HÁI', skill: 'REAPER SURGE', art: 'assets/images/skills/luoi-hai-frames',
-    desc: 'quét rộng · 3 nhịp', col: hexc('#bdf9ff'), gain: 1.95,
+    desc: 'gom bầy · kéo vào · hút máu', col: hexc('#bdf9ff'), gain: 1.95,
     fps: 26, hits: [4, 9, 13], dmg: 13, range: 54, arc: 2.25,
-    size: 100, axis: SPRITE_UP, reach: 12, travel: 10, push: 24, cd: 0.72, shake: 1.4,
+    size: 100, axis: SPRITE_UP, reach: 12, travel: 10, push: -34, pushStep: -6, cd: 0.72, shake: 1.4,
+    // A negative `push` is a pull: `hitCone` sends the impulse along the angle from the hero to
+    // the foe, so flipping the sign drags the target in instead of shoving it out, and each
+    // later beat pulls harder. That turns the widest cone in the game from "I can reach more
+    // of them" into "I can gather them", and `harvest` is what gathering is worth -- HP per
+    // foe past the first, so one target is a hit and a crowd is a meal.
+    harvest: 7,
     hold: { art: 'luoi_hai', pv: [6, 10], sweep: 1.85, ext: 5.0, rest: -1.10 },
   },
   {
     id: 'gang', name: 'Găng', label: 'GĂNG', skill: 'ABYSSAL FIST', art: 'assets/images/skills/gang-frames',
-    desc: 'nhanh · 5 nhịp', col: hexc('#65dcec'), gain: 2.15,
+    desc: 'cắt phép · 5 nhịp', col: hexc('#65dcec'), gain: 2.15,
     fps: 34, hits: [2, 5, 8, 11, 14], dmg: 7, range: 33, arc: 1.15,
     size: 72, axis: SPRITE_UP, reach: 10, travel: 16, push: 12, cd: 0.46, shake: 0.9,
+    // The fifth punch snuffs a cast. Monsters telegraph a shape on the floor and then hit it,
+    // and until now nothing in a loadout could switch one off -- you could only leave. `cut`
+    // is how long the caster is held: `stepTel` already drops a telegraph whose owner is
+    // frozen (js/foe-abil.js), so a quarter second is all it takes and the interrupt costs no
+    // new machinery. The shortest reach in the game buys the only answer to a wind-up.
+    cut: 0.25,
     // Fists barely rotate -- a punch is reach, so `ext` carries the pose instead.
     hold: { art: 'gang', pv: [2, 5], sweep: 0.50, ext: 6.5, rest: -0.30 },
   },
@@ -117,6 +166,11 @@ for (const wp of WEAPONS) {
   wp.frames = 16;
   wp.dur = wp.frames / wp.fps;
   wp.squash = SWING_SQ;
+  // How much each later beat of a combo adds to the knockback. It is a field and not a
+  // constant because the sign and the size of it are weapon identity now: the sword needs
+  // zero so its chain cannot shove the target out of reach, and the scythe needs it negative
+  // so every beat pulls harder than the last.
+  if (wp.pushStep === undefined) wp.pushStep = 4;
   // `col` stays the weapon's identity colour (icon, damage flash, sparks). The sheets are
   // already near-white line art, and tinting them at full strength is most of why a slash
   // looked washed out next to test.html, which draws them untinted: the white-hot centre
@@ -368,14 +422,183 @@ function swingHit(w, e) {
   for (let i = 0; i < hits.length; i++) {
     if (!crossed(e, hits[i] / wp.frames)) continue;
     const o = swingOrigin(w, e);
+    // A bow has no cone at all: its one beat is the release, and everything after that
+    // belongs to the arrow.
+    if (wp.shot) { fireArrow(w, e, o); continue; }
     // Later beats of a combo hit harder: the fifth punch of a gauntlet flurry is the one
     // that should feel like it finished the job.
     const step = last > 0 ? 1 + 0.5 * (i / last) : 1;
     const crit = last > 0 && i === last;
-    const n = hitCone(w, o.x, o.y, e.ang, wp.range, wp.arc, wp.dmg * step,
-                      wp.col, crit, wp.push + i * 4);
-    if (n) w.shake = Math.max(w.shake, wp.shake * 0.8);
+    // `e.momo` was decided once, by `swing`, so the bonus covers the whole chain rather than
+    // flickering on and off between beats as the window ticks down underneath it.
+    const amount = wp.dmg * step * (e.momo ? wp.momentum.dmg : 1);
+    const n = hitCone(w, o.x, o.y, e.ang, wp.range, wp.arc, amount,
+                      wp.col, crit, wp.push + i * wp.pushStep, swingRiders(w, wp, crit));
+    if (!n) continue;
+    w.shake = Math.max(w.shake, wp.shake * 0.8);
+    // Paid in blood rather than in damage, and only on the finisher: the earlier beats are
+    // the gathering (each one pulls harder than the last), the last one is the reaping, and
+    // it counts whoever the pull actually managed to drag into the cone. Per-beat healing
+    // would turn a crowd into a fountain -- three foes would out-heal the contact drain by
+    // a factor of two -- and would pay the scythe for swinging rather than for gathering.
+    // The second foe onward, so one target is a hit and only a crowd is a meal.
+    if (crit && wp.harvest && n > 1) healHero(w, wp.harvest * (n - 1));
+    // Landing the finisher is what opens the sword's window. Whiffing it leaves the window
+    // shut -- `swing` already spent whatever was there -- which is the whole bargain.
+    if (crit && wp.momentum) w.momo = wp.momentum.win;
   }
+}
+
+// Per-target riders for the finisher, built only when there is one to build: the cone knows
+// distance and angle, and neither of these can be expressed in those terms. The saber's
+// bonus reads how wounded the target already is; the gauntlet's reads whether it is casting.
+function swingRiders(w, wp, crit) {
+  if (!crit || (!wp.exec && !wp.cut)) return null;
+  const r = {};
+  if (wp.exec) r.amp = f => wp.dmg * wp.exec * c01(1 - f.hp / f.maxhp);
+  if (wp.cut) r.onHit = f => cutCast(w, f, wp.cut);
+  return r;
+}
+
+// Snuff a wind-up. This deliberately does not stun and does not damage: `stepTel` drops any
+// telegraph whose owner is frozen and pushes the owner's next attempt out by 1.1 s, so the
+// whole interrupt is one field plus something to look at. The burst is its own fx entry
+// because `swingHit` runs in the sim and has no draw phase of its own.
+const CUT_C = hexc('#ffd24a'), CUT_H = hexc('#fff4c8');
+const CUT_SK = {
+  id: 'cut', name: 'Cắt Phép', mode: 'dir', dur: 0.34, cd: 0, shake: 0,
+  mid(w, e, p) {
+    const d = e.data, fd = fade(p, 0.18), g = eo(p);
+    // Collapsing inward, the opposite of every cast in the game: the shape a telegraph makes
+    // as it fills is a ring growing, so a ring closing reads as one being taken away.
+    ring(d.x, d.y, 15 * (1 - g) + 3, 1.6, CUT_C, 0.85 * fd, 0.55);
+    ring(d.x, d.y, 22 * (1 - g) + 4, 1.0, CUT_H, 0.45 * fd, 0.55);
+    for (let i = 0; i < 4; i++)
+      chevron(d.x, d.y, i / 4 * TAU + Math.PI * 0.25, 4.0 + 3 * (1 - g), CUT_C, 0.70 * fd);
+    core(d.x, d.y, 4.5 * fd, CUT_H, 0.95 * fd, 2.2);
+    sparks(d.x, d.y, 9, 2, 17, CUT_C, 0.60 * fd, e.seed, 0.9, 0.7, 0, TAU, 3);
+  },
+};
+function cutCast(w, f, hold) {
+  if (!f.tel || f.tel.fired) return;
+  f.frozen = Math.max(f.frozen, hold);
+  w.fxs.push({ sk: CUT_SK, i: -1, t: 0, dur: CUT_SK.dur, p: 0, pt: 0,
+               seed: w.rng.int(1, 1e9) | 0, ox: f.x, oy: f.y, x: f.x, y: f.y, ang: 0,
+               data: { x: f.x, y: f.y - f.h * 0.5 } });
+  w.shake = Math.max(w.shake, 1.6);
+  SFX.blocked();
+}
+
+// ---- the bow's arrow ------------------------------------------------------------------
+// The other four weapons ask "is it in front of me right now". This one asks "will it still
+// be there when the arrow gets there", and answers with how far the arrow had flown when it
+// arrived. Distance stops being a number on the sheet and becomes something the player has
+// to keep hold of, which is the only reason the weapon plays differently at all.
+const ARR_C = hexc('#d9fdff'), ARR_H = hexc('#ffffff'), ARR_T = hexc('#6fb4d6');
+const ARROW_SK = {
+  id: 'arrow', name: 'Mũi Tên', mode: 'dir', dur: 1, cd: 0, shake: 0,
+  mid(w, e, p) { drawArrow(w, e); },
+  hit(w, e) { arrowHit(w, e); },
+};
+// One release, `fan` arrows. The offsets are symmetric about the aim, so the middle arrow of
+// an odd fan is the aimed one and carries full power; everything off the centre line is a
+// flanker at `side`. Each arrow is clipped against the arena on *its own* angle -- a fan
+// loosed along a wall would otherwise keep its outer legs flying through the void.
+function fireArrow(w, e, o) {
+  const s = e.wp.shot, n = s.fan || 1, sp = s.spread || 0;
+  for (let i = 0; i < n; i++) {
+    const off = (i - (n - 1) / 2) * sp;
+    looseArrow(w, e, o, i, e.ang + off, off === 0 ? 1 : (s.side == null ? 1 : s.side));
+  }
+}
+function looseArrow(w, e, o, i, ang, mul) {
+  const wp = e.wp, s = wp.shot;
+  // Clip the flight to the arena, or an arrow loosed at a wall keeps going through the void
+  // with its trail still lit. Coarse steps: 8 px of overshoot on a 210 px flight is not a
+  // thing anyone can see, and a slab test here would be exact about nothing that matters.
+  const ca = Math.cos(ang), cy = Math.sin(ang) * wp.squash;
+  let max = s.max;
+  for (let d = 8; d <= s.max; d += 8) {
+    const px = o.x + ca * d, py = o.y + cy * d;
+    if (px < BOUND.x0 || px > BOUND.x1 || py < BOUND.y0 - 20 || py > BOUND.y1) { max = d; break; }
+  }
+  // `wp` stays out of the entry and inside `data`: `step` picks the live swing by looking for
+  // `.wp`, and an arrow in flight is not a swing -- it must never drive the pose of the bow
+  // in the hero's hands. `dur` is the real flight time, so `e.p` *is* the fraction flown.
+  // The seeds are spread apart per arrow, or the three sets of ripening sparks would twinkle
+  // in lockstep and the fan would read as one wide arrow instead of three.
+  w.fxs.push({ sk: ARROW_SK, i: -1, t: 0, dur: max / s.spd, p: 0, pt: 0,
+               seed: (e.seed * 7 + 13 + i * 1013) | 0, ox: o.x, oy: o.y, x: e.x, y: e.y,
+               ang, data: { wp, s, max, mul, trav: 0, was: 0, hit: [] } });
+}
+
+// One pass per frame over the segment the arrow covered since the last one, so a 300 px/s
+// arrow cannot tunnel past a foe between frames. Everything is measured in the squashed
+// frame `hitCone` uses, so a shot to the north and a shot to the east need the same aim.
+function arrowHit(w, e) {
+  const d = e.data, s = d.s, wp = d.wp;
+  d.was = d.trav; d.trav = e.p * d.max;
+  if (d.trav <= d.was) return;
+  const ca = Math.cos(e.ang), sa = Math.sin(e.ang);
+  for (const f of w.foes) {
+    if (f.dying || d.hit.indexOf(f) >= 0) continue;
+    const dx = f.x - e.ox, dy = (midY(f) - e.oy) / wp.squash;
+    const t = dx * ca + dy * sa;                       // how far along the shaft it stands
+    const r = s.thick + f.w * 0.35;
+    if (t < d.was - r || t > d.trav + r) continue;      // not in the slice flown this frame
+    if (Math.abs(dy * ca - dx * sa) > r) continue;      // beside the shaft, not on it
+    // Pierce: the arrow keeps its speed and its ramp, and only the memory of who it already
+    // hit stops it scoring the same foe twice. A line of monsters is the payoff for kiting.
+    d.hit.push(f);
+    const k = c01(Math.max(t, 0) / s.ramp);
+    // `mul` là của riêng mũi này, nên hai mũi biên vừa đau ít hơn vừa đẩy nhẹ hơn, và không
+    // được tính là đòn chí mạng: một con số 25 nhảy lên với viền chí mạng thì bảng số đọc ra
+    // là mũi chính đã trúng, trong khi mũi chính vừa bay trượt.
+    const amt = (s.near + (s.far - s.near) * k) * d.mul;
+    hurt(w, f, amt, wp.col, k > 0.85 && d.mul >= 1,
+         ca * s.push * k * d.mul, sa * s.push * k * 0.5 * d.mul);
+  }
+}
+
+function drawArrow(w, e) {
+  const d = e.data, s = d.s, sq = d.wp.squash;
+  const ca = Math.cos(e.ang), sa = Math.sin(e.ang) * sq;
+  const x = e.ox + ca * d.trav, y = e.oy + sa * d.trav;
+  // Hai mũi biên vẽ nhạt hơn. Ba mũi cùng độ sáng thì cái nan quạt đọc ra là một vệt rộng và
+  // người chơi mất luôn thứ duy nhất cần ngắm: mũi giữa là mũi mang đủ sát thương.
+  const g = d.mul >= 1 ? 1 : 0.62;
+  // A short streak behind the head, not a line back to the bow: an arrow is a thing in
+  // flight, and a tracer all the way home is a thing that has already arrived.
+  const tl = Math.min(d.trav, 22), bx = x - ca * tl, by = y - sa * tl;
+  line(bx, by, x, y, 2.6, ARR_T, 0.22 * g, 1.5, 0.9);
+  line(bx, by, x, y, 1.2, ARR_C, 0.70 * g, 1.5, 0.8);
+  line(x - ca * 6, y - sa * 6, x, y, 0.8, ARR_H, 1.0 * g, 1.5, 0.7);
+  chevron(x, y, e.ang, 3.4 * (d.mul >= 1 ? 1 : 0.82), ARR_C, 0.75 * g);
+  core(x, y, 2.6, ARR_C, 0.80 * g, 2);
+  core(x, y, 1.1, ARR_H, 1.10 * g);
+  // The head brightens as the shot ripens, so the damage ramp is legible in the air instead
+  // of being something the player infers from the numbers afterwards.
+  const k = c01(d.trav / s.ramp);
+  if (k > 0.5) {
+    const gg = (k - 0.5) / 0.5;
+    ring(x, y, 3 + 3 * gg, 1.1, ARR_H, 0.30 * gg * g, 0.7);
+    sparks(x, y, 5, 1, 9, ARR_C, 0.35 * gg * g, e.seed, 0.7, sq,
+           e.ang + Math.PI - 0.5, e.ang + Math.PI + 0.5, 3);
+  }
+}
+
+// What the picker and the tooltip say a weapon does. Melee is `dmg` per beat times beats; a
+// bow has neither, because its damage is a curve over distance and its reach is the flight --
+// so it gets its own sentence rather than a `dmg` field that would have to lie.
+function weaponStat(wp) {
+  if (wp.shot) {
+    const n = wp.shot.fan || 1;
+    // `near`–`far` là dải của mũi giữa, nên khi có nan quạt thì phải nói ra số mũi: bằng
+    // không dòng này đọc ra là cả đòn chỉ đáng bằng một mũi.
+    return (n > 1 ? n + ' mũi · ' : '') +
+           `${wp.shot.near}–${wp.shot.far} theo tầm · xuyên · bay ${wp.shot.max}`;
+  }
+  return `${wp.dmg}×${wp.hits.length} nhịp · tầm ${Math.round(wp.range)}`;
 }
 
 // Fire the basic attack. Same contract as `cast`: returns false when it is on cooldown,
@@ -389,8 +612,13 @@ function swing(w, tx, ty) {
   e.x = clamp(tx, BOUND.x0 - 18, BOUND.x1 + 18);
   e.y = clamp(ty, BOUND.y0 - 16, BOUND.y1 + 10);
   e.ang = Math.atan2((e.y - h.h * 0.5 - e.oy) / wp.squash, e.x - e.ox);
+  // Spend the window here and not per beat, so the whole chain is either fast or it is not.
+  // Clearing it on use is what makes momentum a thing you keep re-earning: the finisher of
+  // *this* swing has to land again to open the next one.
+  e.momo = !!(wp.momentum && w.momo > 0);
+  if (e.momo) w.momo = 0;
   w.fxs.push(e);
-  w.wcd = wp.cd;
+  w.wcd = e.momo ? wp.momentum.cd : wp.cd;
   w.shake = Math.max(w.shake, wp.shake * 0.5);
   h.flip = e.x < h.x;
   SFX.cast(wp.id, clamp((h.x - w.cam.x - W * 0.5) / (W * 0.5), -1, 1));

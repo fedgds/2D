@@ -117,6 +117,11 @@ function hitHero(w, amount, col) {
   h.flash = Math.min(0.6, h.flash + 0.5);
   SFX.hurt();
   if (w.god) return 0;
+  // A weapon that plants the hero pays him back in armour, and the window is exactly as long
+  // as the commitment: `w.sw` is the live swing, so the guard opens on the frame the saber
+  // starts and shuts on the frame it ends. Nothing here knows which weapon that is -- it
+  // reads `guard` off whatever is swinging, so a second planted weapon needs no new code.
+  if (w.sw && w.sw.wp.guard) amount *= w.sw.wp.guard;
   amount = Math.round(amount);
   h.hp = Math.max(0, h.hp - amount); w.taken += amount;
   const s = String(amount);

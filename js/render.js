@@ -80,8 +80,41 @@ function renderWorld(w, out) {
   // everything else, so they pass in front of the hero -- but still under the HUD.
   if (MAPDEF.ambDraw && w.amb && w.amb.length) MAPDEF.ambDraw(ambArg(w, 0));
   if (w.danger > 0) drawHeroWarn(w);
+  drawWeaponCue(w);
   drawMinimap(w);
   if (out) resolve(out);
+}
+
+// The two weapon states that are decisions rather than events. Both are worn by the hero and
+// both are invisible in the numbers, so they have to be on the sprite: a HUD readout for
+// "your next swing is faster" is a thing you look away to check, and looking away is exactly
+// what the sword is asking you not to do.
+const MOMO_C = hexc('#bcd8ff'), MOMO_H = hexc('#eaf4ff'), GRD_C = hexc('#ffb066');
+function drawWeaponCue(w) {
+  const h = w.hero, sw = w.sw;
+  // Planted: the ring sits on the ground and does not move, because the hero cannot either.
+  // Two of them, one tight and one loose, so the state reads at a glance even mid-swing.
+  if (sw && sw.wp.guard) {
+    const a = 0.30 + 0.20 * Math.sin(w.t * 26);
+    ring(h.x, h.y - 1, 10, 1.2, GRD_C, a, GSQ, 1.5);
+    ring(h.x, h.y - 1, 13.5, 1.0, GRD_C, a * 0.55, GSQ, 1.6);
+    for (let i = 0; i < 4; i++)
+      chevron(h.x + Math.cos(i / 4 * TAU) * 12, h.y - 1 + Math.sin(i / 4 * TAU) * 12 * GSQ,
+              i / 4 * TAU + Math.PI, 3.0, GRD_C, a * 0.8);
+  }
+  if (!(w.wp && w.wp.momentum && w.momo > 0)) return;
+  // The window as a ring that *closes*: how much is left is how big it still is, so the
+  // player reads the deadline off its size without reading a number. It tightens onto the
+  // hero and the last third flickers, the same grammar the monster telegraphs use.
+  const k = c01(w.momo / w.wp.momentum.win), cy = h.y - h.h * 0.55;
+  const fl = k < 0.34 ? 0.55 + 0.45 * Math.sin(w.t * 40) : 1;
+  ring(h.x, h.y - 1, 6 + 9 * k, 1.3, MOMO_C, 0.55 * fl, GSQ, 1.5);
+  core(h.x, cy, 2.2 + 2.0 * k, MOMO_H, 0.35 * fl + 0.25 * k, 1.8);
+  for (let i = 0; i < 3; i++) {
+    const a0 = i / 3 * TAU + w.t * 3.4, rr = 6 + 10 * k;
+    chevron(h.x + Math.cos(a0) * rr, cy + Math.sin(a0) * rr * 0.7, a0 + Math.PI,
+            3.6, MOMO_H, 0.60 * fl, 1.0, 0.8);
+  }
 }
 // The minimap is the only thing on screen that is *not* in world space: it is drawn
 // through setPixS so the camera cannot drag it off the corner.

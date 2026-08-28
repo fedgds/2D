@@ -60,7 +60,46 @@ chạy. Muốn tách nhỏ thêm thì thêm file rồi thêm một dòng `<scrip
 node tools/check-maps.js
 ```
 
+```bash
+node tools/check-weapons.js
+```
+
 Tool đọc chính `index.html`, nối các `<script src>` theo đúng thứ tự trong trang rồi chạy
 bằng `node:vm`, nên nó bắt luôn lỗi **thứ tự file** chứ không chỉ lỗi map: một file đặt sai
 chỗ là `ReferenceError` ngay lúc nạp. Phần shell browser nằm sau
 `if (typeof document !== 'undefined')` trong `shell.js` nên node bỏ qua sạch.
+
+`check-weapons.js` kiểm năm cơ chế làm nên bản sắc của năm vũ khí — chuỗi nhịp của kiếm, đạn
+bay xuyên của cung, gom bầy hút máu của lưỡi hái, cắt phép của găng, xử trảm và cắm chân của
+đao. Nó so hai trường hợp với nhau (có chuỗi / không chuỗi, máu đầy / máu cạn, nhịp cuối /
+nhịp đầu) chứ không so lại con số trong bảng, nên tinh chỉnh số liệu thì vẫn xanh, làm hỏng
+cơ chế thì đỏ.
+
+## Xem hiệu ứng mà không cần browser
+
+```bash
+node tools/shot-skills.js whirl_slash blood_rend
+```
+
+```bash
+node tools/shot-skills.js --all
+```
+
+Hiệu ứng là thứ duy nhất trong engine **không** kiểm được bằng con số: "trông đơn điệu" chỉ
+đọc ra được khi xem sáu khung cạnh nhau. Tool nạp engine đúng như `check-maps.js`, dựng một
+sân cố định (bầy quái đặt tay, `w.tels` xoá sạch — loé trắng ngẫu nhiên thì hai lần chụp
+không so được với nhau), cast, rồi ghép các khung tại `p = 0.06 0.20 0.36 0.55 0.74 0.93`
+thành một PNG trong `tools/out/`. Đặt `SHOT_TAG=before` / `SHOT_TAG=after` để hai ảnh không
+ghi lên nhau khi so trước–sau. Khung nhìn từng chiêu khai ở bảng `VIEW` trong tool: chiêu
+đánh quanh người thì crop chặt, chiêu rơi từ trời thì phải chừa phần trên màn hình.
+
+```bash
+node tools/shot-skills.js wp:cung
+```
+
+Tiền tố `wp:` chụp một nhát vũ khí thay vì một chiêu. Khác hai chỗ, vì vũ khí không có `p`
+của riêng nó để bám vào: mốc chụp là *giây* trong cửa sổ đáng xem — cận chiến là đúng một
+nhát vung, vũ khí bắn thì từ lúc bật dây tới lúc mũi tên hết tầm — và bia được đặt đúng trên
+các làn của chính vũ khí đó (`shot.spread`), hai lớp sâu, HP bơm lên `1e6`. Bằng không thì
+một nan quạt đọc ra là một vệt trắng: phải có gì cho từng làn trúng mới thấy được mũi giữa
+mang đủ lực còn hai mũi biên thì nhạt hơn và đau ít hơn.

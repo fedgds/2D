@@ -173,6 +173,10 @@ if (typeof document !== 'undefined') {
     }
     scene = s;
     const playing = s === 'play';
+    // Vào trận thì luôn tắt đứng hình. Space là công tắc đứng hình lúc chơi, nhưng khi bảng
+    // menu đang che thì không có gì nói cho người chơi biết nó đang bật -- ESC vào tạm dừng,
+    // đổi skill, rồi tiếp tục là trả về một màn hình đóng băng không khác gì treo máy.
+    if (playing) { paused = false; stepOnce = false; }
     overlay.hidden = playing;
     for (const k in panels) panels[k].hidden = k !== s;
     hud.style.opacity = playing || s === 'pause' ? '1' : '0';
@@ -256,7 +260,7 @@ if (typeof document !== 'undefined') {
     const t = pickTile(WEAPON_THEMES[wp.id] || WEAPON_THEMES.kiem, String(i + 1),
                        wp.label, wp.desc, `Vũ khí ${i + 1}: ${wp.name}`);
     drawWeaponIcon(t.icon, wp);
-    t.b.title = `${wp.name}\n${wp.dmg} sát thương x ${wp.hits.length} nhịp · tầm ${Math.round(wp.range)}\nHồi ${wp.cd.toFixed(2)}s`;
+    t.b.title = `${wp.name}\n${weaponStat(wp)}\nHồi ${wp.cd.toFixed(2)}s`;
     t.b.onclick = () => { loadout.wp = wp; SFX.ui('click'); SFX.cast(wp.id, 0); paintPick(); };
     wpGrid.appendChild(t.b);
     return t;
@@ -330,7 +334,7 @@ if (typeof document !== 'undefined') {
     const key = document.createElement('kbd'); key.textContent = String(i + 1);
     const nm = document.createElement('s'); nm.textContent = wp.name;
     const md = document.createElement('em');
-    md.textContent = `${wp.dmg}×${wp.hits.length} · tầm ${Math.round(wp.range)} · ${wp.cd.toFixed(2)}s`;
+    md.textContent = `${weaponStat(wp)} · ${wp.cd.toFixed(2)}s`;
     row.append(key, nm, md);
     guideWeapons.appendChild(row);
   });
@@ -546,30 +550,53 @@ if (typeof document !== 'undefined') {
     }
     if (low === 'h') { toggleGuide(); ev.preventDefault(); }
   }
+  // Phím vừa đổi scene. Mọi keydown tiếp theo của *chính phím đó* bị nuốt cho tới khi nhả
+  // tay, vì auto-repeat không biết là scene đã đổi: giữ Space thêm một nhịp ở bảng tạm dừng
+  // thì nhịp đầu "tiếp tục" còn nhịp lặp thứ hai đã rơi vào scene 'play' -- nơi Space là
+  // công tắc đứng hình. Người chơi được trả về trận rồi bị đóng băng ngay tại đó. Cùng lỗi
+  // đó: giữ ESC làm màn hình nhảy qua lại giữa tạm dừng và trận, giữ số ở bảng chọn thì vừa
+  // vào trận đã phóng luôn một chiêu.
+  let eatKey = '';
   window.addEventListener('keydown', ev => {
     const k = ev.key, low = (k || '').toLowerCase();
+    if (eatKey && low === eatKey) { ev.preventDefault(); return; }
     if (low === 'm') { toggleSound(); return; }
-    if (scene !== 'play') { menuKey(ev, k, low); return; }
-    if (k === 'Escape') { SFX.ui('back'); setScene('pause'); ev.preventDefault(); return; }
+    const was = scene;
+    if (scene !== 'play') {
+      menuKey(ev, k, low);
+      if (scene !== was) eatKey = low;
+      return;
+    }
+    if (k === 'Escape') {
+      SFX.ui('back'); setScene('pause'); eatKey = low; ev.preventDefault(); return;
+    }
     const d = digitOf(ev, 3);
     if (d > 0) { fire(d); ev.preventDefault(); return; }
     // Shift is the dash. `repeat` is filtered because a held key fires forever, and the
     // only thing that would achieve is a stream of "blocked" clicks off the cooldown.
     if (k === 'Shift') { if (!ev.repeat) fire(DASH_SLOT); ev.preventDefault(); return; }
-    if (low === ' ' || k === ' ') { paused = !paused; ev.preventDefault(); return; }
+    // Công tắc bật/tắt thì bỏ auto-repeat: giữ phím một nhịp lẻ là để lại đúng trạng thái
+    // ngược với thứ vừa thấy, và với đứng hình thì trạng thái đó nhìn y như treo máy.
+    if (low === ' ' || k === ' ') { if (!ev.repeat) paused = !paused; ev.preventDefault(); return; }
     if (low === 'f') { stepOnce = true; return; }
-    if (low === 't') { slow = !slow; return; }
+    if (low === 't') { if (!ev.repeat) slow = !slow; return; }
     if (low === 'r') { for (let i = 0; i < 4; i++) spawnFoe(world, true); return; }
     // Telegraphs go with their casters: a pending mark whose owner has been deleted
     // outright (rather than killed) would otherwise still fire at nobody's order.
     if (low === 'c') { world.foes.length = 0; world.tels.length = 0; world.danger = 0; return; }
     if (low === 'x') { world.cds.fill(0); world.wcd = 0; world.dcd = 0; paint(); SFX.ui('click'); return; }
-    if (low === 'g') { world.god = !world.god; return; }
-    if (low === 'h') { toggleGuide(); return; }
+    if (low === 'g') { if (!ev.repeat) world.god = !world.god; return; }
+    if (low === 'h') { toggleGuide(); eatKey = low; return; }
     keys.add(low);
   });
-  window.addEventListener('keyup', ev => keys.delete(ev.key.toLowerCase()));
-  window.addEventListener('blur', () => keys.clear());
+  window.addEventListener('keyup', ev => {
+    const low = ev.key.toLowerCase();
+    if (low === eatKey) eatKey = '';
+    keys.delete(low);
+  });
+  // Mất focus thì không bao giờ thấy keyup nữa, nên phải xoá `eatKey` ở đây: bằng không
+  // phím đó bị nuốt vĩnh viễn -- alt-tab đúng lúc đổi scene là mất luôn một phím.
+  window.addEventListener('blur', () => { keys.clear(); eatKey = ''; });
 
   function frame(now) {
     let dt = (now - last) / 1000;
@@ -617,6 +644,8 @@ if (typeof document !== 'undefined') {
       '\ncảnh báo ' + world.tels.length +
       (world.danger > 0 ? '   << ĐANG ĐỨNG TRONG VÙNG (' + world.danger + ') >>' : '') +
       '\nvũ khí ' + world.wp.label + ' · hồi ' + world.wcd.toFixed(2) + 's' +
+      (world.momo > 0 ? '   << CHUỖI ' + world.momo.toFixed(2) + 's >>' : '') +
+      (world.heals > 0 ? '   hồi ' + world.heals : '') +
       '\nlướt · hồi ' + world.dcd.toFixed(2) + 's' +
       (world.hero.inv > 0 ? '   << BẤT TỬ ' + world.hero.inv.toFixed(2) + 's >>' : '') +
       '   né ' + world.dodges +

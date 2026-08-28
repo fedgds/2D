@@ -57,30 +57,107 @@ SKILLS.push({
   },
   hit(w, e) { if (crossed(e, 0.10)) hitCircle(w, e.x, e.y - 6, 44, 165, C.pale, false, 42); },
 });
+// Lốc Chém là *hai* nhát, nhát sau muộn hơn -- tiếng của nó đã nói vậy từ đầu
+// (`whirl_slash` trong sfx.js: "two blades, second one late") nhưng hình thì chỉ có một
+// vòng quay đều, nên nghe ra hai mà nhìn ra một. Hai vòng ở đây khác bán kính, khác độ
+// dẹt, khác mặt phẳng và lệch pha nửa vòng, nên chúng không chồng lại thành một dải duy
+// nhất. Bảng để ngoài hàm vì `under` và `mid` phải đọc *cùng* một quỹ đạo.
+const WHIRL = [
+  { t0: 0.00, t1: 0.62, turns: 1.10, base: 0,       r0: 15, r1: 30, sq: 0.66, dy: -6,
+    w: 2.6, tail: 2, hot: 'W' },
+  { t0: 0.30, t1: 1.00, turns: 1.34, base: Math.PI, r0: 20, r1: 39, sq: 0.46, dy: -10,
+    w: 3.8, tail: 5, hot: 'P' },
+];
+// eo() ở đây là cả nội dung của nhát chém: nhanh lúc mở, chậm dần lúc thu -- quay đều
+// thì thành cái vòng cổ xoay quanh người, đúng cái làm nó đơn điệu.
+function whirlAt(e, s, p) {
+  const q = c01((p - s.t0) / (s.t1 - s.t0)), k = eo(q);
+  return { q, on: p > s.t0, lead: e.ang + s.base + k * s.turns * TAU,
+           r: s.r0 + (s.r1 - s.r0) * k, liv: 1 - fpow(q, 3) * 0.96 };
+}
+// Một lưỡi sống cộng `tail` lưỡi đang nguội. Cái đuôi mới là thứ biến crescent đang xoay
+// thành lưỡi dao *đang đi tới đâu*.
+function bladeSweep(cx, cy, lead, r, sq, a, hot, tail, thick, seed) {
+  for (let k = tail; k >= 0; k--) {
+    const f = 1 - k / (tail + 1.15);
+    arc(cx, cy, r - k * 1.7, lead - k * 0.50, 1.55 - k * 0.10, thick - k * 0.34,
+        k === 0 ? hot : C.steel, a * f * f, sq, 1.5, 2.4);
+  }
+  arc(cx, cy, r - 1.5, lead + Math.PI - 0.25, 1.15, thick * 0.6, C.steel, a * 0.32,
+      sq, 1.5, 2.4);
+  const tx = cx + Math.cos(lead) * r, ty = cy + Math.sin(lead) * r * sq;
+  core(tx, ty, 4.4, WHITE, a);
+  line(tx, ty, cx + Math.cos(lead + 0.46) * (r + 12),
+       cy + Math.sin(lead + 0.46) * (r + 12) * sq, 1.3, WHITE, 0.80 * a, 1.5, 0.7);
+  sparks(tx, ty, 8, 0, 9, C.pale, 0.85 * a, seed, 1.0, 1, lead - 1.1, lead + 1.1, 7);
+}
 SKILLS.push({
   id: 'whirl_slash', name: 'Lốc Chém', mode: 'self', dur: 0.48, cd: 0.90, shake: 1.6,
   under(w, e, p) {
-    const h = w.hero, fd = fade(p, 0.32), lead = e.ang + p * TAU * 1.2;
-    for (let k = 0; k < 3; k++)                   // broken dust ring: a closed one is a donut
-      arc(h.x, h.y - 1, 28, lead - k * 1.9, 1.5, 2.4, C.steel, 0.26 * fd, 0.36);
-    puddle(h.x, h.y - 1, 26, 10, C.steel, 0.08 * fd, e.seed, 6);
+    const h = w.hero, fy = h.y - 1;
+    // Lấy đà: bụi bị *kéo vào* trước khi lưỡi thứ nhất tới. Không có nhịp này thì chiêu
+    // bắt đầu ở giữa chính nó.
+    const wind = 1 - c01(p / 0.24);
+    if (wind > 0) for (let k = 0; k < 5; k++) {
+      const a = e.ang + k / 5 * TAU + 0.4, r1 = 21 + 15 * wind;
+      const ix = h.x + Math.cos(a) * r1, iy = fy + Math.sin(a) * r1 * 0.42;
+      dashline(h.x + Math.cos(a) * 48, fy + Math.sin(a) * 48 * 0.42, ix, iy,
+               3, 1.2, C.steel, 0.30 * wind, 0.9);
+      chevron(ix, iy, a + Math.PI, 3.4, C.steel, 0.42 * wind, 1.0, 0.8);
+    }
+    puddle(h.x, fy, 24, 9, C.steel, 0.09 * fade(p, 0.30), e.seed, 6);
+    for (const s of WHIRL) {                        // vệt chân của từng vòng, đứt đoạn
+      const a = whirlAt(e, s, p);
+      if (!a.on) continue;
+      for (let k = 0; k < 2; k++)
+        arc(h.x, fy, a.r + 4 + k * 5, a.lead - 0.7 - k * 1.5, 1.5, 2.3, C.steel,
+            0.24 * a.liv, 0.40);
+      dashline(h.x + Math.cos(a.lead) * (a.r + 3), fy + Math.sin(a.lead) * (a.r + 3) * 0.42,
+               h.x + Math.cos(a.lead) * (a.r + 26), fy + Math.sin(a.lead) * (a.r + 26) * 0.42,
+               4, 1.4, C.steel, 0.30 * a.liv, 0.85);
+    }
+    // Sóng xung sau nhát thứ hai: vòng bụi *rời khỏi* người, để chiêu có chỗ kết.
+    const bl = c01((p - 0.56) / 0.44);
+    if (bl > 0) for (let k = 0; k < 3; k++)
+      arc(h.x, fy, 26 + 36 * eo(bl), k / 3 * TAU + e.ang, 1.7, 2.6 * (1 - bl) + 0.7,
+          C.pale, 0.44 * (1 - bl) * (1 - bl), 0.40);
   },
   mid(w, e, p) {
-    const h = w.hero, cx = h.x, cy = h.y - 7, fd = fade(p, 0.40);
-    // The crescent grows as the swing travels: a fixed-radius arc read as a collar
-    // around the hero instead of as a blade going somewhere.
-    const lead = e.ang + p * TAU * 1.2, r = 17 + 13 * eo(c01(p / 0.55));
-    for (let k = 0; k < 3; k++) {                 // one live edge plus two cooling ones
-      const a = (1.0 - k * 0.28) * fd;
-      arc(cx, cy, r + k * 3.0, lead - k * 0.62, 1.7 - k * 0.20,
-          3.4 - k * 0.70, k === 0 ? WHITE : C.steel, a, 0.62, 1.5, 2.4);
+    const h = w.hero;
+    for (const s of WHIRL) {
+      const a = whirlAt(e, s, p);
+      if (!a.on || a.liv <= 0.02) continue;
+      bladeSweep(h.x, h.y + s.dy, a.lead, a.r, s.sq, a.liv,
+                 s.hot === 'W' ? WHITE : C.pale, s.tail, s.w, e.seed + s.tail * 5);
     }
-    arc(cx, cy, r - 2, lead + Math.PI - 0.3, 1.25, 2.2, C.steel, 0.42 * fd, 0.62, 1.5, 2.4);
-    const tx = cx + Math.cos(lead) * r, ty = cy + Math.sin(lead) * r * 0.62;
-    core(tx, ty, 4.6, WHITE, 1.0 * fd);
-    line(tx, ty, cx + Math.cos(lead + 0.5) * (r + 11),
-         cy + Math.sin(lead + 0.5) * (r + 11) * 0.62, 1.3, WHITE, 0.75 * fd, 1.5, 0.7);
-    sparks(tx, ty, 9, 0, 10, C.pale, 0.85 * fd, e.seed + 2, 1.0, 1, 0, TAU, 6);
+    // Chỗ hai lưỡi giao nhau: một loé trắng ngắn, để nhịp thứ hai có điểm bắt đầu nhìn
+    // thấy được chứ không chỉ là thêm một vòng nữa.
+    const cl = 1 - c01(Math.abs(p - 0.30) / 0.10);
+    if (cl > 0) {
+      const cy = h.y - 8;
+      core(h.x, cy, 7 + 5 * (1 - cl), WHITE, 0.85 * cl * cl, 2.0);
+      glare(h.x, cy, 40, 20, C.pale, 0.45 * cl * cl);
+      star(h.x, cy, C.pale, 6, 6, 24, 1.8, 0.70 * cl, e.seed + 11);
+    }
+    // Điểm dừng: lưỡi thứ hai *đứng lại*, chứ không mờ dần thành hết. Bốn mũi bụi bay
+    // tiếp theo hướng cuối cùng là chỗ duy nhất nói được điều đó.
+    const st = 1 - c01(Math.abs(p - 0.90) / 0.12);
+    if (st > 0) {
+      const s = WHIRL[1], a = whirlAt(e, s, p), cy = h.y + s.dy;
+      arc(h.x, cy, a.r, a.lead, 0.9, 4.2, WHITE, 0.75 * st * st, s.sq, 1.4, 3.0);
+      for (let k = 0; k < 4; k++) {
+        const b = a.lead + (k - 1.5) * 0.30, rr = a.r + 8 + k * 3;
+        chevron(h.x + Math.cos(b) * rr, cy + Math.sin(b) * rr * s.sq, b, 4.2,
+                C.pale, 0.60 * st, 1.0, 0.6);
+      }
+    }
+  },
+  over(w, e, p) {
+    // Bụi bay trước mặt hero: hero được vẽ sau `mid`, nên đây là lớp duy nhất bán được
+    // cảm giác vòng xoáy đi *quanh* người chứ chỉ ở sau lưng.
+    const h = w.hero, fd = fade(p, 0.34);
+    sparks(h.x, h.y - 8, 12, 14, 34, C.pale, 0.55 * fd, e.seed + 3, 0.9, 0.5,
+           0, TAU, 6 * (1 - p));
   },
   hit(w, e) {
     const h = w.hero;
@@ -203,26 +280,108 @@ SKILLS.push({
     const h = w.hero;
     e.data.cx = h.x + Math.cos(e.ang) * 26;
     e.data.cy = h.y - 7 + Math.sin(e.ang) * 26 * 0.6;
+    // Ba vệt cào lần lượt hiện ra rồi một nhát ngược cắt qua cả ba. Trước đây đây là
+    // *một* crescent đứng yên rồi mờ đi -- không có gì xảy ra trong nửa giây đó, và đó
+    // đúng là chỗ chiêu này chán. Mỗi vệt có tuổi riêng, nên cái tên "xé" mới có nghĩa.
+    e.data.claw = [
+      { at: 0.00, r: 18, off: -0.32, sw: 1.55, w: 2.5 },
+      { at: 0.10, r: 24, off: 0.03, sw: 1.80, w: 3.2 },
+      { at: 0.19, r: 29, off: 0.38, sw: 1.50, w: 2.4 },
+      { at: 0.38, r: 31, off: 0.02, sw: 2.15, w: 4.0, cross: true },
+    ];
+    // Máu bắn: hướng và tốc độ riêng từng giọt, và có `g` nên nó *rơi* chứ không trôi
+    // đều ra ngoài như sparks().
+    const rng = mulberry32(e.seed + 5), dr = [];
+    for (let i = 0; i < 15; i++)
+      dr.push({ a: e.ang + rng.range(-0.95, 0.95), v: rng.range(34, 92),
+                at: rng.range(0.06, 0.44), g: rng.range(38, 96),
+                s: rng.range(0.9, 1.9), hot: rng() < 0.6 });
+    e.data.drops = dr;
   },
   under(w, e, p) {
-    const d = e.data, fd = fade(p, 0.35), g = pop(p, 0.2);
-    puddle(d.cx, d.cy + 7, 26 * g, 10 * g, C.blood, 0.26 * (0.5 + 0.5 * fd), e.seed, 6);
-    dashline(d.cx, d.cy + 8, d.cx + Math.cos(e.ang) * 40, d.cy + 8 + Math.sin(e.ang) * 20,
-             5, 1.6, C.blood, 0.30 * fd, 0.7);
+    const d = e.data, g = pop(p, 0.2);
+    // Vũng máu đọng lâu hơn phần còn lại: nó là dấu vết, không phải tia sáng. Alpha phải
+    // thấp -- #c0374a cộng sáng ở 0.3 đọng lại thành một hòn đá đỏ trên sàn.
+    puddle(d.cx, d.cy + 7, 29 * g, 11 * g, C.blood, 0.17 * (0.45 + 0.55 * fade(p, 0.62)),
+           e.seed, 8);
+    for (let i = 0; i < 3; i++) {                    // ba đường xé còn lại trên sàn
+      const cl = d.claw[i], age = c01((p - cl.at) / 0.62);
+      if (p <= cl.at) continue;
+      const a = e.ang + cl.off * 0.7, liv = 1 - age * 0.72;
+      dashline(d.cx - Math.cos(a) * cl.r * 0.9, d.cy + 8 - Math.sin(a) * cl.r * 0.55,
+               d.cx + Math.cos(a) * cl.r * 1.5, d.cy + 8 + Math.sin(a) * cl.r * 0.9,
+               5, 1.6, C.blood, 0.34 * liv, 0.55);
+    }
+    const cr = c01((p - 0.38) / 0.30);               // nhát ngược cào cả sàn
+    if (cr > 0)
+      cracks(d.cx, d.cy + 7, 6, 22 * eo(cr), C.blood, 0.30 * (1 - cr), e.seed + 3, 0.5, 1.1);
   },
   mid(w, e, p) {
-    const d = e.data, fd = fade(p, 0.28), sw = 1.5 + 0.5 * p;
-    for (let k = 0; k < 2; k++)
-      arc(d.cx, d.cy, 24 - k * 6, e.ang, sw, 3.2 - k * 1.4, k ? C.blush : C.blood,
-          (1.0 - k * 0.25) * fd, 0.72, 1.4, 2.6);
-    arc(d.cx, d.cy, 24, e.ang, sw * 0.55, 1.0, WHITE, 0.8 * fd, 0.72, 1.4, 3.0);
-    for (const s of [1, -1]) {
-      const b = e.ang + s * sw * 0.5;
-      const tx = d.cx + Math.cos(b) * 24, ty = d.cy + Math.sin(b) * 24 * 0.72;
-      sparks(tx, ty, 9, 0, 10, C.blush, 0.85 * fd, e.seed + s + 2, 1.1, 1,
-             b - 0.7, b + 0.7, 9 * (1 - p));
+    const d = e.data, fd = fade(p, 0.30);
+    // Sương máu chỉ dâng lên *sau khi* vết xé mở ra. Vẽ nó từ khung đầu thì chiêu bắt đầu
+    // bằng một đám sẫm tròn ngay chỗ sắp chém, và đám đó đọc ra là hòn đá.
+    const mist = c01((p - 0.14) / 0.46);
+    if (mist > 0)
+      cloud(d.cx, d.cy + 1, 8 + 8 * mist, C.blood, 0.12 * mist * fade(p, 0.44),
+            e.seed + 7, 6, 0.7);
+    for (let i = 0; i < d.claw.length; i++) {
+      const cl = d.claw[i];
+      if (p < cl.at) continue;
+      const age = c01((p - cl.at) / (cl.cross ? 0.44 : 0.38));
+      const liv = (1 - age * age) * fd, ang = e.ang + cl.off;
+      if (liv <= 0.01) continue;
+      // Bề rộng mở ra theo tuổi: vết xé *rộng thêm* sau khi móng đã đi qua. Màu sáng
+      // (C.blush) mang hình, C.blood chỉ làm quầng: ngược lại thì cả nhát chém là một
+      // vệt nâu sẫm trên sàn xanh sẫm và không đọc ra năng lượng.
+      const sw = cl.sw * (0.72 + 0.42 * eo(age)), rr = cl.r + 3.4 * eo(age);
+      arc(d.cx, d.cy, rr, ang, sw, cl.w, C.blood, liv * 0.80, 0.72, 1.4, 2.6);
+      arc(d.cx, d.cy, rr, ang, sw * 0.92, cl.w * 0.52, C.blush, liv, 0.72, 1.4, 2.6);
+      if (age < 0.62) {                              // lưỡi còn sống: một sợi trắng gắt
+        const hot = (1 - age / 0.62) * fd;
+        arc(d.cx, d.cy, rr, ang, sw * 0.5, 1.0, WHITE, 0.95 * hot, 0.72, 1.4, 3.0);
+        for (const s of [1, -1]) {
+          const b = ang + s * sw * 0.5;
+          sparks(d.cx + Math.cos(b) * rr, d.cy + Math.sin(b) * rr * 0.72, 7, 0, 9,
+                 C.blush, 0.85 * hot, e.seed + i * 3 + s + 2, 1.1, 1, b - 0.7, b + 0.7, 9);
+        }
+      }
+      if (cl.cross) {                                // nhát chốt: hai đường xé thẳng
+        // `arc` bị dẹt 0.72 nên một crescent quay ngang không đọc ra "vết cắt chéo" --
+        // hai đường thẳng qua tâm thì đọc ra ngay, và nó là chữ X mà cái tên hứa.
+        const k = 1 - c01(age / 0.40);
+        for (const s of [1, -1]) {
+          const b = e.ang + s * 0.92, L = (12 + 26 * eo(age)) * 1.0;
+          line(d.cx - Math.cos(b) * L, d.cy - Math.sin(b) * L * 0.72,
+               d.cx + Math.cos(b) * L, d.cy + Math.sin(b) * L * 0.72,
+               2.6 - 1.4 * age, C.blood, 0.85 * (1 - age), 1.4);
+          line(d.cx - Math.cos(b) * L * 0.9, d.cy - Math.sin(b) * L * 0.65,
+               d.cx + Math.cos(b) * L * 0.9, d.cy + Math.sin(b) * L * 0.65,
+               0.9, s > 0 ? WHITE : C.blush, 0.90 * k, 1.6);
+        }
+        core(d.cx, d.cy, 5 + 6 * (1 - k), WHITE, 0.95 * k * k, 2.0);
+        star(d.cx, d.cy, C.blush, 7, 3, 26 * (0.4 + 0.6 * eo(age)), 2.0, 0.75 * (1 - age),
+             e.seed + 9);
+      }
     }
-    core(d.cx, d.cy, 8, C.blood, 0.5 * fd, 1.8);
+    // Tâm vết xé: sáng dần theo số nhát đã đi qua chứ không sáng sẵn từ khung đầu.
+    const hrt = c01(p / 0.30);
+    core(d.cx, d.cy, 4 + 5 * hrt, C.blush, 0.34 * hrt * fd, 1.8);
+  },
+  over(w, e, p) {
+    // Giọt máu vẽ sau hero nên nó bay qua *trước mặt* người -- cùng lý do như bụi của
+    // Lốc Chém: ở lớp `mid` thì nó luôn bị chính hero che.
+    const d = e.data;
+    for (const q of d.drops) {
+      const t = p - q.at;
+      if (t <= 0) continue;
+      const liv = 1 - c01(t / (1.02 - q.at));
+      const x = d.cx + Math.cos(q.a) * q.v * t, y = d.cy + Math.sin(q.a) * q.v * t * 0.55
+                                                     + q.g * t * t;
+      const s = q.s * (0.55 + 0.45 * liv);
+      line(x, y, x - Math.cos(q.a) * q.v * 0.035, y - Math.sin(q.a) * q.v * 0.035 * 0.55,
+           s * 0.8, q.hot ? C.blush : C.blood, 0.55 * liv);
+      core(x, y, s, q.hot ? C.blush : C.blood, 0.95 * liv * liv, 1.5);
+    }
   },
   hit(w, e) {
     const d = e.data;
@@ -525,44 +684,113 @@ SKILLS.push({
   },
 });
 
+// Xoáy Cuồng Phong dựng bằng sáu tầng vòng dẹt xếp lên nhau: bán kính *nở theo độ cao* nên
+// thấy ra hình phễu, tốc độ quay *giảm* theo độ cao nên các tầng trượt lên nhau. Cột quay
+// đều như một khối gỗ thì đứng yên trong mắt người xem dù nó có quay nhanh cỡ nào.
+const GALE_LV = 6;
+const GALE_TOP = 46;                                 // chiều cao phễu khi đã dựng xong
+// Bán kính theo độ cao. Tuyến tính thì hai biên là hai đường thẳng và cái phễu đọc ra là
+// một cái ly; luỹ 1.5 giữ thân dưới gần như thẳng đứng rồi mới loe ở gần đỉnh, đúng dáng
+// một cột xoáy. Cả vòng, biên và mảnh vỡ đều đo bằng hàm này nên chúng không rời nhau.
+function galeR(t) { return 6 + 31 * fpow(t, 1.5); }
+function galeAxis(e, p, t) {                          // trục: một con sóng chạy dọc lên đỉnh
+  // Không phải lắc cả cột như cái chuông: pha đổi theo `t` nên thân cột uốn hình chữ S và
+  // sóng đó *chạy* lên. Hai đường biên nhờ vậy không còn là hai que thẳng.
+  return e.x + Math.sin(p * 7.4 + t * 3.0) * 5.2 * t;
+}
 SKILLS.push({
   id: 'gale_vortex', name: 'Xoáy Cuồng Phong', mode: 'point', dur: 1.20, cd: 5.20, shake: 1.4,
+  init(w, e) {
+    // Mỗi mảnh vỡ có pha, bán kính và tốc độ leo riêng, và nó *vòng lại* khi lên tới đỉnh
+    // (`% 1`), nên suốt đoạn giữa luôn có mảnh mới trồi lên: đó là thứ giữ cho một giây
+    // đứng tại chỗ không thành một giây nhìn cùng một khung.
+    const rng = mulberry32(e.seed + 11), db = [];
+    for (let i = 0; i < 15; i++)
+      db.push({ ph: rng.range(0, TAU), sp: rng.range(5.2, 9.4), rf: rng.range(0.34, 1.06),
+                y0: rng(), vy: rng.range(0.55, 1.40), s: rng.range(2.2, 4.6),
+                hot: rng() < 0.45 });
+    e.data.deb = db;
+  },
   under(w, e, p) {
-    const g = pop(p, 0.20), fd = fade(p, 0.60);
+    const g = pop(p, 0.18), bu = c01((p - 0.78) / 0.22);
+    const fd = fade(p, 0.62) * (1 - bu * 0.5);
+    // Vết mài trên sàn là xoắn ốc, không phải vòng tròn: gió xoáy thì bụi đi theo đường
+    // xoắn, còn một vòng kín đọc ra là cái bia ngắm.
+    spiral(e.x, e.y, 3, 44 * g, 12 * g, 0.68, C.sand, 0.26 * fd, 1.8, 0.40, -p * 3.1, 20);
     for (let k = 0; k < 3; k++)                      // broken, so it is a gust not a target
-      arc(e.x, e.y, 46 * g, k / 3 * TAU - p * 3.4, 1.35, 2.2, C.sand, 0.40 * fd, 0.40);
+      arc(e.x, e.y, 47 * g, k / 3 * TAU - p * 3.4, 1.30, 2.2, C.sand, 0.34 * fd, 0.40);
     for (let k = 0; k < 2; k++)                      // spent dust: cooler, lagging behind
-      arc(e.x, e.y, 33 * g, k * Math.PI - p * 2.2 + 0.9, 1.1, 1.8, C.smoke, 0.34 * fd, 0.40);
-    puddle(e.x, e.y, 30 * g, 13 * g, C.sand, 0.13 * fd, e.seed, 8);
-    for (let k = 0; k < 3; k++)                      // dust already thrown clear
-      dashline(e.x, e.y, e.x + Math.cos(k / 3 * TAU + p * 2) * 58,
-               e.y + Math.sin(k / 3 * TAU + p * 2) * 24, 5, 1.4, C.sand, 0.22 * fd, 0.8);
+      arc(e.x, e.y, 33 * g, k * Math.PI - p * 2.2 + 0.9, 1.1, 1.8, C.smoke, 0.30 * fd, 0.40);
+    puddle(e.x, e.y, 30 * g, 13 * g, C.sand, 0.12 * fd, e.seed, 8);
+    // Mở đòn: bụi bị *hút vào*. Cuối đòn đúng những nét đó bay ra, nên đầu và cuối chiêu
+    // không lẫn vào nhau -- bản cũ thổi ra từ khung đầu tới khung cuối.
+    const su = 1 - c01(p / 0.30);
+    if (su > 0)
+      for (let k = 0; k < 7; k++) {
+        const a = k / 7 * TAU + 0.4, r0 = 66 - 24 * (1 - su);
+        dashline(e.x + Math.cos(a) * r0, e.y + Math.sin(a) * r0 * 0.42,
+                 e.x + Math.cos(a) * 22, e.y + Math.sin(a) * 22 * 0.42,
+                 4, 1.5, C.sandp, 0.32 * su, 1.2, 0.5);
+        chevron(e.x + Math.cos(a) * 27, e.y + Math.sin(a) * 27 * 0.42, a + Math.PI,
+                3.4, C.sandp, 0.40 * su);
+      }
+    if (bu > 0) {                                    // chốt đòn: cả cột bung ra mặt sàn
+      const br = 28 + 54 * eo(bu), ba = (1 - bu) * (1 - bu);
+      for (let k = 0; k < 4; k++)
+        arc(e.x, e.y, br, k / 4 * TAU + 0.3, 1.22, 2.8 - 1.5 * bu, C.sandp, 0.60 * ba, 0.42);
+      for (let k = 0; k < 8; k++) {
+        const a = k / 8 * TAU + 0.2;
+        dashline(e.x + Math.cos(a) * 18, e.y + Math.sin(a) * 18 * 0.42,
+                 e.x + Math.cos(a) * (br + 18), e.y + Math.sin(a) * (br + 18) * 0.42,
+                 5, 1.5, C.sand, 0.34 * ba, 0.9, 0.5);
+      }
+    }
   },
   mid(w, e, p) {
-    const g = pop(p, 0.22), fd = fade(p, 0.58);
-    for (let k = 0; k < 4; k++) {                    // funnel: wide at the top, tight below
-      const t = k / 3, yy = e.y - 6 - 30 * t;
-      spiral(e.x, yy, 2, (10 + 26 * t) * g, 4 * g, 0.55, t > 0.5 ? C.smoke : C.sand,
-             (0.85 - t * 0.10) * fd, 2.0 - t * 0.30, 0.42, p * 6.5 + k * 0.8, 18);
+    const ri = pop(p, 0.26), bu = c01((p - 0.78) / 0.22);
+    const fd = (1 - bu * bu) * fade(p, 0.92), grow = 1 + 1.05 * eo(bu);
+    const top = GALE_TOP * ri;
+    for (let k = 0; k <= GALE_LV; k++) {
+      const t = k / GALE_LV, ax = galeAxis(e, p, t), yy = e.y + 1 - top * t;
+      const rr = galeR(t) * ri * grow;
+      const spin = p * (11.5 - 5.6 * t) + t * 1.5;
+      const col = t > 0.72 ? C.smoke : (t < 0.28 ? C.sandp : C.sand);
+      const a = (0.76 - t * 0.15) * fd;
+      arc(ax, yy, rr, spin, 1.45, 2.3 - t * 0.7, col, a, 0.40, 1.4, 2.2);
+      arc(ax, yy, rr, spin + Math.PI + 0.35, 1.10, 2.0 - t * 0.6, col, a * 0.60,
+          0.40, 1.4, 2.2);
     }
-    for (let k = 0; k < 2; k++) {                    // streaks winding up the outside
-      const ph = p * 6.0 + k * Math.PI, pts = [];
-      for (let s = 0; s <= 6; s++) {
-        const t = s / 6, rr = (34 - 24 * t) * g, aa = ph + t * 2.4;
-        pts.push([e.x + Math.cos(aa) * rr, e.y - 2 - 34 * t + Math.sin(aa) * rr * 0.35]);
+    // Hai đường biên. Chỉ có vòng thì mắt đọc ra "mấy cái vòng xếp lên nhau"; có biên nối
+    // các vòng lại thì nó thành một cái phễu -- đó là cả bản sắc của chiêu này. Lấy 10 mẫu
+    // chứ không phải 6 như tầng vòng: 6 mẫu trên một đường cong luỹ 1.5 là thấy được chỗ
+    // gấp khúc, và biên nhạt dần lên đỉnh nên nó loe ra rồi tan chứ không kết thúc đột ngột.
+    for (const s of [1, -1]) {
+      let ox = 0, oy = 0;
+      for (let k = 0; k <= 10; k++) {
+        const t = k / 10, rr = galeR(t) * ri * grow;
+        const x = galeAxis(e, p, t) + s * rr, y = e.y + 1 - top * t;
+        if (k) line(ox, oy, x, y, 1.7 - t, C.sandp, (0.44 - t * 0.30) * fd, 1.4);
+        ox = x; oy = y;
       }
-      for (let s = 0; s < 6; s++)
-        line(pts[s][0], pts[s][1], pts[s + 1][0], pts[s + 1][1], 1.6 - s * 0.13,
-             k ? C.sandp : C.sand, (0.60 - s * 0.06) * fd);
     }
-    beam(e.x, e.y + 1, -Math.PI / 2, 0, 40 * g, 5.0, 1.2, C.sandp, 0.40 * fd, 1.3, 1.5);
-    core(e.x, e.y - 4, 9 * g, C.sandp, 0.55 * fd, 1.8);
-    const rng = mulberry32(e.seed + 7);
-    for (let i = 0; i < 12; i++) {                   // debris riding the funnel
-      const a = rng.range(0, TAU) + p * 7, rr = rng.range(6, 34) * g;
-      const dx = e.x + Math.cos(a) * rr, dy = e.y - rng.range(0, 34) + Math.sin(a) * rr * 0.35;
-      chevron(dx, dy, a + Math.PI / 2, rng.range(2.5, 4.5), C.sandp, 0.55 * fd, 1.0);
+    beam(galeAxis(e, p, 0.5), e.y + 1, -Math.PI / 2, 0, top * 0.95, 5.4 * grow, 1.4,
+         C.sandp, 0.32 * fd, 1.3, 1.5);
+    core(galeAxis(e, p, 0.08), e.y - 4, 8.5 * ri * grow, C.sandp, 0.50 * fd, 1.8);
+    for (const q of e.data.deb) {                    // mảnh vỡ leo theo phễu rồi vòng lại
+      const t = (q.y0 + p * q.vy) % 1;
+      const rr = galeR(t) * q.rf * ri * grow, aa = q.ph + p * q.sp;
+      const ax = galeAxis(e, p, t);
+      const dx = ax + Math.cos(aa) * rr, dy = e.y + 1 - top * t + Math.sin(aa) * rr * 0.40;
+      const liv = (1 - fpow(Math.abs(t * 2 - 1), 3)) * fd;   // mờ ở chân và ở đỉnh
+      const col = q.hot ? C.sandp : C.sand;
+      const tg = aa + Math.PI / 2;
+      line(dx, dy, dx - Math.cos(tg) * q.s * 2.4, dy - Math.sin(tg) * q.s * 2.4 * 0.40,
+           1.2, col, 0.40 * liv);
+      chevron(dx, dy, tg, q.s, col, 0.70 * liv, 1.0);
     }
+    if (bu > 0)                                      // và mọi thứ bị ném ngang ra
+      sparks(e.x, e.y - 16, 16, 14, 62, C.sandp, 0.70 * (1 - bu), e.seed + 4, 1.2, 0.5,
+             0, TAU, 9);
   },
   hit(w, e) {
     const dt = (e.p - e.pt) * e.dur;
@@ -601,55 +829,129 @@ SKILLS.push({
   },
 });
 
+// Nhịp của Mưa Ma Thuật là thứ được soạn, không phải `0.14 + i * 0.082`: chín mũi cách đều
+// tuyệt đối là một cái đồng hồ tích tắc, và đó là lý do bản cũ nhìn đơn điệu dù mỗi mũi đều
+// có nổ riêng. Ba chùm ngắn, mỗi chùm chốt bằng một mũi nặng, rồi một khoảng lặng và mũi
+// nặng cuối rơi trễ hẳn -- người xem nghe ra được câu nhịp chứ không chỉ đếm.
+const RAIN_SEQ = [
+  { at: 0.22, cls: 2 }, { at: 0.28, cls: 2 }, { at: 0.36, cls: 1 },
+  { at: 0.46, cls: 0 },
+  { at: 0.56, cls: 2 }, { at: 0.61, cls: 1 }, { at: 0.68, cls: 2 },
+  { at: 0.76, cls: 1 },
+  { at: 0.90, cls: 0 },
+];
+const RAIN_FLY = 0.22;                               // mũi bay trong bao nhiêu phần chiêu
+// Ba hạng mũi. Bản cũ có `cls` nhưng nó chỉ đổi bề rộng đường bay, còn cú nổ thì giống hệt
+// nhau; ở đây hạng quyết định cả tầm ngắm, cỡ nổ, số tia, màu và thời gian tàn.
+const RAIN_CLS = [
+  { w: 3.2, len: 152, ret: 30, imp: 20, rays: 10, cd: 0.46, col: C.voidc, ring: 24 },
+  { w: 2.0, len: 134, ret: 21, imp: 13, rays: 8,  cd: 0.38, col: C.vio,   ring: 16 },
+  { w: 1.2, len: 118, ret: 15, imp: 8,  rays: 6,  cd: 0.28, col: C.lilac, ring: 11 },
+];
 SKILLS.push({
   id: 'arcane_rain', name: 'Mưa Ma Thuật', mode: 'point', dur: 1.45, cd: 7.20, shake: 1.2,
   init(w, e) {
     const rng = mulberry32(e.seed), ms = [];
-    for (let i = 0; i < 9; i++) {
-      const a = rng.range(0, TAU), r = 42 * Math.sqrt(rng());
-      ms.push({ x: e.x + Math.cos(a) * r, y: e.y + Math.sin(a) * r * 0.55,
-                at: 0.14 + i * 0.082, sx: rng.range(-30, 30), cls: i % 3 });
+    for (const q of RAIN_SEQ) {
+      const a = rng.range(0, TAU);
+      // Mũi nặng rơi gần tâm, mũi nhẹ tản ra ngoài: rìa lấm tấm, tâm thì nổ lớn.
+      const r = (q.cls === 0 ? 22 : 46) * Math.sqrt(rng());
+      const at = q.at + rng.range(-0.014, 0.014);
+      // Mũi rơi sát cuối chiêu phải nổ *gọn hơn*: fx bị xoá ở p = 1, nên cú nổ dài bằng
+      // cú nổ giữa đòn sẽ bị cắt ngang giữa lúc đang sáng nhất. Đây là lý do không dùng
+      // một fade chung cuối chiêu -- fade chung dìm luôn cả mũi chốt.
+      ms.push({ x: e.x + Math.cos(a) * r, y: e.y + Math.sin(a) * r * 0.55, cls: q.cls, at,
+                cd: Math.min(RAIN_CLS[q.cls].cd, 1.04 - at),
+                sx: rng.range(-34, 34) * (q.cls === 0 ? 0.35 : 1) });
     }
     e.data.ms = ms;
   },
   under(w, e, p) {
+    // Dấu vùng: bãi rơi hiện ra *trước* mũi đầu tiên rồi tắt khi mưa đã bắt đầu.
+    const op = pop(p, 0.10) * (1 - c01((p - 0.22) / 0.22));
+    if (op > 0) {
+      ring(e.x, e.y, 46, 1.6, C.vio, 0.32 * op, 0.55);
+      dial(e.x, e.y, 42, 12, C.viop, 0.26 * op, 0.55, 3, 1.0);
+    }
     for (const m of e.data.ms) {
-      const age = c01((p - m.at) / 0.42);
       if (p <= m.at) continue;
-      const liv = 1 - age;
-      ring(m.x, m.y, 15 * (1.0 + 0.35 * age), 3.0 * liv + 0.8, C.vio,
-           (0.30 + 0.55 * liv) * fade(p, 0.72), 0.44);
-      if (age < 0.5) puddle(m.x, m.y, 13, 6, C.vio, 0.18 * (1 - age * 2), e.seed + m.cls, 5);
+      const cs = RAIN_CLS[m.cls], age = c01((p - m.at) / (m.cd + 0.06)), liv = 1 - age;
+      ring(m.x, m.y, cs.ring * (1.0 + 0.35 * age), 3.0 * liv + 0.8, C.vio,
+           (0.26 + 0.52 * liv) * fade(p, 0.94), 0.44);
+      if (age < 0.5)
+        puddle(m.x, m.y, cs.ring * 0.85, cs.ring * 0.40, C.vio, 0.15 * (1 - age * 2),
+               e.seed + m.cls, 5);
+      if (m.cls === 0) {                               // mũi nặng cào cả sàn
+        const sh = eo(age);
+        for (let k = 0; k < 3; k++)
+          arc(m.x, m.y, 16 + 42 * sh, k / 3 * TAU + 0.4, 1.35, 2.4 - 1.4 * age, C.viop,
+              0.55 * liv * liv, 0.44);
+        cracks(m.x, m.y, 7, 24 * sh, C.vio, 0.32 * liv, e.seed + 11, 0.5, 1.1);
+      }
     }
   },
   mid(w, e, p) {
-    const fd = fade(p, 0.72);
+    const fd = fade(p, 0.94);
+    // Nhịp một: một dấu phép mở ra trên không. Bản cũ vào đề bằng chính mũi thứ nhất nên
+    // chiêu không có mở đầu -- nó chỉ có chín lần giống nhau rồi hết.
+    const sg = pop(p, 0.14) * (1 - c01((p - 0.26) / 0.20));
+    if (sg > 0) {
+      const sy = e.y - 62, sr = 26 * (0.55 + 0.45 * sg);
+      ring(e.x, sy, sr, 1.8, C.vio, 0.60 * sg, 0.86);
+      dial(e.x, sy, sr - 4, 10, C.viop, 0.45 * sg, 0.86, 2, 1.0, 2, 4);
+      spiral(e.x, sy, 2, sr - 6, 4, 0.75, C.lilac, 0.45 * sg, 1.6, 0.86, p * 5.2, 18);
+      for (let k = 0; k < 3; k++)
+        arc(e.x, sy, sr + 5, k / 3 * TAU - p * 4.2, 1.1, 1.6, C.viop, 0.40 * sg, 0.86);
+      core(e.x, sy, 7, C.viop, 0.70 * sg, 1.8);
+      star(e.x, sy, C.lilac, 6, 4, 22, 1.6, 0.40 * sg, e.seed + 2);
+    }
     for (const m of e.data.ms) {
-      if (p < m.at) {                                  // telegraph + the bolt in flight
-        const fall = c01((p - (m.at - 0.34)) / 0.34);
+      const cs = RAIN_CLS[m.cls];
+      if (p < m.at) {                                  // telegraph + mũi đang bay
+        const fall = c01((p - (m.at - RAIN_FLY)) / RAIN_FLY);
         if (fall <= 0) continue;
-        reticle(m.x, m.y, 17, C.vio, 0.75 * fall, 0.42, 8, 1.0);
-        const wid = [2.5, 1.8, 1.2][m.cls], br = [1.0, 0.72, 0.46][m.cls];
-        const col = m.cls === 2 ? C.vio : C.viop;
-        const sx = m.x + m.sx * (1 - fall), sy = m.y - 130 * (1 - fall);
-        const hx = m.x + m.sx * (1 - fall) * 0.4, hy = m.y - 34 * (1 - fall);
-        line(sx, sy, hx, hy, wid * 1.9, col, 0.28 * br);
-        line(sx, sy, hx, hy, wid * 0.55, C.viop, 0.85 * br);
-        dashline(sx, sy, sx - m.sx * 0.2, sy - 26, 4, wid * 0.6, col, 0.35 * br, 0.9);
-        core(hx, hy, wid * 1.6, C.viop, 1.0 * br, 1.8);
-      } else {                                         // impact, ageing away
-        const age = c01((p - m.at) / 0.40), liv = (1 - age) * fd;
+        // Vòng ngắm *thu lại* khi mũi tới gần: bán kính chính là cái đồng hồ đếm ngược.
+        reticle(m.x, m.y, cs.ret * (1.7 - 0.7 * fall), C.vio, 0.28 + 0.50 * fall,
+                0.42, 8, 1.0);
+        const br = 0.55 + 0.45 * fall;
+        const sx = m.x + m.sx * (1 - fall), sy = m.y - cs.len * (1 - fall);
+        const hx = m.x + m.sx * (1 - fall) * 0.34, hy = m.y - cs.len * 0.26 * (1 - fall);
+        line(sx, sy, hx, hy, cs.w * 2.0, cs.col, 0.24 * br);
+        line(sx, sy, hx, hy, cs.w * 0.9, C.viop, 0.55 * br);
+        // Mũi giáo: đoạn cuối trắng gắt, ngắn, cộng hai cạnh sáng tách ra hai bên. Một
+        // đường thẳng đều màu thì mũi nặng và mũi nhẹ trông y như nhau khi đang bay.
+        const ex = hx - (hx - sx) * 0.22, ey = hy - (hy - sy) * 0.22;
+        line(ex, ey, hx, hy, cs.w * 0.45, WHITE, 0.90 * br, 1.8);
+        const nx = hy - sy, ny = sx - hx, nl = Math.hypot(nx, ny) || 1;
+        for (const s of [1, -1])
+          line(ex + nx / nl * cs.w * s, ey + ny / nl * cs.w * s, hx, hy, 0.9, cs.col,
+               0.60 * br, 1.6);
+        dashline(sx, sy, sx - m.sx * 0.18, sy - 30, 4, cs.w * 0.6, cs.col, 0.30 * br, 0.9);
+        core(hx, hy, cs.w * 1.7, C.viop, br, 1.8);
+        core(hx, hy, cs.w * 0.7, WHITE, br);
+      } else {                                         // nổ, rồi tàn
+        const age = c01((p - m.at) / m.cd), liv = (1 - age) * fd;
         if (age > 0.55) {
-          cloud(m.x, m.y - 4, 12, C.vio, 0.16 * liv, e.seed + m.cls, 5, 0.7);
-          core(m.x, m.y - 2, 5, C.vio, 0.35 * liv, 1.8);
+          cloud(m.x, m.y - 4, cs.imp * 0.7, C.vio, 0.15 * liv, e.seed + m.cls, 5, 0.7);
+          core(m.x, m.y - 2, 5, C.vio, 0.32 * liv, 1.8);
         } else {
-          for (let q = 0; q < 5; q++)
-            beam(m.x, m.y, q / 5 * TAU + 0.5, 1, 12 * (0.5 + eo(age)), 2.4, 0.5,
+          const k = eo(c01(age / 0.55));
+          for (let q = 0; q < cs.rays; q++)
+            beam(m.x, m.y, q / cs.rays * TAU + 0.5 + m.cls, 1, cs.imp * (0.5 + k), 2.4, 0.5,
                  C.viop, 0.85 * liv, 1.3, 1.2);
-          star(m.x, m.y, C.vio, 8, 2, 18 * (0.4 + 0.6 * eo(age)), 2.0, liv, e.seed + m.cls);
-          core(m.x, m.y, 6 * (1 - age * 0.4), C.viop, 1.0 * liv, 2.2);
-          core(m.x, m.y, 2.4, WHITE, 1.2 * liv);
+          star(m.x, m.y, cs.col, cs.rays, 2, cs.imp * 1.4 * (0.4 + 0.6 * k), 2.0, liv,
+               e.seed + m.cls);
+          core(m.x, m.y, cs.w * 2.2 * (1 - age * 0.4), C.viop, liv, 2.2);
+          core(m.x, m.y, cs.w * 0.9, WHITE, 1.2 * liv);
+          if (m.cls === 0) {                           // mũi nặng bật lên một cột sáng
+            beam(m.x, m.y + 1, -Math.PI / 2, 0, 30 * k, 5.0 * (1 - age), 1.0, C.viop,
+                 0.60 * liv, 1.3, 1.6);
+            glare(m.x, m.y - 6, 34, 12, C.lilac, 0.30 * liv * (1 - age));
+          }
         }
+        // Tàn dư *dâng lên*: sau cú nổ thì bụi phép bay ngược lên trời, không rơi xuống.
+        sparks(m.x, m.y - 3, m.cls === 0 ? 10 : 5, 3, cs.imp + 12, C.lilac, 0.55 * liv,
+               e.seed + m.cls * 5 + 3, 1.0, 0.65, Math.PI * 1.15, Math.PI * 1.85, 5);
       }
     }
   },

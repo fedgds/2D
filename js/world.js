@@ -84,6 +84,11 @@ function newWorld(seed, loadout) {
     wp: (typeof lo.wp === 'string' ? WEAPON_BY_ID[lo.wp] : lo.wp) || WEAPONS[0],
     slots: (lo.slots && lo.slots.length === 3 ? lo.slots.slice() : [0, 1, 2]),
     wcd: 0, dcd: 0, sw: null,
+    // Weapon state that outlives one swing. `momo` is the sword's open window: it is opened
+    // by landing a finisher and spent by the *next* click, so it cannot live on the fx entry
+    // -- that entry is gone before the swing it pays for is even asked for. `heals` is a run
+    // total like `dmg`, and it is the only place the scythe's harvest shows up as a number.
+    momo: 0, heals: 0,
   };
   snapCam(w);
   w.aim.x = w.hero.x + 60; w.aim.y = w.hero.y - 20;
@@ -125,6 +130,23 @@ function hurt(w, f, amount, col, crit, kx, ky) {
   else SFX.hit(amount, crit, pan);
 }
 
+// The one place HP goes back up. It uses the same floating number as damage does, in green
+// and over the hero, because a heal you cannot see is a heal the player will not build
+// around -- and the 3x5 font has digits but no letters, so the colour has to carry the
+// meaning on its own. Returns what was actually restored, which is 0 at full HP: a caller
+// that wants to gate on "did this do anything" should read the return, not the argument.
+const HEAL_C = hexc('#7ef2a0');
+function healHero(w, amount) {
+  const h = w.hero;
+  amount = Math.min(Math.round(amount), Math.round(h.maxhp - h.hp));
+  if (amount <= 0) return 0;
+  h.hp += amount; w.heals += amount;
+  const s = String(amount);
+  w.nums.push({ s, x: Math.round(h.x - textW(s) / 2), y: Math.round(h.y - h.h - 6),
+                col: HEAL_C, t: 0, life: 0.8 });
+  return amount;
+}
+
 function foesIn(w, x, y, r) {
   const out = [];
   for (const f of w.foes) {
@@ -163,7 +185,13 @@ function hitLine(w, x0, y0, x1, y1, thick, amount, col, crit, kb) {
 // forgiving than the crescent looks -- a swing that visibly passes through something has
 // to hurt it. Angles use the unsquashed frame (dy / SWING_SQ) so a hit sideways and a hit
 // downwards need the same aim, matching how `arc()` decides which pixels it lights.
-function hitCone(w, x, y, ang, range, arc_, amount, col, crit, kb) {
+//
+// `opt` carries the riders a weapon's identity needs and a skill never does: `amp(f)` adds
+// per-target damage the cone itself cannot know (the saber reads how wounded the target
+// already is) and `onHit(f)` runs a side effect that is not damage at all (the gauntlet
+// snuffs a telegraph). Both are optional and both are called once per foe struck.
+function hitCone(w, x, y, ang, range, arc_, amount, col, crit, kb, opt) {
+  const amp = opt && opt.amp, onHit = opt && opt.onHit;
   let n = 0;
   for (const f of w.foes) {
     if (f.dying) continue;
@@ -178,7 +206,9 @@ function hitCone(w, x, y, ang, range, arc_, amount, col, crit, kb) {
       if (da > arc_ + Math.atan2(f.w * 0.5, Math.max(d, 1))) continue;
     }
     const a = Math.atan2(midY(f) - y, f.x - x);
-    hurt(w, f, amount, col, crit, Math.cos(a) * (kb || 0), Math.sin(a) * (kb || 0) * 0.5);
+    hurt(w, f, amount + (amp ? amp(f) : 0), col, crit,
+         Math.cos(a) * (kb || 0), Math.sin(a) * (kb || 0) * 0.5);
+    if (onHit) onHit(f);
     n++;
   }
   return n;
@@ -208,6 +238,13 @@ function step(w, dt, inp) {
   const h = w.hero;
   let moved = 0;
   if (inp) { w.aim.x = inp.ax; w.aim.y = inp.ay; }
+  // Which weapon owns the hero this frame, resolved *before* he moves. A weapon that plants
+  // him has to plant him on the very frame the swing starts, and `swing()` pushed that entry
+  // before this step ran -- `w.sw` further down is only refreshed after the fx are advanced,
+  // which is one frame too late to hold the legs still.
+  let live = null;
+  for (const e of w.fxs) if (e.wp) live = e;
+  const plant = live && live.wp.plant !== undefined ? live.wp.plant : 1;
   if (h.dsh > 0) {
     // A dash owns the hero while it runs: WASD is read but not obeyed, and the clamp is
     // the same one walking uses, so a dash into the wall stops at the wall instead of
@@ -224,8 +261,8 @@ function step(w, dt, inp) {
     if (l > 0) {
       dx /= l; dy /= l;
       const px = h.x, py = h.y;
-      h.x = clamp(h.x + dx * 56 * dt, BOUND.x0, BOUND.x1);
-      h.y = clamp(h.y + dy * 42 * dt, BOUND.y0, BOUND.y1);
+      h.x = clamp(h.x + dx * 56 * plant * dt, BOUND.x0, BOUND.x1);
+      h.y = clamp(h.y + dy * 42 * plant * dt, BOUND.y0, BOUND.y1);
       moved = Math.hypot(h.x - px, h.y - py);
     }
   }
@@ -245,6 +282,9 @@ function step(w, dt, inp) {
   for (let i = 0; i < 16; i++) if (w.cds[i] > 0) w.cds[i] = Math.max(0, w.cds[i] - dt);
   if (w.wcd > 0) w.wcd = Math.max(0, w.wcd - dt);
   if (w.dcd > 0) w.dcd = Math.max(0, w.dcd - dt);
+  // The sword's window runs on wall time and not on swings, so hesitating is what closes
+  // it -- which is the entire question the weapon asks.
+  if (w.momo > 0) w.momo = Math.max(0, w.momo - dt);
 
   for (const e of w.fxs) {
     e.pt = e.p; e.t += dt; e.p = c01(e.t / e.dur);
@@ -353,7 +393,10 @@ function stepFoe(w, f, dt) {
   // than walking around it and the dodge would be a trap.
   if (!w.god && f.frozen <= 0 && h.inv <= 0) {
     if (Math.hypot(f.x - h.x, (f.y - h.y) * 1.5) < 9) {
-      h.hp = Math.max(0, h.hp - 22 * dt);
+      // The saber's guard covers the drain too. It plants the hero in the middle of whatever
+      // he swung at, so mitigating only the telegraphed hits would make the trade a lie.
+      const g = w.sw && w.sw.wp.guard ? w.sw.wp.guard : 1;
+      h.hp = Math.max(0, h.hp - 22 * g * dt);
       h.flash = Math.min(0.6, h.flash + dt * 3);
       SFX.hurt();
     }
