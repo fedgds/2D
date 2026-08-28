@@ -168,6 +168,15 @@ function heroFrame(h) {
   return h.mv > 0 ? a.walk[Math.floor(h.ph) & 3] : a.idle[Math.floor(h.it * 1.7) & 1];
 }
 function foeFrame(f) {
-  const a = ANIM[f.kind], n = f.mv > 0.4 ? a.walk : a.idle;
+  const a = ANIM[f.kind];
+  // Bosses are the only things with authored cast poses, and they override locomotion outright:
+  // wind-up while the clock is in its first half, gather for the rest of it, and then the
+  // release, which is held by `f.rel` past the frame the hit lands. A monster gets none of
+  // this -- it glows from inside for 0.8 s and that is enough -- so `a.cast` is the whole test.
+  if (a.cast) {
+    if (f.chg > 0) return a.cast[f.chg < 0.45 ? 0 : 1];
+    if (f.rel > 0) return a.cast[2];
+  }
+  const n = f.mv > 0.4 ? a.walk : a.idle;
   return n[Math.floor(f.ph) % n.length];
 }

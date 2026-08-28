@@ -7,6 +7,12 @@
 //    because an 11px number on a 14px sprite deletes the sprite.
 // ===========================================================================
 const BAR_LO = hexc('#c0374a'), BAR_HI = hexc('#5ac26a'), BAR_BG = hexc('#14141f');
+// A boss bar is wider than the boss, framed, and on from the first frame. A normal monster's
+// bar appears only once it is hurt, which is right for something that dies in two hits; a
+// minute-long fight needs a number you can watch, and one exactly as wide as a 21 px sprite
+// cannot show the last 3% of 1500 HP.
+const BAR_BOSS = hexc('#ffd98a');
+const BOSS_BAR_W = 44;
 
 function drawFoe(f) {
   const fr = foeFrame(f);
@@ -20,7 +26,21 @@ function drawFoe(f) {
     flash = Math.max(flash, (0.10 + 0.30 * f.chg) * (0.65 + 0.35 * Math.sin(f.chg * 26)));
   blit(fr.g, Math.round(f.x - (f.w >> 1)), Math.round(f.y - f.h) + fr.dy,
        flash, f.flip, alpha, dim);
-  if (!f.dying && f.hp < f.maxhp) {
+  if (f.dying) return;
+  if (f.boss) {
+    const bw = BOSS_BAR_W, x0 = Math.round(f.x - (bw >> 1)), y0 = Math.round(f.y - f.h - 5);
+    const n = Math.round(bw * f.hp / f.maxhp);
+    // Two rows plus a gold frame: at this width one row reads as a scratch on the floor, and
+    // the frame is what says "this is the fight" rather than "this one has taken a hit".
+    for (let i = -1; i <= bw; i++)
+      for (let y = -1; y <= 2; y++) {
+        const edge = i < 0 || i === bw || y < 0 || y === 2;
+        if (edge) { setPix(x0 + i, y0 + y, BAR_BOSS, 0.55); continue; }
+        setPix(x0 + i, y0 + y, i < n ? (f.hp > f.maxhp * 0.45 ? BAR_HI : BAR_LO) : BAR_BG, 0.92);
+      }
+    return;
+  }
+  if (f.hp < f.maxhp) {
     const bw = f.w, x0 = Math.round(f.x - (bw >> 1)), y0 = Math.round(f.y - f.h - 3);
     const n = Math.round(bw * f.hp / f.maxhp);
     for (let i = 0; i < bw; i++)

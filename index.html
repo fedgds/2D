@@ -297,6 +297,7 @@
             <p class="glist">
               <b>Space</b> đứng hình · <b>F</b> tiến 1 khung · <b>T</b> slow-mo 0.22x<br>
               <b>R</b> bù quái · <b>C</b> xoá quái · <b>G</b> cho quái gây damage<br>
+              <b>B</b> gọi boss ngay (khỏi phải chờ đủ 40 kill)<br>
               <b>X</b> xoá sạch hồi chiêu (xem liên tiếp các skill nặng)
             </p>
             <div class="gsec">SÂN ĐẤU</div>
@@ -331,7 +332,15 @@
           <div>
             <div class="gsec">5 VŨ KHÍ · ĐÁNH THƯỜNG</div>
             <div class="gskills" id="guideWeapons" style="grid-template-columns:minmax(0,1fr)"></div>
-            <div class="gsec">6 QUÁI VẬT · CHIÊU THỨC</div>
+            <div class="gsec">6 QUÁI VẬT + 3 BOSS · CHIÊU THỨC</div>
+            <p class="glist" style="margin:0 0 6px">
+              Đủ <b>40 kill</b> thì một boss đi vào từ ngoài màn hình, rồi mỗi 40 kill lại một
+              con. Boss to hơn quái thường, có <b>khung tung chiêu riêng</b> (gồng → dồn → phát)
+              và <b>4 chiêu</b>, chọn ngẫu nhiên trong những chiêu còn với tới — chứ không phải
+              cứ mở màn bằng chiêu xa nhất. Dưới <b>45% máu</b> nó chỉ nghỉ tay nhanh hơn, không
+              đánh mạnh hơn. Đóng băng hay hất được boss thì chiêu đang gồng <b>hỏng</b> luôn,
+              y như quái thường.
+            </p>
             <div class="gskills" id="guideFoes" style="grid-template-columns:minmax(0,1fr)"></div>
             <div class="gsec">16 SKILL</div>
             <div class="gskills" id="guideSkills"></div>
@@ -367,6 +376,8 @@
 <script src="js/skills.js"></script>
 <script src="js/dash.js"></script>
 <script src="js/foe-abil.js"></script>
+<script src="js/boss.js"></script>
+<script src="js/boss-abil.js"></script>
 <script src="js/lab.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/shell.js"></script>

@@ -19,6 +19,10 @@
 // ===========================================================================
 const GSQ = 0.50;                    // ground-ellipse squash, shared by the art and the hit test
 const HERO_R = 4.0;                  // the hero's hurt radius in that unsquashed frame
+// How long a boss holds its release pose after the hit lands. A monster's wind-up ends the
+// instant the floor goes off, which is right for 0.8 s of glow; a 1.3 s authored slam that
+// disappears on the frame of impact reads as the boss teleporting back to its idle.
+const REL_HOLD = 0.42;
 // One warning colour for every monster, on purpose: the tint inside the shape carries the
 // flavour, the red edge carries the meaning. Two abilities that both mean "leave" must not
 // need two lessons.
@@ -80,6 +84,11 @@ function heroLocal(w, e) {
 }
 function heroIn(w, e) {
   const A = e.ab, l = heroLocal(w, e);
+  // The nine boss shapes own both halves of their own answer -- the marked region while the
+  // clock runs, the moving hitbox afterwards -- because for a sweep or a wave those are not
+  // the same region. Everything below this line is 6b's original three.
+  const S = BOSS_SHAPE[A.shape];
+  if (S) return S.hit(w, e, l);
   if (A.shape === 'line') {
     const px = Math.cos(e.ang) * A.len, py = Math.sin(e.ang) * A.len;
     const t = clamp((l.x * px + l.y * py) / Math.max(px * px + py * py, 1e-6), 0, 1);
@@ -135,6 +144,9 @@ function tryCast(w, f) {
   if (!list || !list.length) return false;
   const h = w.hero, oy = f.y - 1;
   const d = Math.hypot(h.x - f.x, ((h.y - 1) - oy) / GSQ);
+  // A boss picks at random among the moves that can reach; see 6c for why first-match down a
+  // four-move list collapses to "always open with the longest reach".
+  if (KIND[f.kind].boss) return bossCast(w, f, d);
   for (const key of list) {                 // listed longest reach first
     const A = FOE_ABIL[key];
     if (!A || d > A.range || d < (A.min || 0)) continue;
@@ -153,6 +165,10 @@ function startCast(w, f, key) {
   } else if (A.aim === 'dir') {
     e.ang = Math.atan2(((h.y - 1) - oy) / GSQ, h.x - ox);
   }
+  // A boss shape may need state that only exists once the cast has a seed and a centre: which
+  // way the blade turns, where six meteors will land, the hero's footprints so far.
+  const S = BOSS_SHAPE[A.shape];
+  if (S && S.init) S.init(w, e);
   w.tels.push(e);
   f.tel = e; f.chg = 0.001;
   // The recharge starts now, not when the cast lands, so `cd` reads as "how often" rather
@@ -174,11 +190,16 @@ function stepTel(w, e, dt, i) {
     return;
   }
   e.pt = e.p; e.t += dt; e.p = c01(e.t / e.dur);
+  const S = BOSS_SHAPE[A.shape];
+  if (S && S.step) S.step(w, e, dt);
   const pan = clamp((e.x - w.cam.x - W * 0.5) / (W * 0.5), -1, 1);
   if (!e.tick && e.t >= A.tell - 0.20) { e.tick = true; SFX.tick(pan); }
   if (!e.fired && e.t >= A.tell) {
     e.fired = true;
     if (o && o.tel === e) { o.tel = null; o.chg = 0; }
+    // The release pose outlives the hit, which is the whole reason bosses read at a minute's
+    // length: the slam is still on screen while the floor it caused is going off.
+    if (o) o.rel = REL_HOLD;
     w.shake = Math.max(w.shake, A.shake || 0);
     SFX.boom(A.boomv || A.shape, pan);
     // The bomber goes with its own blast. Set straight to dying rather than routed through
@@ -186,12 +207,19 @@ function stepTel(w, e, dt, i) {
     if (A.suicide && o && !o.dying) { o.hp = 0; o.dying = 0.001; SFX.die(pan); }
   }
   if (e.fired) {
-    // Most moves land once; a lingering pool keeps asking. `ticked` is an index rather
-    // than a timer so a long frame can never swallow a tick.
-    const ticks = A.ticks || [0];
-    while (e.ticked < ticks.length && e.t >= A.tell + ticks[e.ticked]) {
-      e.ticked++;
+    // Five of the boss moves hurt on *contact* rather than on beats: a wave front you could
+    // walk through between two `ticks[]` entries is a lie about the picture. Each of those
+    // keeps its own ledger inside `hit`, so one front collects a given hero exactly once.
+    if (A.sample) {
       if (heroIn(w, e)) hitHero(w, A.dmg, A.col);
+    } else {
+      // Most moves land once; a lingering pool keeps asking. `ticked` is an index rather
+      // than a timer so a long frame can never swallow a tick.
+      const ticks = A.ticks || [0];
+      while (e.ticked < ticks.length && e.t >= A.tell + ticks[e.ticked]) {
+        e.ticked++;
+        if (heroIn(w, e)) hitHero(w, A.dmg, A.col);
+      }
     }
   } else if (heroIn(w, e)) w.danger++;
   if (e.t >= e.dur) {
@@ -208,6 +236,8 @@ function drawTellUnder(w, e) {
   const urg = k > 0.78 ? (k - 0.78) / 0.22 : 0;      // the last beat
   const fl = 0.55 + 0.45 * Math.sin(k * 34) * urg;   // flicker, and only at the end
   const eg = 0.5 + 0.5 * urg;
+  const S = BOSS_SHAPE[A.shape];
+  if (S) { S.under(w, e, k, urg, fl, eg); return; }
   if (A.shape === 'line') {
     const t2 = telEnd(e), sa = Math.atan2(t2.y - e.y, t2.x - e.x);
     const sl = Math.hypot(t2.x - e.x, t2.y - e.y);
@@ -257,11 +287,17 @@ function drawTellMid(w, e) {
       chevron(o.x + Math.cos(a0) * rr, cy + Math.sin(a0) * rr * 0.7, a0, 4.2,
               WARN, 0.5 * k, 1.0, 0.8);
     }
+  // Bosses keep the body glow -- a caster is a caster -- and add whatever their own move puts
+  // in the air during the wind-up: meteors still falling, a pillar growing down out of the dark.
+  const S = BOSS_SHAPE[A.shape];
+  if (S && S.mid) S.mid(w, e, k);
 }
 
 function drawBoomUnder(w, e) {
   const A = e.ab, span = Math.max(e.dur - A.tell, 1e-3);
   const q = c01((e.t - A.tell) / span), fd = fade(q, 0.25);
+  const S = BOSS_SHAPE[A.shape];
+  if (S) { S.boomUnder(w, e, q, fd); return; }
   if (A.shape === 'line') {
     const t2 = telEnd(e), sa = Math.atan2(t2.y - e.y, t2.x - e.x);
     const sl = Math.hypot(t2.x - e.x, t2.y - e.y);
@@ -287,6 +323,8 @@ function drawBoomUnder(w, e) {
 function drawBoomMid(w, e) {
   const A = e.ab, span = Math.max(e.dur - A.tell, 1e-3);
   const q = c01((e.t - A.tell) / span), fd = fade(q, 0.20), g = pop(q, 0.08);
+  const S = BOSS_SHAPE[A.shape];
+  if (S) { if (S.boomMid) S.boomMid(w, e, q, fd, g); return; }
   if (A.shape === 'line') {
     const t2 = telEnd(e), sa = Math.atan2(t2.y - e.y, t2.x - e.x);
     const sl = Math.hypot(t2.x - e.x, t2.y - e.y);

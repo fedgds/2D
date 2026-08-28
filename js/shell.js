@@ -352,7 +352,10 @@ if (typeof document !== 'undefined') {
   });
   // Bestiary, built from the live KIND/FOE_ABIL tables: one row per monster naming its
   // move, the shape of the mark it paints and how long you get to leave it.
-  const SHAPE_VI = { circle: 'vòng tròn', cone: 'hình quạt', line: 'đường thẳng' };
+  const SHAPE_VI = { circle: 'vòng tròn', cone: 'hình quạt', line: 'đường thẳng',
+                     sweep: 'quét cung', nodes: 'nhiều điểm', veins: 'nứt toả',
+                     web: 'mạng lưới', waves: 'sóng dồn', blades: 'làn cong',
+                     spiral: 'xoáy ốc', echo: 'theo vết đi', spokes: 'nan hoa' };
   const guideFoes = document.getElementById('guideFoes');
   Object.keys(KIND).forEach(k => {
     const K = KIND[k];
@@ -583,7 +586,12 @@ if (typeof document !== 'undefined') {
     if (low === 'r') { for (let i = 0; i < 4; i++) spawnFoe(world, true); return; }
     // Telegraphs go with their casters: a pending mark whose owner has been deleted
     // outright (rather than killed) would otherwise still fire at nobody's order.
-    if (low === 'c') { world.foes.length = 0; world.tels.length = 0; world.danger = 0; return; }
+    if (low === 'c') { world.foes.length = 0; world.tels.length = 0; world.danger = 0;
+                       world.boss = null; return; }
+    // The boss gate needs 40 kills; the lab needs one keypress. Cycles through the three so
+    // any of them can be looked at without playing to it, and the gate's own counter moves
+    // with it so a debug boss does not desync the rotation.
+    if (low === 'b') { if (!ev.repeat) spawnBoss(world); return; }
     if (low === 'x') { world.cds.fill(0); world.wcd = 0; world.dcd = 0; paint(); SFX.ui('click'); return; }
     if (low === 'g') { if (!ev.repeat) world.god = !world.god; return; }
     if (low === 'h') { toggleGuide(); eatKey = low; return; }

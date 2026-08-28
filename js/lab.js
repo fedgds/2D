@@ -8,7 +8,7 @@ const LAB = { W, H, SCALE, SKILLS, buf, newWorld, spawnFoe, unit, cast, step,
               renderWorld, resolve, mulberry32, BOUND, foesIn, nearest, SFX,
               WW, WH, camInt, snapCam, camTarget, setCam, syncFloor, FLOOR,
               TID, TONESET, TONE_U32, PROPS, LANDMARKS, ANIM, heroFrame, foeFrame,
-              propLo, GRIDS, MM,
+              propLo, GRIDS, PAL, MM,
               // Arenas. `MAPDEF`, `DUST` and `HERO_GLOW` are reassigned by applyMap, so
               // they go through getters -- copying them into this literal would freeze the
               // harness's view at whatever the first map happened to set.
@@ -25,7 +25,11 @@ const LAB = { W, H, SCALE, SKILLS, buf, newWorld, spawnFoe, unit, cast, step,
               swingHit, swingRiders, weaponStat, fireArrow, ARROW_SK, CUT_SK, cutCast,
               hurt, healHero, pullToward,
               KIND, FOE_ABIL, GSQ, HERO_R, pickKind, tryCast, startCast, stepTel,
-              heroIn, hitHero,
+              heroIn, hitHero, SPAWN_W,
+              // Bosses. `BOSS_SHAPE` is exported because the two things worth asserting about
+              // a boss move -- that the marked ground is the damaging ground, and that its
+              // hitbox travels -- both live in that table rather than in the ability entry.
+              BOSS_SHAPE, BOSS_KINDS, BOSS_OF, BOSS_AT, spawnBoss, bossGate, bossCast,
               cam: () => ({ x: CAMX, y: CAMY }) };
 if (typeof globalThis !== 'undefined') globalThis.LAB = LAB;
 

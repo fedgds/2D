@@ -23,6 +23,8 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `skills.js` | 16 skill (`SKILLS`) |
 | `dash.js` | chiêu lướt né mặc định — không tính vào 3 slot |
 | `foe-abil.js` | chiêu quái + vùng cảnh báo vẽ trên sàn |
+| `boss.js` | 3 boss: grid to, bộ khung tung chiêu, `bossCast`, cửa `bossGate` |
+| `boss-abil.js` | 12 chiêu boss + `BOSS_SHAPE` (vùng tô, và chính nó là vùng gây damage) |
 | `lab.js` | `globalThis.LAB`: cửa cho harness node, không cần DOM |
 | `icons.js` | icon 32×32 vẽ bằng canvas cho hotbar và bảng chọn |
 | `shell.js` | shell browser: layout, menu/hướng dẫn, input, vòng lặp khung |
@@ -64,6 +66,10 @@ node tools/check-maps.js
 node tools/check-weapons.js
 ```
 
+```bash
+node tools/check-boss.js
+```
+
 Tool đọc chính `index.html`, nối các `<script src>` theo đúng thứ tự trong trang rồi chạy
 bằng `node:vm`, nên nó bắt luôn lỗi **thứ tự file** chứ không chỉ lỗi map: một file đặt sai
 chỗ là `ReferenceError` ngay lúc nạp. Phần shell browser nằm sau
@@ -74,6 +80,22 @@ bay xuyên của cung, gom bầy hút máu của lưỡi hái, cắt phép của
 đao. Nó so hai trường hợp với nhau (có chuỗi / không chuỗi, máu đầy / máu cạn, nhịp cuối /
 nhịp đầu) chứ không so lại con số trong bảng, nên tinh chỉnh số liệu thì vẫn xanh, làm hỏng
 cơ chế thì đỏ.
+
+`check-boss.js` cũng vậy, nhưng cho boss, và nó kiểm *lời hứa* chứ không kiểm bảng: vùng đã tô
+là vùng gây damage và ngược lại (hỏi chính `heroIn`, hàm mà `stepTel` dùng để trừ máu), vùng đó
+không lớn dần vào người, chiêu đang gồng mà bị đóng băng hay bị giết thì không bao giờ tới —
+mỗi mục đó đi kèm một lần chạy đối chứng *phải* mất máu, vì "đóng băng nên không mất máu" đạt
+quá dễ khi phép đo bị hỏng. Rồi: ba khung tung chiêu phải khác khung đi bộ **và khác nhau đủ
+nhiều để mắt thấy** (đếm số ô đổi, ngưỡng một phần mười thân người — `!==` là chưa đủ), chiêu
+tô quanh chính mình thì tầm với không được ngắn hơn tầm tung, cửa boss mở đúng mốc 40 mạng và
+không bao giờ do bốc thăm, và cuối cùng ba mươi giây thật với một con boss trên sân: đủ 1800
+khung không ném lỗi, dùng ≥ 3 chiêu khác nhau, không chiêu nào chiếm quá nửa số lần niệm.
+Chạy hết khoảng 15 giây.
+
+Một chỗ dễ vướng nếu sửa thêm mục vào tool: shape rải đốt, tia hay mắt lưới lấy hình từ
+`e.seed`, nên **hai cast khác seed là hai bàn cờ khác nhau**. Mục nào tìm một điểm đo trên
+cast này rồi đo trên cast khác thì phải gieo cùng một seed cho cả hai, không thì `frost_web`
+sẽ "đạt" vì điểm đo rơi vào khe trống của mắt lưới.
 
 ## Xem hiệu ứng mà không cần browser
 
@@ -103,3 +125,31 @@ nhát vung, vũ khí bắn thì từ lúc bật dây tới lúc mũi tên hết 
 các làn của chính vũ khí đó (`shot.spread`), hai lớp sâu, HP bơm lên `1e6`. Bằng không thì
 một nan quạt đọc ra là một vệt trắng: phải có gì cho từng làn trúng mới thấy được mũi giữa
 mang đủ lực còn hai mũi biên thì nhạt hơn và đau ít hơn.
+
+```bash
+node tools/shot-boss.js meteor_rain frost_web
+```
+
+```bash
+node tools/shot-boss.js pose:forgelord
+```
+
+```bash
+node tools/shot-boss.js --all
+```
+
+Cùng ý đó cho boss, và nó trả lời đúng một câu mà `check-boss.js` không nói được: *nhìn có ra
+một trận đánh không*. Một telegraph "đúng hình học" vẫn có thể là một vũng màu không đọc ra
+hướng. Nên có hai chế độ. Tên một chiêu thì chụp trọn một cast tại `p = 0.14 0.36 0.54 0.68
+0.82 0.95` — bốn mốc *sau* lúc phát, vì chỗ đáng xem của chiêu boss là lúc vùng tô biến thành
+thứ đang chạy. Con boss được đặt đúng khoảng cách nó thật sự sẽ đứng khi tung chiêu đó (trong
+`range`, ngoài `min`): chụp một chiêu từ chỗ nó không bao giờ được tung là chụp một trận đánh
+không tồn tại. Khung nhìn tính từ chính tầm của chiêu chứ không chép tay, nên sửa `r` trong
+bảng thì ảnh tự rộng theo.
+
+`pose:<boss>` xếp ba hàng — đứng / đi / tung chiêu — vẽ thẳng từ lưới ký tự và `PAL`, không
+qua engine: ở đây câu hỏi là "ba khung tung chiêu có khác nhau bằng mắt không", và ánh sáng
+của sân chỉ làm khó việc so hai khung cạnh nhau. Chính hàng thứ ba đó đã bắt được ba lỗi vẽ
+mà không con số nào bắt được: cả ba con boss từng có khung "dồn" bị hai lệnh `recol` liên tiếp
+làm phẳng thành một khối một màu.
+

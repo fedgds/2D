@@ -45,6 +45,9 @@ function unit(kind, x, y) {
            // Casting state. `acd` is staggered from the spawn position instead of from a
            // random draw, so two monsters that walk in together do not wind up in lockstep.
            tel: null, chg: 0, acd: 1.1 + (Math.abs((x * 31 + y * 17) | 0) % 240) / 100,
+           // Boss-only: `rel` holds the release pose past the hit, `last` stops the random
+           // move pick repeating itself. Set on every unit so no draw path has to ask.
+           rel: 0, last: '', boss: !!k.boss,
            ph: (Math.abs(x * 7 + y * 13) % 400) / 100, mv: 0 };
 }
 const midY = f => f.y - f.h * 0.5;
@@ -81,6 +84,9 @@ function newWorld(seed, loadout) {
     cam: { x: 0, y: 0 }, props: PROPS, puffs: [], amb: [],
     foes: [], fxs: [], tels: [], nums: [], aim: { x: 0, y: 0 },
     kills: 0, dmg: 0, taken: 0, dodges: 0, danger: 0, god: true, cds: new Float32Array(16),
+    // The live boss, and how many have already come. `bossN` only ever counts up, so a boss
+    // you killed cannot walk back in on the next kill.
+    boss: null, bossN: 0,
     wp: (typeof lo.wp === 'string' ? WEAPON_BY_ID[lo.wp] : lo.wp) || WEAPONS[0],
     slots: (lo.slots && lo.slots.length === 3 ? lo.slots.slice() : [0, 1, 2]),
     wcd: 0, dcd: 0, sw: null,
@@ -328,7 +334,10 @@ function step(w, dt, inp) {
     if (p.t >= p.life) w.puffs.splice(i, 1);
   }
   w.spawnT -= dt;
-  if (w.spawnT <= 0) { spawnFoe(w); w.spawnT = 1.05; }
+  // The crowd thins out while a boss is up. Four overlapping telegraphs plus a full spawn rate
+  // is not a harder fight, it is an unreadable one -- and the boss is the thing worth reading.
+  if (w.spawnT <= 0) { spawnFoe(w); w.spawnT = w.boss ? 3.6 : 1.05; }
+  bossGate(w);
   w.shake = Math.max(0, w.shake - dt * 22);
   // Weather. Stepped on the cosmetic stream and around the *current* camera, before the
   // camera moves below -- one frame of lag on a snowflake is not a thing anyone can see,
@@ -355,20 +364,33 @@ function stepFoe(w, f, dt) {
   const h = w.hero;
   const K = KIND[f.kind];
   if (f.acd > 0) f.acd = Math.max(0, f.acd - dt);
+  if (f.rel > 0) f.rel = Math.max(0, f.rel - dt);
   if (!f.tel && f.acd <= 0 && f.frozen <= 0) tryCast(w, f);
   // A monster winding up is planted: the mark on the floor is a promise about where the
   // hit lands, and a caster that kept walking would break it. Knockback still moves it,
   // which is why hitting a caster is worth doing -- it can be shoved out of its own blast.
   const casting = !!f.tel;
   f.chg = casting ? c01(f.tel.t / f.tel.ab.tell) : Math.max(0, f.chg - dt * 5);
+  // A boss stays planted through its release pose too. The recoil is authored as a held frame,
+  // so letting it walk out of the slam would animate a slide instead of a follow-through.
+  const held = casting || f.rel > 0;
   let ax = 0, ay = 0;
-  if (f.frozen <= 0 && !casting) {
+  if (f.frozen <= 0 && !held) {
     const dx = h.x - f.x, dy = (h.y - 1) - f.y, d = Math.max(Math.hypot(dx, dy), 1e-3);
     const spd = f.spd * (f.slow > 0 ? 0.34 : 1);
     // Ranged kinds hold a band instead of closing: outside it they advance, inside it
     // they back off, and in the band they stand and shoot.
     let want = 1;
-    if (K.keep) want = d > K.keep * 1.15 ? 1 : (d < K.keep * 0.78 ? -1 : 0);
+    // The band is measured in the *unsquashed* distance, the same one tryCast compares against
+    // `range`, and not in the screen distance the steering above uses. They differ by 2x
+    // vertically (GSQ), so a caster that held a screen-space band of 108 while standing above
+    // the hero would be 216 away as far as its own beam is concerned -- parked exactly where
+    // nothing it owns can reach. A stand-off distance only means anything in the space the
+    // attacks it is standing off for are measured in.
+    if (K.keep) {
+      const dq = Math.hypot(dx, dy / GSQ);
+      want = dq > K.keep * 1.15 ? 1 : (dq < K.keep * 0.78 ? -1 : 0);
+    }
     ax = dx / d * spd * want; ay = dy / d * spd * 0.72 * want;
     f.flip = dx < 0;
     for (const o of w.foes) {              // light separation so they do not stack
@@ -386,7 +408,7 @@ function stepFoe(w, f, dt) {
   // separated-but-stuck foe idles instead of pedalling, and so does one mid-cast --
   // knockback drift must not make a planted monster look like it is walking.
   const d = Math.hypot(f.x - px, f.y - py);
-  f.mv = (f.frozen > 0 || casting) ? 0 : d / Math.max(dt, 1e-4);
+  f.mv = (f.frozen > 0 || held) ? 0 : d / Math.max(dt, 1e-4);
   f.ph = (f.ph + (f.mv > 0.4 ? d / K.cyc : dt * 1.6)) % 4;
   // Contact damage is a drain, not a hit, so it does not go through hitHero -- but the
   // dash's i-frames still have to cover it, or dashing *through* a pack would cost more
