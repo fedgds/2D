@@ -25,11 +25,14 @@ const LAB = { W, H, SCALE, SKILLS, buf, newWorld, spawnFoe, unit, cast, step,
               swingHit, swingRiders, weaponStat, fireArrow, ARROW_SK, CUT_SK, cutCast,
               hurt, healHero, pullToward,
               KIND, FOE_ABIL, GSQ, HERO_R, pickKind, tryCast, startCast, stepTel,
-              heroIn, hitHero, SPAWN_W,
+              heroIn, hitHero, SPAWN_W, REL_HOLD,
               // Bosses. `BOSS_SHAPE` is exported because the two things worth asserting about
               // a boss move -- that the marked ground is the damaging ground, and that its
               // hitbox travels -- both live in that table rather than in the ability entry.
               BOSS_SHAPE, BOSS_KINDS, BOSS_OF, BOSS_AT, spawnBoss, bossGate, bossCast,
+              // Art boss dựng từ ảnh. `ANIM_IMG` là bộ khung thật sự được vẽ; `BOSS_ART` là
+              // dữ liệu thô sinh ra nó, cần cho harness để đối chiếu cw/bw/bh và palette.
+              BOSS_ART, BOSS_ART_CH, ANIM_IMG, foeImgFrame,
               cam: () => ({ x: CAMX, y: CAMY }) };
 if (typeof globalThis !== 'undefined') globalThis.LAB = LAB;
 

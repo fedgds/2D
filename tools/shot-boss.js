@@ -129,17 +129,28 @@ function shoot(key) {
   save('ab-' + key, sheet, A.name + ', p = ' + MARKS.join(' '));
 }
 
-// ---- bộ khung: đi bộ xếp thẳng trên bộ tung chiêu ----------------------------------------
-// Vẽ thẳng từ lưới ký tự và PAL, không qua engine: ở đây câu hỏi là "ba khung tung chiêu có
-// khác nhau bằng mắt không", và ánh sáng của sân chỉ làm khó việc so hai khung cạnh nhau.
-// `dy` của từng khung được cộng vào, vì cái nhấp nhô lên xuống *là* một phần của bộ khung.
+// ---- bộ khung: mỗi hàng một bộ, xếp thẳng để so ------------------------------------------
+// Vẽ thẳng từ lưới ký tự và palette, không qua engine: ở đây câu hỏi là "các khung có khác
+// nhau bằng mắt không", và ánh sáng của sân chỉ làm khó việc so hai khung cạnh nhau.
+//
+// Boss nào có art trong ANIM_IMG thì chụp art (năm hàng: thêm trúng đòn và chết, hai bộ chỉ
+// có trong ảnh nguồn), còn lại chụp lưới vẽ tay như trước. Khung art *không cùng cỡ nhau* --
+// tay giơ lên là khung cao thêm -- nên ô được neo ở đáy đúng như lúc render, và chính cái
+// chênh lệch chiều cao giữa các ô là thứ cần xem: nó phải là tư thế đổi, không phải sprite
+// nhảy chỗ.
 const S = 5, GAP = 4;
 function poseSheet(k) {
-  const a = LAB.ANIM[k];
+  const im = LAB.ANIM_IMG[k], a = im || LAB.ANIM[k];
   if (!a) { console.log('không có boss ' + k); return; }
   const sets = [['đứng', a.idle], ['đi', a.walk], ['tung chiêu', a.cast]];
-  const gw = LAB.GRIDS[k][0].length, gh = LAB.GRIDS[k].length;
-  const cw = (gw + 2) * S, ch = (gh + 4) * S;
+  if (im) { sets.push(['trúng đòn', a.hit], ['chết', a.death]); }
+  const pal = im ? im.pal : LAB.PAL;
+  // Cỡ ô lấy từ khung lớn nhất trong cả bảng, tính cả `dy`: một ô nào cũng chứa được thì mọi
+  // ô cùng một khổ, và cùng khổ mới so được.
+  let gw = 0, gh = 0;
+  for (const [, fs] of sets)
+    for (const f of fs) { gw = Math.max(gw, f.g[0].length); gh = Math.max(gh, f.g.length - f.dy); }
+  const cw = (gw + 2) * S, ch = (gh + 3) * S;
   const cols = Math.max(...sets.map(s => s[1].length));
   const sheet = { w: cols * cw + GAP * (cols + 1), h: sets.length * ch + GAP * (sets.length + 1) };
   sheet.px = Buffer.alloc(sheet.w * sheet.h * 4, 0);
@@ -158,10 +169,12 @@ function poseSheet(k) {
         const v = edge ? 58 : 30;
         sheet.px[o] = v; sheet.px[o + 1] = v + 2; sheet.px[o + 2] = v + 8;
       }
-      const bx = x0 + S, by = y0 + (3 - fr.dy) * S;
+      // Neo y hệt lúc render: giữa ô theo chiều ngang, đáy khung nằm trên một hàng chân đế.
+      const bx = x0 + S + (((gw - fr.g[0].length) >> 1) * S);
+      const by = y0 + ch - S + (fr.dy - fr.g.length) * S;
       fr.g.forEach((line, y) => {
         for (let x = 0; x < line.length; x++) {
-          const c = LAB.PAL[line[x]];
+          const c = pal[line[x]];
           if (!c) continue;
           for (let ky = 0; ky < S; ky++) for (let kx = 0; kx < S; kx++) {
             const o = ((by + y * S + ky) * sheet.w + bx + x * S + kx) * 4;
@@ -174,7 +187,8 @@ function poseSheet(k) {
       });
     });
   });
-  save('pose-' + k, sheet, sets.map(s => s[0] + ' ' + s[1].length).join(', ')
+  save('pose-' + k, sheet, (im ? 'art ảnh, ' : 'lưới vẽ tay, ')
+    + sets.map(s => s[0] + ' ' + s[1].length).join(', ')
     + '  (hàng: ' + sets.map(s => s[0]).join(' / ') + ')');
 }
 

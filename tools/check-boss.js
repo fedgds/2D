@@ -215,6 +215,135 @@ for (const k of BOSSES) {
   eq(k + ': hết cast → về đi bộ', walk.has(key(LAB.foeFrame(f))), true);
 }
 
+sec('art ảnh: bốn bộ khung dựng từ images/animations/boss/**');
+// Bộ lưới vẽ tay ở trên vẫn còn và vẫn được kiểm, nhưng thứ *thật sự hiện trên màn hình* là
+// art này (render.js chọn nó khi ANIM_IMG có con đó). Nên bốn lời hứa ở đây là bốn lời hứa về
+// cái người chơi nhìn thấy: mọi ký tự vẽ ra được, mọi khung lật được đúng trục, thanh máu
+// không đè lên người, và khung sáng nhất của bộ cast không bao giờ hiện trước lúc chiêu phát.
+const IMG = LAB.ANIM_IMG || {};
+{
+  const SETS = ['idle', 'walk', 'cast', 'hit', 'death'];
+  const key = f => f.g.join('|') + '#' + f.dy;
+  // Độ sáng *trung bình trên mỗi điểm thân*, không phải tổng: khung bùng vừa to hơn vừa sáng
+  // hơn, và tổng thì không tách được hai thứ đó ra.
+  const meanLum = (f, pal) => {
+    let s = 0, n = 0;
+    for (const line of f.g) for (const ch of line) {
+      const c = pal[ch];
+      if (c) { s += c[0] * 0.30 + c[1] * 0.59 + c[2] * 0.11; n++; }
+    }
+    return n ? s / n : 0;
+  };
+  const normal = Object.keys(LAB.KIND).filter(k => !LAB.KIND[k].boss);
+  let maxW = 0, maxH = 0;
+  for (const k of normal) {
+    maxW = Math.max(maxW, LAB.GRIDS[k][0].length);
+    maxH = Math.max(maxH, LAB.GRIDS[k].length);
+  }
+  eq('cả ba con đều có art', LAB.BOSS_KINDS.filter(k => IMG[k]).length, LAB.BOSS_KINDS.length);
+  for (const k of LAB.BOSS_KINDS) {
+    const a = IMG[k];
+    if (!a) continue;
+    const A = LAB.BOSS_ART[k];
+    const all = [];
+    for (const s of SETS) { ge(k + ': có bộ ' + s, (a[s] || []).length, 1); all.push(...(a[s] || [])); }
+
+    // Ký tự lạ = một khối người vẽ ra khoảng trắng, và nó không ném lỗi ở đâu cả.
+    const chars = new Set();
+    for (const f of all) for (const line of f.g) for (const ch of line) if (ch !== '.') chars.add(ch);
+    eq(k + ': ký tự lạ ngoài palette riêng',
+       [...chars].filter(c => !a.pal[c]).join('') || 'không', 'không');
+    // Và ngược lại: palette phải nằm trong dải ký tự mà bộ sinh biết đánh số. Màu thứ 63 trở
+    // đi sẽ được gán một ký tự không có trong BOSS_ART_CH, tức là một màu vẽ mãi không ra.
+    le(k + ': số màu vừa dải ký tự', A.pal.length, LAB.BOSS_ART_CH.length);
+
+    // Lật đúng trục. `blit` lật *trong lòng lưới* (cột c đổi cho cột w-1-c), nên hai điều kiện:
+    // mọi khung cùng một bề rộng, và bề rộng đó lẻ để cột neo tự đổi cho chính nó. Rộng chẵn
+    // thì cả con boss trượt một pixel mỗi lần nó đổi hướng, và cái trượt đó nhìn ra thành sprite
+    // bị lỗi chứ không ra thành nhân vật quay người.
+    eq(k + ': mọi khung cùng bề rộng', new Set(all.map(f => f.g[0].length)).size, 1);
+    eq(k + ': bề rộng lẻ (lật quanh cột neo)', A.cw % 2, 1);
+    eq(k + ': lưới chữ nhật', all.every(f => f.g.every(r => r.length === f.g[0].length)), true);
+    // Không hàng rỗng ở đáy: khung neo ở đáy, nên một hàng rỗng dưới cùng là cả con boss lơ
+    // lửng đúng ở khung đó -- và lơ lửng ở vài khung thì thành giật.
+    eq(k + ': không hàng rỗng ở đáy', all.every(f => !/^\.*$/.test(f.g[f.g.length - 1])), true);
+
+    // To hơn mọi quái thường, đúng lời hứa mà bộ lưới vẽ tay đang giữ ở mục trên.
+    const idle0 = a.idle[0];
+    ge(k + ': cao hơn quái cao nhất (' + maxH + ')', idle0.g.length, maxH + 6);
+    ge(k + ': rộng hơn quái rộng nhất (' + maxW + ')', A.bw, maxW + 4);
+
+    // Hộp gameplay. bh là chỗ treo thanh máu và nó phải cao hơn *mọi* tư thế còn sống, không
+    // chỉ tư thế đứng: một thanh máu nằm giữa hai cái sừng là thanh máu không đọc được đúng
+    // lúc cần đọc nó nhất. bw thì phải nằm trong lưới, vì hitbox rộng hơn lưới là trúng đòn ở
+    // chỗ không có gì cả.
+    const alive = [...a.idle, ...a.walk, ...a.cast, ...a.hit];
+    ge(k + ': bh cao hơn mọi tư thế còn sống', a.bh, Math.max(...alive.map(f => f.g.length - f.dy)));
+    le(k + ': bw nằm trong lưới', a.bw, a.cw);
+    const u = LAB.unit(k, 100, 100);
+    eq(k + ': unit() lấy hộp theo art', u.w + 'x' + u.h, a.bw + 'x' + a.bh);
+
+    // Khung chết phải *đổ xuống*: khung cuối thấp hơn tư thế đứng, không thì "chết" chỉ là
+    // đứng im rồi tan biến.
+    le(k + ': khung chết cuối thấp hơn khung đứng',
+       a.death[a.death.length - 1].g.length, idle0.g.length - 4);
+
+    // Bốn khung cast phải khác nhau *bằng mắt*, đo như mục lưới vẽ tay: đếm ô đổi giữa hai
+    // khung liền nhau, ngưỡng một phần mười thân người.
+    const cells = f => {
+      const m = new Map();
+      f.g.forEach((line, y) => {
+        for (let x = 0; x < line.length; x++) if (line[x] !== '.') m.set(y + ',' + x, line[x]);
+      });
+      return m;
+    };
+    const solid = Math.min(...a.cast.map(f => cells(f).size));
+    for (let i = 1; i < a.cast.length; i++) {
+      const p = cells(a.cast[i - 1]), q = cells(a.cast[i]);
+      let n = 0;
+      for (const [at, c] of p) if (q.get(at) !== c) n++;
+      for (const at of q.keys()) if (!p.has(at)) n++;
+      ge(k + ': khung cast ' + (i - 1) + '→' + i + ' đổi đủ nhiều', n, Math.round(solid * 0.10));
+    }
+
+    // foeImgFrame phải *chọn* đúng bộ theo trạng thái, và trạng thái là những trường world.js
+    // vốn đã có -- không con boss nào mang thêm một đồng hồ riêng cho hoạt ảnh.
+    const st = o => Object.assign({ kind: k, dying: 0, chg: 0, rel: 0, flash: 0, mv: 0, ph: 0 }, o);
+    const inSet = (f, s) => new Set(a[s].map(key)).has(key(f));
+    eq(k + ': đứng im → bộ đứng', inSet(LAB.foeImgFrame(st({})), 'idle'), true);
+    eq(k + ': đang đi → bộ đi', inSet(LAB.foeImgFrame(st({ mv: 9, ph: 1 })), 'walk'), true);
+    eq(k + ': vừa ăn đòn → bộ trúng đòn', inSet(LAB.foeImgFrame(st({ flash: 0.45 })), 'hit'), true);
+    eq(k + ': đang chết → bộ chết', inSet(LAB.foeImgFrame(st({ dying: 0.15 })), 'death'), true);
+    // Bốn khung chết trải hết 0,30 s: khung đầu và khung cuối phải là hai khung khác nhau, không
+    // thì hai phần ba bộ chết chưa bao giờ lên màn hình.
+    eq(k + ': bộ chết chạy hết vòng',
+       key(LAB.foeImgFrame(st({ dying: 0.01 }))) !== key(LAB.foeImgFrame(st({ dying: 0.29 }))), true);
+    // Chết thắng mọi thứ khác: một con boss vừa đổ xuống mà vẫn giơ tay tung chiêu là hỏng.
+    eq(k + ': chết thắng cast', inSet(LAB.foeImgFrame(st({ dying: 0.1, chg: 0.9 })), 'death'), true);
+    // Cast thắng trúng đòn: cái người chơi cần đọc lúc đó vẫn là chiêu, không phải cú giật lùi.
+    eq(k + ': cast thắng trúng đòn',
+       inSet(LAB.foeImgFrame(st({ chg: 0.5, flash: 0.55 })), 'cast'), true);
+
+    // Lời hứa đáng nhất của bộ cast: khung sáng nhất là khung *phát*, nên nó không được hiện
+    // ra lúc còn đang gồng. Người chơi né bằng cách đọc telegraph; một con boss loé sáng trước
+    // khi có gì xảy ra là dạy người chơi né vào đúng lúc chưa cần né.
+    const lum = a.cast.map(f => meanLum(f, a.pal));
+    const peak = Math.max(...lum);
+    let hi = 0;
+    for (let c = 1; c <= 100; c++) hi = Math.max(hi, meanLum(LAB.foeImgFrame(st({ chg: c / 100 })), a.pal));
+    le(k + ': đang gồng chưa bao giờ sáng bằng khung phát', +(hi / peak).toFixed(3), 0.95);
+    // Và khung sáng nhất đó *có* lên màn hình, đúng trong 0,42 s của f.rel.
+    let seen = 0;
+    for (let c = 1; c <= 42; c++)
+      seen = Math.max(seen, meanLum(LAB.foeImgFrame(st({ rel: LAB.REL_HOLD * c / 42 })), a.pal));
+    eq(k + ': khung phát có lên màn hình', +(seen / peak).toFixed(3), 1);
+  }
+  // Ba con ba palette: một bảng dùng chung nghĩa là ba con art khác hẳn nhau bị nhồi vào 62 màu.
+  eq('ba palette khác nhau',
+     new Set(LAB.BOSS_KINDS.map(k => (LAB.BOSS_ART[k] || { pal: [] }).pal.join())).size,
+     LAB.BOSS_KINDS.length);
+}
+
 const TAU = Math.PI * 2;
 
 sec('vùng đã tô là vùng gây damage, và ngược lại');

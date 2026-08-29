@@ -39,7 +39,12 @@ function pickKind(rng) {
 
 function unit(kind, x, y) {
   const g = GRIDS[kind], k = KIND[kind];
-  return { kind, x, y, w: g[0].length, h: g.length, vx: 0, vy: 0,
+  // Boss có art thì hộp lấy theo art, không theo lưới vẽ tay: w là bán kính bị đánh trúng và
+  // h là chỗ treo thanh máu, nên cả hai phải khớp với cái đang hiện trên màn hình. Chúng là
+  // *một cặp số cố định* (bw/bh trong ANIM_IMG) chứ không lấy từng khung một -- hitbox co giãn
+  // theo hoạt ảnh nghĩa là cùng một cú vung trúng hay không tuỳ khung boss đang thở.
+  const A = typeof ANIM_IMG !== 'undefined' ? ANIM_IMG[kind] : null;
+  return { kind, x, y, w: A ? A.bw : g[0].length, h: A ? A.bh : g.length, vx: 0, vy: 0,
            hp: k.hp, maxhp: k.hp, spd: k.spd, mass: k.mass,
            flash: 0, flip: false, dim: 1, slow: 0, frozen: 0, dying: 0,
            // Casting state. `acd` is staggered from the spawn position instead of from a

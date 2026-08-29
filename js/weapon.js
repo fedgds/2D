@@ -55,7 +55,7 @@ const HELD_HAFT = hexc('#3a3244'), HELD_DARK = hexc('#141a28');
 const HELD_SQ = 0.9;
 const WEAPONS = [
   {
-    id: 'kiem', name: 'Kiếm', label: 'KIẾM', skill: 'SEPHIRIA SLASH', art: 'assets/images/skills/kiem-frames',
+    id: 'kiem', name: 'Kiếm', label: 'KIẾM', skill: 'SEPHIRIA SLASH', art: 'images/skills/kiem-frames',
     desc: 'chuỗi nhịp · 4 nhịp', col: hexc('#bcd8ff'), gain: 2.1,
     fps: 30, hits: [3, 6, 10, 13], dmg: 9, range: 44, arc: 1.50,
     size: 90, axis: SPRITE_UP, reach: 12, travel: 0, push: 0, pushStep: 0, cd: 0.55, shake: 1.1,
@@ -67,7 +67,7 @@ const WEAPONS = [
     hold: { art: 'kiem', pv: [3, 13], sweep: 1.45, ext: 4.5, rest: -0.80 },
   },
   {
-    id: 'dao', name: 'Đao', label: 'ĐAO', skill: 'MOON TIDE', art: 'assets/images/skills/dao-frames',
+    id: 'dao', name: 'Đao', label: 'ĐAO', skill: 'MOON TIDE', art: 'images/skills/dao-frames',
     desc: 'xử trảm · cắm chân', col: hexc('#baf7ff'), gain: 2.0,
     fps: 32, hits: [4, 8, 12], dmg: 14, range: 43, arc: 1.55,
     size: 94, axis: -0.072, reach: 11, travel: 6, push: 16, cd: 0.60, shake: 1.3,
@@ -90,7 +90,7 @@ const WEAPONS = [
     ],
   },
   {
-    id: 'cung', name: 'Cung', label: 'CUNG', skill: 'CELESTIAL ARROW', art: 'assets/images/skills/cung-frames',
+    id: 'cung', name: 'Cung', label: 'CUNG', skill: 'CELESTIAL ARROW', art: 'images/skills/cung-frames',
     desc: 'ba mũi · xuyên · càng xa càng mạnh', col: hexc('#d9fdff'), gain: 2.0,
     fps: 28, hits: [8], range: 42, arc: 0.34,
     size: 78, axis: 0.515, reach: 13, travel: 10, push: 0, pushStep: 0, cd: 0.70, shake: 1.0,
@@ -102,23 +102,25 @@ const WEAPONS = [
     // and `ramp` is the distance the top is reached at, deliberately well short of `max` so
     // the strong band is something you can hold rather than a pixel you have to find. Up
     // close the bow is worth less than a punch; that is the trade.
-    shot: { spd: 300, max: 210, ramp: 140, near: 14, far: 46, thick: 5, push: 26,
-            // Một lần bật dây là ba mũi xoè hình nan quạt. Bản một mũi mạnh đúng ở chỗ khó
-            // giữ nhất -- xa -- còn lúc quái đã áp mặt thì 14 sát thương cho một nhịp 0.7 s
-            // không ra hình một đòn, và đó là toàn bộ cảm giác "phế": người chơi dùng cung
-            // nhiều nhất ở đúng cái tầm nó vô dụng nhất.
-            //
-            // `spread` và `side` được chọn cùng nhau để hai bất biến của cung không đổi:
-            //   · Trần một mục tiêu vẫn là `far`. Ở tầm ôm sát, ba mũi còn chồng lên cùng
-            //     một thân địch, nhưng chồng nhau chỉ tới `r / sin(spread)` ≈ 32 px (bia rộng
-            //     nhất trong game), và ở đó dải mới có `near + (far-near)·32/ramp` ≈ 21 -- nhân
-            //     `1 + 2·side` = 2.1 vẫn ra 45, tức là không hơn một mũi bắn tới độ. Xa hơn
-            //     32 px là hai mũi biên đã ra ngoài thân nó và mọi thứ về đúng như cũ.
-            //   · Áp mặt vẫn là tay yếu nhất: 37 sát thương cho 0.7 s hồi là ~53 dps, thấp
-            //     hơn cả bốn vũ khí kia, chỉ là nó không còn bằng không.
-            // Còn tiền của nan quạt trả ở tầm xa là bề rộng chứ không phải sát thương: ở cuối
-            // tầm hai mũi biên cách trục hơn 60 px, nên một đám đứng tụm là ba làn xuyên.
-            fan: 3, spread: 0.30, side: 0.55 },
+    shot: {
+      spd: 300, max: 210, ramp: 140, near: 14, far: 46, thick: 5, push: 26,
+      // Một lần bật dây là ba mũi xoè hình nan quạt. Bản một mũi mạnh đúng ở chỗ khó
+      // giữ nhất -- xa -- còn lúc quái đã áp mặt thì 14 sát thương cho một nhịp 0.7 s
+      // không ra hình một đòn, và đó là toàn bộ cảm giác "phế": người chơi dùng cung
+      // nhiều nhất ở đúng cái tầm nó vô dụng nhất.
+      //
+      // `spread` và `side` được chọn cùng nhau để hai bất biến của cung không đổi:
+      //   · Trần một mục tiêu vẫn là `far`. Ở tầm ôm sát, ba mũi còn chồng lên cùng
+      //     một thân địch, nhưng chồng nhau chỉ tới `r / sin(spread)` ≈ 32 px (bia rộng
+      //     nhất trong game), và ở đó dải mới có `near + (far-near)·32/ramp` ≈ 21 -- nhân
+      //     `1 + 2·side` = 2.1 vẫn ra 45, tức là không hơn một mũi bắn tới độ. Xa hơn
+      //     32 px là hai mũi biên đã ra ngoài thân nó và mọi thứ về đúng như cũ.
+      //   · Áp mặt vẫn là tay yếu nhất: 37 sát thương cho 0.7 s hồi là ~53 dps, thấp
+      //     hơn cả bốn vũ khí kia, chỉ là nó không còn bằng không.
+      // Còn tiền của nan quạt trả ở tầm xa là bề rộng chứ không phải sát thương: ở cuối
+      // tầm hai mũi biên cách trục hơn 60 px, nên một đám đứng tụm là ba làn xuyên.
+      fan: 3, spread: 0.30, side: 0.55
+    },
     // A bow does not slash: it draws back and springs forward, so the sweep is tiny and
     // almost all of the motion is the grip pushing out on release. The sheet stays with the
     // hero (no `anchor`) because it is the *draw*, and walking while you draw should carry
@@ -133,7 +135,7 @@ const WEAPONS = [
     ],
   },
   {
-    id: 'luoi-hai', name: 'Lưỡi Hái', label: 'LƯỠI HÁI', skill: 'REAPER SURGE', art: 'assets/images/skills/luoi-hai-frames',
+    id: 'luoi-hai', name: 'Lưỡi Hái', label: 'LƯỠI HÁI', skill: 'REAPER SURGE', art: 'images/skills/luoi-hai-frames',
     desc: 'gom bầy · kéo vào · hút máu', col: hexc('#bdf9ff'), gain: 1.95,
     fps: 26, hits: [4, 9, 13], dmg: 13, range: 54, arc: 2.25,
     size: 100, axis: SPRITE_UP, reach: 12, travel: 10, push: -34, pushStep: -6, cd: 0.72, shake: 1.4,
@@ -146,7 +148,7 @@ const WEAPONS = [
     hold: { art: 'luoi_hai', pv: [6, 10], sweep: 1.85, ext: 5.0, rest: -1.10 },
   },
   {
-    id: 'gang', name: 'Găng', label: 'GĂNG', skill: 'ABYSSAL FIST', art: 'assets/images/skills/gang-frames',
+    id: 'gang', name: 'Găng', label: 'GĂNG', skill: 'ABYSSAL FIST', art: 'images/skills/gang-frames',
     desc: 'cắt phép · 5 nhịp', col: hexc('#65dcec'), gain: 2.15,
     fps: 34, hits: [2, 5, 8, 11, 14], dmg: 7, range: 33, arc: 1.15,
     size: 72, axis: SPRITE_UP, reach: 10, travel: 16, push: 12, cd: 0.46, shake: 0.9,
@@ -190,8 +192,10 @@ for (const wp of WEAPONS) {
   // A swing is one fx entry like a cast, so it gets the same shape a skill has. The
   // hotbar, the cooldown sweep and `step` then treat the basic attack as slot zero
   // without a single special case.
-  wp.sk = { id: wp.id, name: wp.name, mode: 'dir', dur: wp.dur, cd: wp.cd, shake: wp.shake,
-            over(w, e, p) { drawSwing(w, e, p); }, hit(w, e) { swingHit(w, e); } };
+  wp.sk = {
+    id: wp.id, name: wp.name, mode: 'dir', dur: wp.dur, cd: wp.cd, shake: wp.shake,
+    over(w, e, p) { drawSwing(w, e, p); }, hit(w, e) { swingHit(w, e); }
+  };
 }
 
 // Frame sets live on disk as PNGs, and this renderer never blits: it accumulates light.
@@ -225,7 +229,7 @@ const ART = (() => {
       const a = src[k * 4 + 3] / 255;
       if (a <= 0) continue;
       const cov = Math.pow(a, 0.7);
-      px[k * 3]     = src[k * 4]     / 255 * cov;
+      px[k * 3] = src[k * 4] / 255 * cov;
       px[k * 3 + 1] = src[k * 4 + 1] / 255 * cov;
       px[k * 3 + 2] = src[k * 4 + 2] / 255 * cov;
     }
@@ -335,7 +339,7 @@ function drawSwing(w, e, p) {
     // ramp through, and that ramp is what makes the swing look lit rather than pasted on.
     const k = Math.sin(Math.PI * Math.min(1, p * 1.15));
     arc(x, y, wp.size * 0.30, e.ang, wp.arc * 1.7, wp.size * 0.13, wp.lit,
-        0.30 * k, wp.squash, 1.4, 1.5);
+      0.30 * k, wp.squash, 1.4, 1.5);
     for (let tr = 2; tr >= 0; tr--) {
       const fr = set[Math.max(0, fi - tr)];
       if (!fr) continue;
@@ -359,7 +363,7 @@ function drawSwing(w, e, p) {
     const ty = o.y + Math.sin(e.ang) * (off + wp.range * 0.5) * wp.squash;
     core(tx, ty, 3.6, wp.col, 0.6 * a, 2);
     sparks(tx, ty, 7, 1, wp.range * 0.42, wp.col, 0.5 * a, (e.seed + hf * 31) | 0,
-           0.8, wp.squash, e.ang - wp.arc * 0.5, e.ang + wp.arc * 0.5, 3);
+      0.8, wp.squash, e.ang - wp.arc * 0.5, e.ang + wp.arc * 0.5, 3);
   }
 }
 
@@ -407,9 +411,9 @@ function drawHeld(w, back) {
   const hf = heroFrame(h);
   const hx = h.x + 4 * sgn, hy = h.y - h.h + 7 + hf.dy;
   blitRot(wp.held, wp.hpal,
-          hx + Math.cos(ang) * ps.ext, hy + Math.sin(ang) * ps.ext * HELD_SQ,
-          wp.hold.pv[0], wp.hold.pv[1], ang + ps.rot * sgn - SPRITE_UP,
-          1, h.flash, HELD_SQ);
+    hx + Math.cos(ang) * ps.ext, hy + Math.sin(ang) * ps.ext * HELD_SQ,
+    wp.hold.pv[0], wp.hold.pv[1], ang + ps.rot * sgn - SPRITE_UP,
+    1, h.flash, HELD_SQ);
 }
 
 // One hit per entry in `hits`, fired the frame that entry becomes current. `crossed` makes
@@ -433,7 +437,7 @@ function swingHit(w, e) {
     // flickering on and off between beats as the window ticks down underneath it.
     const amount = wp.dmg * step * (e.momo ? wp.momentum.dmg : 1);
     const n = hitCone(w, o.x, o.y, e.ang, wp.range, wp.arc, amount,
-                      wp.col, crit, wp.push + i * wp.pushStep, swingRiders(w, wp, crit));
+      wp.col, crit, wp.push + i * wp.pushStep, swingRiders(w, wp, crit));
     if (!n) continue;
     w.shake = Math.max(w.shake, wp.shake * 0.8);
     // Paid in blood rather than in damage, and only on the finisher: the earlier beats are
@@ -482,9 +486,11 @@ const CUT_SK = {
 function cutCast(w, f, hold) {
   if (!f.tel || f.tel.fired) return;
   f.frozen = Math.max(f.frozen, hold);
-  w.fxs.push({ sk: CUT_SK, i: -1, t: 0, dur: CUT_SK.dur, p: 0, pt: 0,
-               seed: w.rng.int(1, 1e9) | 0, ox: f.x, oy: f.y, x: f.x, y: f.y, ang: 0,
-               data: { x: f.x, y: f.y - f.h * 0.5 } });
+  w.fxs.push({
+    sk: CUT_SK, i: -1, t: 0, dur: CUT_SK.dur, p: 0, pt: 0,
+    seed: w.rng.int(1, 1e9) | 0, ox: f.x, oy: f.y, x: f.x, y: f.y, ang: 0,
+    data: { x: f.x, y: f.y - f.h * 0.5 }
+  });
   w.shake = Math.max(w.shake, 1.6);
   SFX.blocked();
 }
@@ -527,9 +533,11 @@ function looseArrow(w, e, o, i, ang, mul) {
   // in the hero's hands. `dur` is the real flight time, so `e.p` *is* the fraction flown.
   // The seeds are spread apart per arrow, or the three sets of ripening sparks would twinkle
   // in lockstep and the fan would read as one wide arrow instead of three.
-  w.fxs.push({ sk: ARROW_SK, i: -1, t: 0, dur: max / s.spd, p: 0, pt: 0,
-               seed: (e.seed * 7 + 13 + i * 1013) | 0, ox: o.x, oy: o.y, x: e.x, y: e.y,
-               ang, data: { wp, s, max, mul, trav: 0, was: 0, hit: [] } });
+  w.fxs.push({
+    sk: ARROW_SK, i: -1, t: 0, dur: max / s.spd, p: 0, pt: 0,
+    seed: (e.seed * 7 + 13 + i * 1013) | 0, ox: o.x, oy: o.y, x: e.x, y: e.y,
+    ang, data: { wp, s, max, mul, trav: 0, was: 0, hit: [] }
+  });
 }
 
 // One pass per frame over the segment the arrow covered since the last one, so a 300 px/s
@@ -556,7 +564,7 @@ function arrowHit(w, e) {
     // là mũi chính đã trúng, trong khi mũi chính vừa bay trượt.
     const amt = (s.near + (s.far - s.near) * k) * d.mul;
     hurt(w, f, amt, wp.col, k > 0.85 && d.mul >= 1,
-         ca * s.push * k * d.mul, sa * s.push * k * 0.5 * d.mul);
+      ca * s.push * k * d.mul, sa * s.push * k * 0.5 * d.mul);
   }
 }
 
@@ -583,7 +591,7 @@ function drawArrow(w, e) {
     const gg = (k - 0.5) / 0.5;
     ring(x, y, 3 + 3 * gg, 1.1, ARR_H, 0.30 * gg * g, 0.7);
     sparks(x, y, 5, 1, 9, ARR_C, 0.35 * gg * g, e.seed, 0.7, sq,
-           e.ang + Math.PI - 0.5, e.ang + Math.PI + 0.5, 3);
+      e.ang + Math.PI - 0.5, e.ang + Math.PI + 0.5, 3);
   }
 }
 
@@ -596,7 +604,7 @@ function weaponStat(wp) {
     // `near`–`far` là dải của mũi giữa, nên khi có nan quạt thì phải nói ra số mũi: bằng
     // không dòng này đọc ra là cả đòn chỉ đáng bằng một mũi.
     return (n > 1 ? n + ' mũi · ' : '') +
-           `${wp.shot.near}–${wp.shot.far} theo tầm · xuyên · bay ${wp.shot.max}`;
+      `${wp.shot.near}–${wp.shot.far} theo tầm · xuyên · bay ${wp.shot.max}`;
   }
   return `${wp.dmg}×${wp.hits.length} nhịp · tầm ${Math.round(wp.range)}`;
 }
@@ -607,8 +615,10 @@ function swing(w, tx, ty) {
   const wp = w.wp;
   if (!wp || w.wcd > 0) return false;
   const h = w.hero;
-  const e = { sk: wp.sk, wp: wp, i: -1, t: 0, dur: wp.dur, p: 0, pt: 0,
-              seed: w.rng.int(1, 1e9) | 0, ox: h.x, oy: h.y - h.h * 0.5, data: {} };
+  const e = {
+    sk: wp.sk, wp: wp, i: -1, t: 0, dur: wp.dur, p: 0, pt: 0,
+    seed: w.rng.int(1, 1e9) | 0, ox: h.x, oy: h.y - h.h * 0.5, data: {}
+  };
   e.x = clamp(tx, BOUND.x0 - 18, BOUND.x1 + 18);
   e.y = clamp(ty, BOUND.y0 - 16, BOUND.y1 + 10);
   e.ang = Math.atan2((e.y - h.h * 0.5 - e.oy) / wp.squash, e.x - e.ox);

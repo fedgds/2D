@@ -15,17 +15,35 @@ const BAR_BOSS = hexc('#ffd98a');
 const BOSS_BAR_W = 44;
 
 function drawFoe(f) {
-  const fr = foeFrame(f);
-  const alpha = f.dying ? c01(1 - f.dying / 0.30) : 1;
+  // Boss nào có art trong ANIM_IMG thì vẽ art; còn lại (và cả khi chạy trong node vm không
+  // nạp boss-frames.js) rơi về bộ lưới vẽ tay. Hai đường đi qua đúng cùng một `blit`, chỉ
+  // khác cái palette truyền vào.
+  const im = typeof ANIM_IMG !== 'undefined' ? ANIM_IMG[f.kind] : null;
+  const fr = im ? foeImgFrame(f) : foeFrame(f);
+  // Khung chết của art là ba tư thế đổ xuống đất, nên tan dần suốt 0,30 s là xoá chúng đi
+  // trước khi kịp thấy: giữ đục tới 60% rồi mới mờ. Bộ vẽ tay không có khung chết nào cả,
+  // với nó "tan dần" chính là toàn bộ hoạt ảnh chết, nên giữ nguyên.
+  const alpha = f.dying ? (im ? c01((1 - f.dying / 0.30) / 0.40) : c01(1 - f.dying / 0.30)) : 1;
   let flash = f.flash, dim = 1;
   if (f.frozen > 0) { flash = Math.max(flash, 0.26); dim = 0.86; }
   else if (f.slow > 0) dim = 0.78;
   // A monster winding up is lit from inside and the pulse quickens as the timer fills, so
   // the body itself says "this one is casting" even if the floor mark is off screen.
-  if (f.chg > 0 && !f.dying)
-    flash = Math.max(flash, (0.10 + 0.30 * f.chg) * (0.65 + 0.35 * Math.sin(f.chg * 26)));
-  blit(fr.g, Math.round(f.x - (f.w >> 1)), Math.round(f.y - f.h) + fr.dy,
-       flash, f.flip, alpha, dim);
+  //
+  // Boss có art thì chỉ lấy 40%: chính bộ khung cast đã nói câu đó rồi (tay giơ lên, lò trong
+  // ngực bùng), nên phủ thêm một lớp trắng cộng lên trên là bạc màu đúng cái vừa dựng -- con
+  // vua băng hoá ra trắng chứ không ra băng. Với quái thường thì lớp trắng đó *là* toàn bộ tín
+  // hiệu, vì chúng không có khung cast nào.
+  if (f.chg > 0 && !f.dying) {
+    const g = (0.10 + 0.30 * f.chg) * (0.65 + 0.35 * Math.sin(f.chg * 26));
+    flash = Math.max(flash, im ? g * 0.40 : g);
+  }
+  // Cỡ lấy từ *chính khung đang vẽ*, không từ f.w/f.h. Với lưới vẽ tay hai cái bằng nhau
+  // (unit() đặt f.w/f.h từ lưới) nên không đổi gì; với art thì mỗi khung một cỡ, và neo là
+  // (giữa lưới, đáy lưới) -- nên tay giơ lên thì cao thêm về phía đầu, chân vẫn tại chỗ.
+  const gw = fr.g[0].length, gh = fr.g.length;
+  blit(fr.g, Math.round(f.x - (gw >> 1)), Math.round(f.y - gh) + fr.dy,
+       flash, f.flip, alpha, dim, im ? im.pal : null);
   if (f.dying) return;
   if (f.boss) {
     const bw = BOSS_BAR_W, x0 = Math.round(f.x - (bw >> 1)), y0 = Math.round(f.y - f.h - 5);

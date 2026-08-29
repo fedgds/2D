@@ -4,7 +4,8 @@ Trước đây toàn bộ engine là **một** `<script>` viết thẳng trong `
 Giờ mỗi mục của file đó là một file ở đây. Thứ tự nạp trong `index.html` đúng bằng thứ tự
 cũ, và nội dung từng mục **không đổi một byte** — chỉ thêm `"use strict";` ở dòng đầu.
 Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đánh số `3b` (`arena.js` và
-`sfx.js`); thứ tự thật là bảng dưới đây.
+`sfx.js`); file thêm sau đó mang số kèm hậu tố (`dash.js` là `6a-bis`, `boss-img.js` là
+`3c-bis`). Thứ tự thật là bảng dưới đây.
 
 ## Thứ tự nạp
 
@@ -13,9 +14,11 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `core.js` | buffer HDR, tonemap, Bayer dither, `hexc`/`asOutput`, rng, `fpow` |
 | `fx.js` | primitive cộng sáng: `core`, `beam`, `ring`, `arc`, `bolt`, `veil`… |
 | `sprites.js` | palette + grid nhân vật, `blit`, `blitRot`, `text3x5` |
+| `boss-frames.js` | **sinh tự động** — lưới ký tự + palette riêng của 3 boss, dựng từ ảnh |
 | `scene.js` | sàn dựng sẵn, bóng tiếp đất, đèn riêng của hero, `setCam` |
 | `arena.js` | đọc registry `map/`, `applyMap`, rải prop, hạt môi trường |
 | `anim.js` | sinh mọi frame animation lúc nạp từ một pose authored |
+| `boss-img.js` | `ANIM_IMG`/`foeImgFrame`: bốn bộ ảnh → khung vẽ được, và hộp `bh` |
 | `weapon.js` | 5 vũ khí: sheet 16 khung (`ART`), `drawSwing`, `drawHeld`, `swing` |
 | `sfx.js` | `SFX` — mọi tiếng đều tổng hợp bằng WebAudio lúc chạy |
 | `world.js` | hero, quái, damage, `newWorld`, `step`, các hàm trúng đòn |
@@ -23,7 +26,7 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `skills.js` | 16 skill (`SKILLS`) |
 | `dash.js` | chiêu lướt né mặc định — không tính vào 3 slot |
 | `foe-abil.js` | chiêu quái + vùng cảnh báo vẽ trên sàn |
-| `boss.js` | 3 boss: grid to, bộ khung tung chiêu, `bossCast`, cửa `bossGate` |
+| `boss.js` | 3 boss: grid vẽ tay (bản dự phòng, art ảnh thắng), `bossCast`, cửa `bossGate` |
 | `boss-abil.js` | 12 chiêu boss + `BOSS_SHAPE` (vùng tô, và chính nó là vùng gây damage) |
 | `lab.js` | `globalThis.LAB`: cửa cho harness node, không cần DOM |
 | `icons.js` | icon 32×32 vẽ bằng canvas cho hotbar và bảng chọn |
@@ -92,6 +95,15 @@ không bao giờ do bốc thăm, và cuối cùng ba mươi giây thật với m
 khung không ném lỗi, dùng ≥ 3 chiêu khác nhau, không chiêu nào chiếm quá nửa số lần niệm.
 Chạy hết khoảng 15 giây.
 
+Một mục riêng lo art ảnh (`ANIM_IMG`), và cũng kiểm lời hứa: lưới rộng số **lẻ** để `flip` lật
+quanh đúng cột neo, không hàng rỗng ở đáy (lơ lửng *chỉ ở vài khung* thì thành giật), `bh` cao
+hơn mọi tư thế còn sống kể cả lúc nhấp lên, `bw` là bán kính bị đánh trúng lấy theo bộ đứng nên
+không có ai trúng đòn ở chỗ không có gì, và hai câu về nhịp đọc telegraph: khung đang gồng **chưa
+bao giờ** sáng bằng khung phát (đo độ sáng trung bình trên ô đặc, không đo số ô — khung to hơn
+không được tính là sáng hơn), và khung phát thật sự có lên màn hình. Cả hai đo qua chính
+`foeImgFrame` với foe giả quét hết `f.chg` rồi hết `f.rel`, vì lỗi đầu tiên ở chỗ này là con boss
+loé sáng *trước* khi có gì xảy ra — tức là dạy người chơi né sai nhịp.
+
 Một chỗ dễ vướng nếu sửa thêm mục vào tool: shape rải đốt, tia hay mắt lưới lấy hình từ
 `e.seed`, nên **hai cast khác seed là hai bàn cờ khác nhau**. Mục nào tìm một điểm đo trên
 cast này rồi đo trên cast khác thì phải gieo cùng một seed cho cả hai, không thì `frost_web`
@@ -147,9 +159,40 @@ thứ đang chạy. Con boss được đặt đúng khoảng cách nó thật s�
 không tồn tại. Khung nhìn tính từ chính tầm của chiêu chứ không chép tay, nên sửa `r` trong
 bảng thì ảnh tự rộng theo.
 
-`pose:<boss>` xếp ba hàng — đứng / đi / tung chiêu — vẽ thẳng từ lưới ký tự và `PAL`, không
-qua engine: ở đây câu hỏi là "ba khung tung chiêu có khác nhau bằng mắt không", và ánh sáng
-của sân chỉ làm khó việc so hai khung cạnh nhau. Chính hàng thứ ba đó đã bắt được ba lỗi vẽ
-mà không con số nào bắt được: cả ba con boss từng có khung "dồn" bị hai lệnh `recol` liên tiếp
-làm phẳng thành một khối một màu.
+`pose:<boss>` xếp năm hàng — đứng / đi / tung chiêu / trúng đòn / chết — vẽ thẳng từ lưới ký
+tự và palette của chính con đó, không qua engine: ở đây câu hỏi là "các khung có khác nhau
+bằng mắt không", và ánh sáng của sân chỉ làm khó việc so hai khung cạnh nhau. Chính hàng tung
+chiêu đó đã bắt được ba lỗi vẽ mà không con số nào bắt được: cả ba con boss từng có khung "dồn"
+bị hai lệnh `recol` liên tiếp làm phẳng thành một khối một màu. Con nào chưa có art ảnh thì rơi
+về ba hàng đầu với `PAL` dùng chung.
+
+## Sinh lại khung boss từ ảnh
+
+```bash
+node tools/gen-boss-frames.js
+```
+
+Ba con boss lấy ngoại hình từ `images/animations/boss/<1|2|3>/<idle|cast|hit|death>/*.png` — art
+~1024×1536, 12 khung mỗi con, gần 50 MB. Không thể để trang nạp trực tiếp, và cũng không nên:
+cả engine vẽ vào buffer 320×180 rồi hạ xuống 16 mức mỗi kênh, nên mọi thứ vượt quá cỡ đó đều bị
+vứt ở bước cuối. Tool làm sẵn phần bị vứt — cắt theo bbox alpha từng khung, thu nhỏ bằng box
+filter trên alpha đã premultiply, cắt alpha thành nhị phân, lượng hoá màu bằng median cut về một
+palette riêng cho từng con — rồi ghi ra `js/boss-frames.js` (78 KB) đúng dạng lưới ký tự mà
+`sprites.js` đã dùng. Nhờ vậy khung ảnh và khung vẽ tay đi qua **cùng** một `blit`, chỉ khác
+bảng màu truyền vào (tham số thứ 8, thêm cho việc này; `blitRot` vốn đã nhận palette như thế).
+
+Hai điều dễ làm sai:
+
+- **Đừng sửa tay `js/boss-frames.js`** — lần sinh sau ghi đè sạch. Muốn đổi cỡ, số màu hay
+  ngưỡng alpha thì đổi `BODY_H` / `PAL_N` / `A_CUT` trong tool.
+- **`bh` không nằm trong file sinh ra.** `boss-img.js` còn cộng một nhịp nhấp 1 px cho bộ đi
+  *sau* khi dữ liệu đã sinh, nên chỉ nó biết đỉnh đầu thật sự tới đâu. Bake sẵn ở tool từng cho
+  ra một thanh máu cắt qua mũ trùm của con 1 đúng lúc nó đang đi — `check-boss.js` bắt được, và
+  nguyên nhân là hai nguồn sự thật cho một con số.
+
+Bốn bộ trong art không khớp một-một với trạng thái `world.js` đang theo dõi, nên chỗ nối là
+`boss-img.js` chứ không phải logic game: `death ← f.dying`, `cast ← f.chg` rồi `f.rel`,
+`hit ← f.flash`, `walk` thì art không có nên là bộ đứng cộng nhịp nhấp. Không thêm trường trạng
+thái nào vào foe. Thứ tự ưu tiên death > cast > hit > walk/idle, và cast **trên** hit là có chủ
+ý: boss đang tung chiêu mà bị đánh thì thứ người chơi cần đọc vẫn là chiêu đó.
 

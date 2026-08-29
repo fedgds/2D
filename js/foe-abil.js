@@ -157,7 +157,7 @@ function tryCast(w, f) {
 function startCast(w, f, key) {
   const A = FOE_ABIL[key], h = w.hero, ox = f.x, oy = f.y - 1;
   const e = { ab: A, key: key, owner: f, seed: w.rng.int(1, 1e9) | 0,
-              t: 0, p: 0, pt: 0, dur: A.dur, fired: false, tick: false, ticked: 0,
+              t: 0, p: 0, pt: 0, dur: A.dur, fired: false, tick: false, warned: 0, ticked: 0,
               x: ox, y: oy, ang: 0 };
   if (A.aim === 'hero') {
     e.x = clamp(h.x, BOUND.x0 - 10, BOUND.x1 + 10);
@@ -193,7 +193,15 @@ function stepTel(w, e, dt, i) {
   const S = BOSS_SHAPE[A.shape];
   if (S && S.step) S.step(w, e, dt);
   const pan = clamp((e.x - w.cam.x - W * 0.5) / (W * 0.5), -1, 1);
-  if (!e.tick && e.t >= A.tell - 0.20) { e.tick = true; SFX.tick(pan); }
+  // Boss strings and staggered impacts need a countdown for every beat. One dry tick before
+  // the first meteor and silence before the other five made the first circle feel dangerous
+  // and the rest feel decorative. Normal attacks keep the old single cue.
+  const beats = A.ticks || [0];
+  if (S && beats.length > 1) {
+    while (e.warned < beats.length && e.t >= A.tell + beats[e.warned] - 0.18) {
+      e.warned++; SFX.tick(pan);
+    }
+  } else if (!e.tick && e.t >= A.tell - 0.20) { e.tick = true; SFX.tick(pan); }
   if (!e.fired && e.t >= A.tell) {
     e.fired = true;
     if (o && o.tel === e) { o.tel = null; o.chg = 0; }
@@ -215,9 +223,15 @@ function stepTel(w, e, dt, i) {
     } else {
       // Most moves land once; a lingering pool keeps asking. `ticked` is an index rather
       // than a timer so a long frame can never swallow a tick.
-      const ticks = A.ticks || [0];
+      const ticks = beats;
       while (e.ticked < ticks.length && e.t >= A.tell + ticks[e.ticked]) {
         e.ticked++;
+        // The release flash happens once, but a meteor shower, a biting lattice and a two-beat
+        // stomp all contain real later impacts. Give those beats their own physical response.
+        if (S && e.ticked > 1) {
+          w.shake = Math.max(w.shake, (A.shake || 0) * 0.62);
+          SFX.boom(A.boomv || A.shape, pan);
+        }
         if (heroIn(w, e)) hitHero(w, A.dmg, A.col);
       }
     }
@@ -233,11 +247,21 @@ function drawTellUnder(w, e) {
   const A = e.ab;
   if (e.fired) { drawBoomUnder(w, e); return; }
   const k = c01(e.t / A.tell);                       // how full the clock is
-  const urg = k > 0.78 ? (k - 0.78) / 0.22 : 0;      // the last beat
-  const fl = 0.55 + 0.45 * Math.sin(k * 34) * urg;   // flicker, and only at the end
-  const eg = 0.5 + 0.5 * urg;
   const S = BOSS_SHAPE[A.shape];
-  if (S) { S.under(w, e, k, urg, fl, eg); return; }
+  // Bosses enter the urgent half of their wind-up at 52% rather than 68%. A boss `tell` runs
+  // 0.85-1.20 s, so the old ramp gave about a third of a second of "this is happening now" --
+  // less than the reaction time it is asking for, and easy to miss entirely if you were reading
+  // the previous move's afterglow. Just under half a second is enough to turn and walk.
+  const urg = S ? (k > 0.52 ? (k - 0.52) / 0.48 : 0)
+                : (k > 0.78 ? (k - 0.78) / 0.22 : 0);
+  // Flicker on bosses swings the full way to zero at the end and beats twice as fast, so the last
+  // fifth of the clock is a strobe rather than a shimmer. `eg` -- the hard-outline gain -- starts
+  // dim and finishes brighter than white paint: the *edge* of the mark is the one thing that must
+  // still be findable when two casts overlap on the same floor.
+  const fl = S ? 0.70 + 0.30 * Math.sin(k * 72) * urg
+               : 0.55 + 0.45 * Math.sin(k * 34) * urg;
+  const eg = S ? 0.95 + 0.65 * urg : 0.5 + 0.5 * urg;
+  if (S) { S.under(w, e, k, urg, fl, eg); bossTellAccent(e, k, urg, fl, eg); return; }
   if (A.shape === 'line') {
     const t2 = telEnd(e), sa = Math.atan2(t2.y - e.y, t2.x - e.x);
     const sl = Math.hypot(t2.x - e.x, t2.y - e.y);
@@ -279,6 +303,9 @@ function drawTellMid(w, e) {
   const o = e.owner;
   if (!o || o.dying) return;
   const k = c01(e.t / A.tell), cy = midY(o);
+  const S = BOSS_SHAPE[A.shape], u0 = S ? 0.52 : 0.68;   // see drawTellUnder for why bosses differ
+  const urg = k > u0 ? (k - u0) / (1 - u0) : 0;
+  const fl = 0.72 + 0.28 * Math.sin(k * (S ? 72 : 40)) * urg;
   core(o.x, cy, 3 + 7 * k, A.col, 0.30 + 0.45 * k, 1.7);
   core(o.x, cy, 1.6 + 2.4 * k, WARN_H, 0.45 + 0.50 * k);
   if (k > 0.25)
@@ -289,15 +316,15 @@ function drawTellMid(w, e) {
     }
   // Bosses keep the body glow -- a caster is a caster -- and add whatever their own move puts
   // in the air during the wind-up: meteors still falling, a pillar growing down out of the dark.
-  const S = BOSS_SHAPE[A.shape];
   if (S && S.mid) S.mid(w, e, k);
+  if (S) bossTellCharge(w, e, k, urg, fl);
 }
 
 function drawBoomUnder(w, e) {
   const A = e.ab, span = Math.max(e.dur - A.tell, 1e-3);
   const q = c01((e.t - A.tell) / span), fd = fade(q, 0.25);
   const S = BOSS_SHAPE[A.shape];
-  if (S) { S.boomUnder(w, e, q, fd); return; }
+  if (S) { S.boomUnder(w, e, q, fd); bossImpactUnder(e, q, fd); return; }
   if (A.shape === 'line') {
     const t2 = telEnd(e), sa = Math.atan2(t2.y - e.y, t2.x - e.x);
     const sl = Math.hypot(t2.x - e.x, t2.y - e.y);
@@ -324,7 +351,11 @@ function drawBoomMid(w, e) {
   const A = e.ab, span = Math.max(e.dur - A.tell, 1e-3);
   const q = c01((e.t - A.tell) / span), fd = fade(q, 0.20), g = pop(q, 0.08);
   const S = BOSS_SHAPE[A.shape];
-  if (S) { if (S.boomMid) S.boomMid(w, e, q, fd, g); return; }
+  if (S) {
+    if (S.boomMid) S.boomMid(w, e, q, fd, g);
+    bossImpactMid(e, q, fd, g);
+    return;
+  }
   if (A.shape === 'line') {
     const t2 = telEnd(e), sa = Math.atan2(t2.y - e.y, t2.x - e.x);
     const sl = Math.hypot(t2.x - e.x, t2.y - e.y);

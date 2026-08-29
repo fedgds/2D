@@ -31,9 +31,15 @@ function hexc(s) {
 
 // Buffer value that tonemaps to exactly this colour: floor tones authored this way
 // land on the 16-step grid instead of drifting to maroon/teal one step away.
+//
+// Exact inverse of the tonemap in resolve(): that curve is applied to the *strongest*
+// channel and the other two ride along on the original ratio, so inverting it means
+// inverting one scalar (the max) and scaling the triple back up by it.
 function asOutput(s) {
-  const c = hexc(s);
-  return c.map(v => -Math.log(1 - Math.min(v, 0.995)) / EXPO);
+  const c = hexc(s), m = Math.max(c[0], c[1], c[2]);
+  if (m <= 0) return [0, 0, 0];
+  const l = -Math.log(1 - Math.min(m, 0.995)) / EXPO;
+  return c.map(v => v / m * l);
 }
 // 16 levels means 255/15 == 17 exactly, so the output step is an integer.
 //
@@ -53,9 +59,20 @@ function resolve(out, full) {
       const i = y * W + x, i3 = i * 3, i4 = i * 4;
       const b0 = buf[i3], b1 = buf[i3 + 1], b2 = buf[i3 + 2];
       if (base && b0 === FLOOR[i3] && b1 === FLOOR[i3 + 1] && b2 === FLOOR[i3 + 2]) continue;
-      const r = 1 - Math.exp(-(b0 > 0 ? b0 : 0) * EXPO);
-      const g = 1 - Math.exp(-(b1 > 0 ? b1 : 0) * EXPO);
-      const b = 1 - Math.exp(-(b2 > 0 ? b2 : 0) * EXPO);
+      // Tonemap the *brightest* channel and let the other two keep their ratio to it.
+      // Curving each channel on its own pulls all three toward 1 at different rates, so the
+      // strongest saturates first and every colour bleaches as it brightens: a cyan #8fd6ff
+      // cast resolved to #99bbcc at buffer 1.0 and #ddeeee at 2.6, which is why the VFX layer
+      // read as grey haze -- nothing could be bright *and* its own colour. Peak brightness is
+      // unchanged (the max channel goes through the same curve), hue and saturation now
+      // survive the whole range, and it costs one exp() per pixel instead of three.
+      const v0 = b0 > 0 ? b0 : 0, v1 = b1 > 0 ? b1 : 0, v2 = b2 > 0 ? b2 : 0;
+      const l = v0 > v1 ? (v0 > v2 ? v0 : v2) : (v1 > v2 ? v1 : v2);
+      let r = 0, g = 0, b = 0;
+      if (l > 1e-6) {                            // below this the whole triple rounds to 0
+        const s = (1 - Math.exp(-l * EXPO)) / l;
+        r = v0 * s; g = v1 * s; b = v2 * s;
+      }
       const lum = (r + g + b) / 3;
       let amp = (lum - 0.26) / 0.22;             // dither the light, not the flats
       amp = amp < 0 ? 0 : (amp > 1 ? 1 : amp);

@@ -24,6 +24,11 @@
 // Six new material pairs. Not one of these chars appears in sprites.js's own table, in any
 // arena's eight (D d P p Q q Z z), or in the sentinel's grid, so applyMap can never repaint
 // a boss when the floor changes underneath it.
+//
+// Three steps per material, not two, and that is what buys the detail: a two-step material can
+// only ever draw an outline and a fill, so every plate on a 31 px body reads as one slab. With a
+// dark, a mid and a light the same plate carries a lit edge, a body and a shadowed edge, which
+// is how a pauldron becomes round and a grate becomes a grate instead of a stripe.
 {
   const raw = {
     u: '#ffd35c', U: '#e0641c',                 // magma: the hot seam, and the cooling crust
@@ -36,46 +41,95 @@
   for (const k in raw) PAL[k] = hexc(raw[k]);
 }
 
-// 21x24. A titan: the horns read before the body does, which is the whole job of a
-// silhouette at this size. Magma is confined to the chest, belt and hooves -- spread over
-// the whole body it stops being cracks and becomes a colour.
+// 31x35. A titan, and the size is load-bearing: at 21x24 there was no room to spend on
+// anything but the silhouette, so the body was one iron slab with an orange patch on it. The
+// ten extra columns go into parts -- ram horns, a visored helm with a burning maw, riveted
+// pauldrons, a furnace grate in the chest, a studded belt, cloven hooves -- and the parts are
+// what make it read as a forge that walks. Magma is still confined to the seams, the visor,
+// the belt buckle and the hooves: spread over the whole body it stops being cracks and
+// becomes a colour.
 const FORGELORD = [
-  "...KK...........KK...", "..KOOK.........KOOK..", "..KOoK.........KOoK..",
-  "...KOoK.......KOoK...", ".....KKKKKKKKKKK.....", "....KNNNNNNNNNNNK....",
-  "....KNuuNNNNNuuNK....", "....KNNNNNNNNNNNK....", ".....KNOOOOOOONK.....",
-  "...KKKNNNNNNNNNKKK...", ".KKnnnNNNNNNNNNnnnKK.", "KnnnKNuUUUUUUUuNKnnnK",
-  "KnnnKNUuuuuuuuUNKnnnK", "KnnnKNNuUUUUUuNNKnnnK", ".KnnKNNNuUUUuNNNKnnK.",
-  ".KnnKNNNNuuuNNNNKnnK.", "KnnnK.KNNNNNNNK.KnnnK", "KnnnK.KUUUUUUUK.KnnnK",
-  ".KKK..KNNNNNNNK..KKK.", "......KNNNKNNNK......", ".....KNNNNKNNNNK.....",
-  ".....KNnnNKNnnNK.....", "....KNNNNK.KNNNNK....", "....KKKKK...KKKKK....",
+  // The horns taper the *wrong* way round if you draw them at a constant three pixels: a
+  // uniform diagonal stripe seven rows long is an antenna, and two of them make an insect.
+  // Five pixels at the helm down to three at the tip is what makes them ram horns, and they
+  // also have to *curve* -- the outer edge sweeps out fast off the helm, reaches col 2 halfway
+  // up and then hooks back in, because a straight diagonal is a stick no matter how thick it
+  // is. The mass at the base does double duty: it is the only part of the silhouette wide
+  // enough to be recognisable when the boss is walking towards you from the far edge.
+  "...KOo...................oOK...", "..KOOo...................oOOK..",
+  "..KOOoo.................ooOOK..", "...KOOoo...............ooOOK...",
+  "....KOOoo.............ooOOK....", "......KOOoo.........ooOOK......",
+  "........KOOoKNNNNNKoOOK........", "...........KNNnnnNNK...........",
+  "..........KNnnnnnnnNK..........", ".........KNNnnnnnnnNNK.........",
+  ".........KNuuuNNNuuuNK.........", ".........KNUUUNNNUUUNK.........",
+  ".........KNnnnnnnnnnNK.........", "..........KNuUuUuUuNK..........",
+  "...........KNNNNNNNK...........", "...KOOOOOK...KNNNK...KOOOOOK...",
+  "..KOOoooOOKKNNNNNNNKKOOoooOOK..", "..KOoooooOKKNnnnnnNKKOoooooOK..",
+  ".KNnnNK.KNNNNNNNNNNNNNK.KNnnNK.", ".KNnnNK.KNnnnnnnnnnnnNK.KNnnNK.",
+  ".KNNNNK.KNnUUUUUUUUUnNK.KNNNNK.", ".KNnnNK.KNnUNuNuNuNUnNK.KNnnNK.",
+  ".KNnnNK.KNnUuuuuuuuUnNK.KNnnNK.", ".KNNNNK.KNnUNuNuNuNUnNK.KNNNNK.",
+  ".KNUUNK.KNnUUUUUUUUUnNK.KNUUNK.", ".KNuuNK.KNnnnnnnnnnnnNK.KNuuNK.",
+  ".KNNNNK.KNNNNNNNNNNNNNK.KNNNNK.", "......KRrrrrKuuuuuKrrrrRK......",
+  "......KRrrrrKUUUUUKrrrrRK......", "........KNnnnNK.KNnnnNK........",
+  "........KNnnnNK.KNnnnNK........", ".........KNnnNK.KNnnNK.........",
+  ".........KNnnNK.KNnnNK.........", ".......KNUUUUNK.KNUUUUNK.......",
+  ".......KKuuuuKK.KKuuuuKK.......",
 ];
-// 19x26, and the only thing in the game with no legs at all: a crown over a robe that
-// never touches the floor. It is the tallest sprite here on purpose -- the frostking
-// fights at range, so it has to be findable across a screen it is not walking towards.
+// 29x37, and the only thing in the game with no legs at all: a spiked crown over a mantle over
+// a robe that never touches the floor. It is the tallest sprite here on purpose -- the frostking
+// fights at range, so it has to be findable across a screen it is not walking towards -- and the
+// hem tapers into icicle teeth rather than stopping flat, because a flat bottom edge on something
+// that floats reads as a thing standing on an invisible box.
 const FROSTKING = [
-  ".........y.........", "......y..y..y......", ".....KyKKyKKyK.....",
-  "...KyyyyyyyyyyyK...", "...KYYYYYYYYYYYK...", "....KKKKKKKKKKK....",
-  "....KjjjjjjjjjK....", "....KjyyjjjyyjK....", "....KjjjjjjjjjK....",
-  ".....KjjjjjjjK.....", "..KKKYYYYYYYYYKKK..", ".KYYYYYYYYYYYYYYYK.",
-  "KYYyYjjjjyjjjjYyYYK", "KYyYjjjjjyyyjjjjjYK", "KYYjjjjjyyyyyjjjjYK",
-  ".KYjjjjjjyyyjjjjjK.", ".KYjjjjjjjyjjjjjjK.", ".KjjjjjjjjjjjjjjjK.",
-  "..KjjjjjjjjjjjjjK..", "..KjJJJJJJJJJJJjK..", "..KjJJJJJJJJJJJjK..",
-  ".KjJJJJJJJJJJJJJjK.", ".KjJJJJJJJJJJJJJjK.", "KjJJJJJJJJJJJJJJJjK",
-  "KjJJJKJJJJJKJJJJJjK", ".KKK.KKKKKKKKK.KKK.",
+  // Five spikes two pixels thick, staggered so the crown has a middle: one pixel of rime
+  // between two outline pixels is a hairline, and five hairlines in a row read as a comb
+  // rather than as a crown. The stagger matters as much as the width -- a flat row of equal
+  // spikes is a fence, and it is the tall centre falling away to short shoulders that reads as
+  // a head from across the arena.
+  ".............KyK.............", ".......KyyK.KyyyK.KyyK.......",
+  "..KyyK.KyyK.KyyyK.KyyK.KyyK..", "..KYYK.KYYK.KYYYK.KYYK.KYYK..",
+  "..KyYyYyYyYyYyYyYyYyYyYyYyK..", "..KYjjjjjjjjjjjjjjjjjjjjjYK..",
+  "....KYjjjjjjjjjjjjjjjjjYK....", "......KYYYYYYYYYYYYYYYK......",
+  ".....KYjjjjjjjjjjjjjjjYK.....", ".....KYjjjjjjjjjjjjjjjYK.....",
+  ".....KYjIIIjjjjjjjIIIjYK.....", ".....KYjiiijjjjjjjiiijYK.....",
+  ".....KYjjjjjjjjjjjjjjjYK.....", "......KYjjjjjjjjjjjjjYK......",
+  ".......KYjjjjjjjjjjjYK.......", "..KYyYyYyYyYyYyYyYyYyYyYyYK..",
+  ".KYYjjjjjjjjjjjjjjjjjjjjjYYK.", ".KYyyjjjjjjjjjjjjjjjjjjjyyYK.",
+  ".KYjjYK.KYYYYYYYYYYYK.KYjjYK.", ".KYjjYK.KYjjjjjjjjjYK.KYjjYK.",
+  ".KYjjYK.KYjjjjyjjjjYK.KYjjYK.", ".KYjjYK.KYjjjyyyjjjYK.KYjjYK.",
+  ".KYYYYK.KYjjyyIyyjjYK.KYYYYK.", ".KYjjYK.KYjjjyyyjjjYK.KYjjYK.",
+  ".KyyyyK.KYjjjjyjjjjYK.KyyyyK.", ".KAaaAK.KYjjjjjjjjjYK.KAaaAK.",
+  ".KaKKaK.KYYjjjjjjjYYK.KaKKaK.", "......KYjjjjjjjjjjjjjYK......",
+  ".....KYjjjjjjjjjjjjjjjYK.....", "....KYjjjjjjjjjjjjjjjjjYK....",
+  "...KYJJJJJJJJJJJJJJJJJJJYK...", "..KjJJJJJJJJJJJJJJJJJJJJJjK..",
+  "..KjJJJjJJJJjJJJJjJJJJjJJjK..", ".KjJJJJJJJJJJJJJJJJJJJJJJJjK.",
+  ".KjJJJJjJJJJjJJJJjJJJJjJJJjK.", ".KyJJJJJJJJJJJJJJJJJJJJJJJyK.",
+  "..KyK..KyK..KyK..KyK..KyK....",
 ];
-// 19x25. A hood with nothing inside it but a bone mask, and the one pink pixel cluster in
-// the game sitting on its chest: the sigil is where three of its four moves come from, so
-// it is drawn as a part of the body rather than as an effect stuck on top of one.
+// 29x36. A hood with nothing inside it but a bone mask, two skeletal hands held out at the
+// sides, and the one pink pixel cluster in the game blazing on its chest: the sigil is where
+// three of its four moves come from, so it is drawn as a part of the body rather than as an
+// effect stuck on top of one. The cloak tatters into strips at the hem for the same reason the
+// frostking's does -- and because a herald whose robe ends in a straight line is a curtain.
 const VOIDHERALD = [
-  "........KKK........", ".......KHHHK.......", "......KHHHHHK......",
-  ".....KHHHHHHHK.....", "....KHHhhhhhHHK....", "...KHHhOOOOOhHHK...",
-  "...KHhOOEOEOOhHK...", "...KHhOoOOOoOhHK...", "...KHhhOoOoOhhHK...",
-  "....KHHhOOOhHHK....", "..KKHHHhhhhhHHHKK..", ".KHHhhhhhhhhhhhHHK.",
-  "KHHhhhhhmsmhhhhhHHK", "KHhhhhhmsssmhhhhhHK", "KHhhhhhhmsmhhhhhhHK",
-  ".KHhhhhhhmhhhhhhHK.", ".KHHhhhhhhhhhhhHHK.", "..KHHhhhhhhhhhHHK..",
-  "..KHHHhhhhhhhHHHK..", "...KHHHhhhhhHHHK...", "...KHHHHhhhHHHHK...",
-  "....KHHHHhHHHHK....", "....KHHHHHHHHHK....", ".....KHHHKHHHK.....",
-  "......KKK.KKK......",
+  ".............KHK.............", "............KHHHK............",
+  "...........KHHHHHK...........", "..........KHHmhhHHK..........",
+  ".........KHHmhhhhHHK.........", "........KHHmhhhhhhHHK........",
+  ".......KHHmhhhhhhhhHHK.......", "......KHHmhhhhhhhhhhHHK......",
+  ".....KHHmhhhhhhhhhhhhHHK.....", ".....KHhhHKOOOOOOOKHhhHK.....",
+  ".....KHhhKOoooooooOKhhHK.....", ".....KHhhKOEEOOOEEOKhhHK.....",
+  ".....KHhhKOoEOOOEoOKhhHK.....", ".....KHhhHKOoOOOoOKHhhHK.....",
+  ".....KHhhHHKoKoKoKHHhhHK.....", "......KHhHHKOOOOOKHHhHK......",
+  "......KHhhhhhhhhhhhhhHK......", "...KHHhhhhhhhhhhhhhhhhhHHK...",
+  "..KHHhhhhhhhhhhhhhhhhhhhHHK..", ".KHHhhhhhhhhhhhhhhhhhhhhhHHK.",
+  ".KHhHK.KHHhhhhhhhhhHHK.KHhHK.", ".KHhHK.KHhhhhhmhhhhhHK.KHhHK.",
+  ".KhmhK.KHhhhhmsmhhhhHK.KhmhK.", ".KOoOK.KHhhhmsssmhhhHK.KOoOK.",
+  ".KOoOK.KHhhmsssssmhhHK.KOoOK.", ".KoKoK.KHhhhmsssmhhhHK.KoKoK.",
+  ".KoKoK.KHhhhhmsmhhhhHK.KoKoK.", ".......KHhhhhhmhhhhhHK.......",
+  ".......KHHhhhhhhhhhHHK.......", ".....KHHhhhhhhhhhhhhhHHK.....",
+  "....KHHhhhhhhhhhhhhhhhHHK....", "...KHHHHHHHHHHHHHHHHHHHHHK...",
+  "..KHHHHHHHHHHHHHHHHHHHHHHHK..", "..KHHHhHHHHhHHHHhHHHHhHHHHK..",
+  "...KhhK..KhhK..KhhK..KhhK....", "....HH....HH....HH....HH.....",
 ];
 GRIDS.forgelord = FORGELORD; GRIDS.frostking = FROSTKING; GRIDS.voidherald = VOIDHERALD;
 
@@ -100,15 +154,17 @@ function recol(rs, r0, r1, c0, c1, from, to) {
     for (let c = c0; c <= c1; c++) if (rs[y][c] === from) rs[y][c] = to;
 }
 {
-  // Forgelord. Legs are cols 4-9 and 11-16 of rows 19-23 (col 10 is the shared outline),
-  // arms are cols 0-4 and 16-20 of rows 11-18, and the chest magma is rows 11-15.
+  // Forgelord, 31x35. Legs are cols 6-14 and 16-24 of rows 29-34 (col 15 is the gap between
+  // the two hooves), the arms are cols 0-7 and 23-30 of rows 18-26 -- entirely outside the
+  // torso's own 8-22, which is what lets shiftBox move a whole arm without touching the body --
+  // and the chest furnace is rows 20-24, cols 9-21.
   const fstep = right => {
     const rs = rows(FORGELORD);
-    liftPart(rs, 19, 23, right ? 11 : 4, right ? 16 : 9);
+    liftPart(rs, 29, 34, right ? 16 : 6, right ? 24 : 14);
     return grid(rs);
   };
-  const fhunch = () => { const rs = rows(FORGELORD); liftRows(rs, 4, 9, 1); return grid(rs); };
-  const fbreathe = () => { const rs = rows(FORGELORD); liftRows(rs, 10, 18, -1); return grid(rs); };
+  const fhunch = () => { const rs = rows(FORGELORD); liftRows(rs, 7, 14, 1); return grid(rs); };
+  const fbreathe = () => { const rs = rows(FORGELORD); liftRows(rs, 18, 26, -1); return grid(rs); };
   // The three cast poses. Arms up two, arms up four with the chest at full heat, then both
   // arms three pixels *below* where they started and the belt blown open: read as a strip,
   // that is a lift, a hold and a slam, and it is the slam frame that has to still be there
@@ -122,13 +178,17 @@ function recol(rs, r0, r1, c0, c1, from, to) {
   // It reads as a missing sprite.
   const farms = (dy, hot) => {
     const rs = rows(FORGELORD);
-    shiftBox(rs, 11, 18, 0, 4, dy); shiftBox(rs, 11, 18, 16, 20, dy);
+    shiftBox(rs, 18, 26, 0, 7, dy); shiftBox(rs, 18, 26, 23, 30, dy);
     if (hot > 1) {
-      recol(rs, 11, 15, 5, 15, 'U', 'u');        // seams: crust → white-hot
-      recol(rs, 11, 15, 5, 15, 'N', 'U');        // iron: cold → crust
-      recol(rs, 5, 7, 5, 15, 'N', 'n');          // and the heat reaches the collar
-    } else if (hot > 0) recol(rs, 11, 15, 5, 15, 'N', 'U');
-    if (hot < 0) recol(rs, 16, 21, 4, 16, 'N', 'U');
+      recol(rs, 20, 24, 9, 21, 'U', 'u');        // seams: crust → white-hot
+      recol(rs, 20, 24, 9, 21, 'N', 'U');        // iron: cold → crust
+      recol(rs, 15, 19, 9, 21, 'N', 'n');        // and the heat reaches the collar
+      recol(rs, 10, 11, 9, 21, 'N', 'n');        // ... and lights the whole visor, not just the slits
+    } else if (hot > 0) recol(rs, 20, 24, 9, 21, 'N', 'U');
+    // Release: the heat has left the chest and gone *down*. Legs and hooves flash, and the
+    // belt's leather burns through to the seam colour, so the slam frame is bright at the
+    // bottom of the sprite where the floor is about to break rather than at the top.
+    if (hot < 0) { recol(rs, 27, 34, 5, 25, 'N', 'U'); recol(rs, 27, 28, 6, 24, 'r', 'u'); }
     return grid(rs);
   };
   ANIM.forgelord = {
@@ -136,34 +196,34 @@ function recol(rs, r0, r1, c0, c1, from, to) {
     idle: [fr(FORGELORD, 0), fr(fbreathe(), 0)],
     cast: [fr(farms(-2, 1), 0), fr(farms(-4, 2), -1), fr(farms(3, -1), 1)],
   };
-  // Frostking. Nothing to step with, so the cycle is the hem swaying under a body that
-  // rides up and down two pixels, and the cast is the robe turning from deep ice to rime
-  // from the chest outward -- the charge travels *down* the robe and out of the hem.
+  // Frostking, 29x37. Nothing to step with, so the cycle is the hem swaying under a body that
+  // rides up and down two pixels, and the cast is the robe turning from deep ice to rime from
+  // the chest outward -- the charge travels *down* the robe and out of the hem.
   //
-  // The second step grows the rime diamond by a ring instead of flooding the robe: the robe
-  // reaching one row further down is the charge travelling, and the diamond swelling is the
-  // charge arriving, and both stay readable because the body underneath is still one step
-  // darker than they are. A robe repainted entirely in rime has nothing left to travel across.
+  // The second step grows the ice heart by a ring instead of flooding the robe: the robe reaching
+  // three rows further down is the charge travelling, and the heart swelling is the charge
+  // arriving, and both stay readable because the body underneath is still one step darker than
+  // they are. A robe repainted entirely in rime has nothing left to travel across.
   //
-  // It also lifts the top two rows of the hem out of the abyss colour by exactly one step, and
-  // stops there: rows 21-25 stay dark so the release has somewhere left to go. Without that band
-  // the wind-up and the gather differ by a diamond one ring wider and a notch in the crown --
-  // about a tenth of the sprite, which survives a diff and does not survive a quarter of a
-  // second at 1x. A charge that only the code can tell apart from the pose before it is a
-  // three-frame cast that plays as a one-frame cast.
-  const fkhem = dx => { const rs = rows(FROSTKING); slideBox(rs, 23, 25, 1, 17, dx); return grid(rs); };
+  // It also lifts the top of the hem out of the abyss colour by exactly one step, and stops
+  // there: rows 34-36 stay dark so the release has somewhere left to go. Without that band the
+  // wind-up and the gather differ by a heart one ring wider and a brighter crown -- about a
+  // tenth of the sprite, which survives a diff and does not survive a quarter of a second at 1x.
+  // A charge that only the code can tell apart from the pose before it is a three-frame cast
+  // that plays as a one-frame cast.
+  const fkhem = dx => { const rs = rows(FROSTKING); slideBox(rs, 33, 36, 1, 27, dx); return grid(rs); };
   const fkrobe = st => {
     const rs = rows(FROSTKING);
-    recol(rs, 12, 17, 1, 17, 'j', 'Y');
+    recol(rs, 18, 26, 1, 27, 'j', 'Y');
     if (st > 1) {
-      recol(rs, 18, 18, 1, 17, 'j', 'Y');        // one row further down the robe
-      recol(rs, 19, 20, 1, 17, 'J', 'j');        // and the charge reaches the top of the hem
-      for (const [y, cs] of [[11, [9]], [13, [8, 12]], [14, [7, 13]], [15, [8, 12]], [17, [9]]])
-        for (const c of cs) rs[y][c] = 'y';      // the diamond swells by one ring
-      recol(rs, 3, 4, 3, 15, 'Y', 'y');
-      rs[1][5] = 'y'; rs[1][13] = 'y';           // the crown opens out a notch
+      recol(rs, 27, 29, 1, 27, 'j', 'Y');        // three rows further down the robe
+      recol(rs, 30, 33, 1, 27, 'J', 'j');        // and the charge reaches the top of the hem
+      for (const [y, cs] of [[19, [14]], [20, [13, 15]], [21, [12, 16]], [22, [11, 17]],
+                             [23, [12, 16]], [24, [13, 15]], [25, [14]]])
+        for (const c of cs) rs[y][c] = 'y';      // the ice heart swells by one ring
+      recol(rs, 3, 6, 2, 26, 'Y', 'y');          // and the crown lights band-up into the spikes
     }
-    if (st < 0) recol(rs, 19, 25, 1, 17, 'J', 'y');
+    if (st < 0) recol(rs, 30, 36, 1, 27, 'J', 'y');
     return grid(rs);
   };
   ANIM.frostking = {
@@ -171,38 +231,39 @@ function recol(rs, r0, r1, c0, c1, from, to) {
     idle: [fr(FROSTKING, -1), fr(fkhem(1), 0), fr(FROSTKING, -2), fr(fkhem(-1), -1)],
     cast: [fr(fkrobe(1), -2), fr(fkrobe(2), -3), fr(fkrobe(-1), 1)],
   };
-  // Voidherald. Its cast is the only one that happens inside the body: the chest sigil goes
-  // from one pixel to a diamond and the cloak lightens around it, and on the release the
-  // hood snaps up a pixel with the mask -- a flinch, not a swing, because three of its four
+  // Voidherald, 29x36. Its cast is the only one that happens inside the body: the chest sigil
+  // goes from an outline to a solid brand and the cloak lightens around it, and on the release
+  // the hood snaps up a pixel with the mask -- a flinch, not a swing, because three of its four
   // moves are things it *marks* rather than things it throws.
   //
   // The gather lights a halo around the sigil and the two rim columns, and deliberately leaves
   // the cloak between them alone: a glow needs something unlit next to it. Lightening the whole
-  // torso box, which is what the obvious `recol` over cols 3-15 does, produces a pale slab with
-  // the sigil lost inside it -- brighter than the wind-up frame and less readable than it. The
-  // halo is written out row by row rather than as a box for the same reason: a rectangle of
+  // torso box, which is what the obvious `recol` over the full width does, produces a pale slab
+  // with the sigil lost inside it -- brighter than the wind-up frame and less readable than it.
+  // The halo is written out row by row rather than as a box for the same reason: a rectangle of
   // light on a robe reads as a rectangle, and the shape of the glow has to be the shape of the
   // thing glowing.
-  const VH_HALO = [[11, 8, 10], [12, 7, 11], [13, 6, 12], [14, 7, 11], [15, 8, 10], [16, 9, 9]];
-  const vhcloak = dx => { const rs = rows(VOIDHERALD); slideBox(rs, 21, 24, 4, 14, dx); return grid(rs); };
+  const VH_HALO = [[20, 13, 15], [21, 12, 16], [22, 11, 17], [23, 10, 18], [24, 9, 19],
+                   [25, 10, 18], [26, 11, 17], [27, 12, 16], [28, 13, 15]];
+  const vhcloak = dx => { const rs = rows(VOIDHERALD); slideBox(rs, 32, 35, 1, 27, dx); return grid(rs); };
   const vhsig = st => {
     const rs = rows(VOIDHERALD);
-    recol(rs, 12, 14, 7, 11, 'm', 's');
+    recol(rs, 21, 27, 8, 20, 'm', 's');
     if (st > 1) {
       for (const [y, c0, c1] of VH_HALO) recol(rs, y, y, c0, c1, 'h', 'm');
-      recol(rs, 12, 17, 1, 2, 'H', 'h'); recol(rs, 12, 17, 16, 17, 'H', 'h');
+      recol(rs, 20, 28, 8, 8, 'H', 'h'); recol(rs, 20, 28, 20, 20, 'H', 'h');
       // The hood lights from the inside too, one step only: the sigil is on the chest, so a
       // gather that stops at the shoulders is a glow with a lid on it. This is the second half
       // of what makes the gather a different *pose* and not a slightly brighter copy of the
-      // wind-up -- the halo alone moves about eight percent of the sprite, which reads as
+      // wind-up -- the halo alone moves about five percent of the sprite, which reads as
       // nothing. Following the hood's own outline rather than a box keeps it a hood that is
       // lit instead of a rectangle drawn over one.
-      recol(rs, 4, 9, 4, 14, 'H', 'h');
-      recol(rs, 10, 11, 4, 14, 'H', 'h');
-      rs[11][9] = 's'; rs[15][9] = 's';
-      rs[13][6] = 's'; rs[13][12] = 's';         // the sigil reaches out sideways
+      recol(rs, 3, 8, 9, 19, 'H', 'h');
+      recol(rs, 9, 16, 5, 8, 'H', 'h'); recol(rs, 9, 16, 20, 23, 'H', 'h');
+      rs[19][14] = 's'; rs[29][14] = 's';
+      rs[24][8] = 's'; rs[24][20] = 's';         // the sigil reaches out sideways
     }
-    if (st < 0) { liftRows(rs, 4, 9, -1); recol(rs, 17, 22, 3, 15, 'H', 'h'); }
+    if (st < 0) { liftRows(rs, 9, 16, -1); recol(rs, 17, 31, 3, 25, 'H', 'h'); }
     return grid(rs);
   };
   ANIM.voidherald = {

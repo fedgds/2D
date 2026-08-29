@@ -74,16 +74,23 @@ function setPixS(x, y, col, a) {
 function setPix(x, y, col, a) { setPixS(x - CAMX, y - CAMY, col, a); }
 // Enemies take a full white silhouette when hit (their identity is a coloured blob);
 // the hero's flash is capped so its value structure survives.
+//
+// `pal` is optional and defaults to the shared PAL. It exists for the boss art baked out
+// of images/animations/boss/**: three ~60-colour palettes cannot fit in the shared char
+// space (PAL plus a map's eight material chars leaves fewer than ten free bytes), but the
+// *grids* are the same char grids, so passing the table in is the whole difference between
+// a hand-drawn sprite and a baked one. blitRot already took its palette this way.
 const _tmp = [0, 0, 0];
-function blit(grid, x, y, flash, flip, alpha, dim) {
+function blit(grid, x, y, flash, flip, alpha, dim, pal) {
   flash = flash || 0; alpha = alpha === undefined ? 1 : alpha; dim = dim === undefined ? 1 : dim;
+  const P = pal || PAL;
   const w = grid[0].length, h = grid.length;
   for (let row = 0; row < h; row++) {
     const ln = grid[row];
     for (let col = 0; col < w; col++) {
       const ch = flip ? ln[w - 1 - col] : ln[col];
       if (ch === '.') continue;
-      const p = PAL[ch];
+      const p = P[ch];
       if (!p) continue;
       _tmp[0] = p[0] * dim; _tmp[1] = p[1] * dim; _tmp[2] = p[2] * dim;
       if (flash > 0) {
