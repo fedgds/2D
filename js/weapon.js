@@ -208,12 +208,15 @@ const ART = (() => {
   const bake = (img, wp, i) => {
     const nw = img.naturalWidth, nh = img.naturalHeight;
     if (!nw || !nh) return null;
-    const fit = wp.size / (wp.frameBox || Math.max(nw, nh));
+    const fit = wp.size * RENDER_SCALE / (wp.frameBox || Math.max(nw, nh));
     const dw = Math.max(1, Math.round(nw * fit)), dh = Math.max(1, Math.round(nh * fit));
     const cv = document.createElement('canvas');
     cv.width = dw; cv.height = dh;
     const cx = cv.getContext('2d', { willReadFrequently: true });
-    cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+    // Match test.html: the frame art is pixel-authored, so interpolation here only invents
+    // semi-transparent edge colours that later read as haze.  The 2x render target has enough
+    // samples to keep rotated strokes continuous without pre-blurring the source.
+    cx.imageSmoothingEnabled = false;
     cx.drawImage(img, 0, 0, dw, dh);
     const src = cx.getImageData(0, 0, dw, dh).data;
     const px = new Float32Array(dw * dh * 3);
@@ -266,7 +269,7 @@ const ART = (() => {
 // is rotated and scaled at the same time.
 function stampFrame(fr, x, y, rot, squash, a, col, gain) {
   if (!fr || a <= 0) return;
-  x -= CAMX; y -= CAMY;
+  x = (x - CAMX) * RENDER_SCALE; y = (y - CAMY) * RENDER_SCALE;
   const ca = Math.cos(rot), sa = Math.sin(rot), sq = Math.max(squash, 1e-3);
   const l = -fr.cx, r = fr.w - fr.cx, t = -fr.cy, b = fr.h - fr.cy;
   let ax = 1e9, bx = -1e9, ay = 1e9, by = -1e9;
@@ -275,8 +278,8 @@ function stampFrame(fr, x, y, rot, squash, a, col, gain) {
     if (x + dx < ax) ax = x + dx; if (x + dx > bx) bx = x + dx;
     if (y + dy < ay) ay = y + dy; if (y + dy > by) by = y + dy;
   }
-  const x0 = Math.max(0, Math.floor(ax)), x1 = Math.min(W - 1, Math.ceil(bx));
-  const y0 = Math.max(0, Math.floor(ay)), y1 = Math.min(H - 1, Math.ceil(by));
+  const x0 = Math.max(0, Math.floor(ax)), x1 = Math.min(RW - 1, Math.ceil(bx));
+  const y0 = Math.max(0, Math.floor(ay)), y1 = Math.min(RH - 1, Math.ceil(by));
   if (x1 < x0 || y1 < y0) return;
   // The sheets are near-white line art, so the weapon's own colour is a tint applied on
   // the way in; gain compensates for the tonemap, which pulls a 1.0 sample down to 0.64.
@@ -288,24 +291,12 @@ function stampFrame(fr, x, y, rot, squash, a, col, gain) {
     for (let pxi = x0; pxi <= x1; pxi++) {
       const dx = pxi - x;
       const su = dx * ca + dyq * sa + fr.cx - 0.5, sv = -dx * sa + dyq * ca + fr.cy - 0.5;
-      // Bilinear, not nearest. The squash alone drops better than one row in four, and a
-      // rotated nearest fetch on a 90px sprite turns a hairline crescent into a dotted
-      // line. Sampling smoothly costs three multiplies and keeps the blade continuous;
-      // the pixel look still comes from the 320x180 grid and the dither, as it should.
-      const sx = Math.floor(su), sy = Math.floor(sv);
-      if (sx < -1 || sy < -1 || sx >= fw || sy >= fh) continue;
-      const fx = su - sx, fy = sv - sy;
-      const x0i = sx < 0 ? 0 : sx, x1i = sx + 1 >= fw ? fw - 1 : sx + 1;
-      const y0i = sy < 0 ? 0 : sy, y1i = sy + 1 >= fh ? fh - 1 : sy + 1;
-      const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy);
-      const w01 = (1 - fx) * fy, w11 = fx * fy;
-      const a00 = (y0i * fw + x0i) * 3, a10 = (y0i * fw + x1i) * 3;
-      const a01 = (y1i * fw + x0i) * 3, a11 = (y1i * fw + x1i) * 3;
-      const r0 = px[a00] * w00 + px[a10] * w10 + px[a01] * w01 + px[a11] * w11;
-      const r1 = px[a00 + 1] * w00 + px[a10 + 1] * w10 + px[a01 + 1] * w01 + px[a11 + 1] * w11;
-      const r2 = px[a00 + 2] * w00 + px[a10 + 2] * w10 + px[a01 + 2] * w01 + px[a11 + 2] * w11;
+      const sx = Math.round(su), sy = Math.round(sv);
+      if (sx < 0 || sy < 0 || sx >= fw || sy >= fh) continue;
+      const si = (sy * fw + sx) * 3;
+      const r0 = px[si], r1 = px[si + 1], r2 = px[si + 2];
       if (r0 <= 0 && r1 <= 0 && r2 <= 0) continue;
-      const i3 = (py * W + pxi) * 3;
+      const i3 = (py * RW + pxi) * 3;
       buf[i3] += r0 * g0; buf[i3 + 1] += r1 * g1; buf[i3 + 2] += r2 * g2;
     }
   }
@@ -634,4 +625,3 @@ function swing(w, tx, ty) {
   SFX.cast(wp.id, clamp((h.x - w.cam.x - W * 0.5) / (W * 0.5), -1, 1));
   return true;
 }
-

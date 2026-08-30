@@ -145,11 +145,15 @@ function poseSheet(k) {
   const sets = [['đứng', a.idle], ['đi', a.walk], ['tung chiêu', a.cast]];
   if (im) { sets.push(['trúng đòn', a.hit], ['chết', a.death]); }
   const pal = im ? im.pal : LAB.PAL;
+  const sourceScale = im ? (im.scale || 1) : 1;
   // Cỡ ô lấy từ khung lớn nhất trong cả bảng, tính cả `dy`: một ô nào cũng chứa được thì mọi
   // ô cùng một khổ, và cùng khổ mới so được.
   let gw = 0, gh = 0;
   for (const [, fs] of sets)
-    for (const f of fs) { gw = Math.max(gw, f.g[0].length); gh = Math.max(gh, f.g.length - f.dy); }
+    for (const f of fs) {
+      gw = Math.max(gw, f.g[0].length);
+      gh = Math.max(gh, f.g.length - f.dy * sourceScale);
+    }
   const cw = (gw + 2) * S, ch = (gh + 3) * S;
   const cols = Math.max(...sets.map(s => s[1].length));
   const sheet = { w: cols * cw + GAP * (cols + 1), h: sets.length * ch + GAP * (sets.length + 1) };
@@ -171,7 +175,7 @@ function poseSheet(k) {
       }
       // Neo y hệt lúc render: giữa ô theo chiều ngang, đáy khung nằm trên một hàng chân đế.
       const bx = x0 + S + (((gw - fr.g[0].length) >> 1) * S);
-      const by = y0 + ch - S + (fr.dy - fr.g.length) * S;
+      const by = y0 + ch - S + (fr.dy * sourceScale - fr.g.length) * S;
       fr.g.forEach((line, y) => {
         for (let x = 0; x < line.length; x++) {
           const c = pal[line[x]];

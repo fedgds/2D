@@ -34,9 +34,11 @@ const OUT = path.join(root, 'js/boss-frames.js');
 const KINDS = { voidherald: '1', forgelord: '2', frostking: '3' };
 const ANIMS = ['idle', 'cast', 'hit', 'death'];
 
-// Cao 40 px cho *thân* (lấy khung đứng làm mốc). Bộ khung vẽ tay cao 35-37, nên hitbox gần
-// như không đổi, mà 40 px lại giữ được sừng/vương miện/mặt xương khi hạ từ 1400 px xuống.
-const BODY_H = 40;
+// Hai mẫu render cho mỗi pixel gameplay: thân vẫn cao đúng 40 đơn vị trong thế giới, nhưng
+// browser nhận 80 mẫu ảnh thay vì thu xuống 40 rồi phóng ngược lên. boss-img.js chia cw/bw/bh
+// cho SOURCE_SCALE nên hitbox, thanh máu và mọi tầm đánh không đổi.
+const SOURCE_SCALE = 2;
+const BODY_H = 40 * SOURCE_SCALE;
 const PAL_N = 62;             // số màu mỗi con; ký tự thứ 63 trở đi sẽ không có chỗ trong CH
 const A_CUT = 0.42;           // ngưỡng alpha: dưới mức này là '.'
 const A_EDGE = 0.06;          // ngưỡng tính bbox trên ảnh gốc
@@ -237,11 +239,12 @@ L.push('//     chỉ còn chưa tới mười ký tự trống. Nhờ vậy chú
 L.push('//     sprites.js, chỉ thêm một tham số palette.');
 L.push('//');
 L.push('//     Mỗi khung neo ở *đáy* lưới và giữa cột lưới: không có offset, render vẽ tại');
-L.push('//     (x - (rộng >> 1), y - số hàng), nên khung giơ tay cao thêm về phía đầu và khung');
+L.push('//     (x - nửa rộng, y - số hàng), nên khung giơ tay cao thêm về phía đầu và khung');
 L.push('//     chết thấp dần xuống đất. `cw` là bề rộng lưới (lẻ, để `flip` lật quanh cột neo)');
 L.push('//     và `bw` là bán kính bị đánh trúng; chiều cao hộp do boss-img.js tính, vì nó là');
 L.push('//     file cộng thêm nhịp nhấp cho bộ đi.');
 L.push('// ===========================================================================');
+L.push('const BOSS_ART_SCALE = ' + SOURCE_SCALE + ';');
 L.push("const BOSS_ART_CH = '" + CH + "';");
 L.push('const BOSS_ART = {');
 for (const k in built) {

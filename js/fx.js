@@ -7,12 +7,47 @@
 // ===========================================================================
 function core(x, y, r, col, a, power) {
   if (a <= 0) return;
-  x -= CAMX; y -= CAMY;
-  const rr = Math.max(r, 1e-3);
+  const S = RENDER_SCALE;
+  x = (x - CAMX) * S; y = (y - CAMY) * S;
+  const rr = Math.max(r * S, 1e-3);
   if (power === undefined) power = 2;
-  const x0 = Math.max(0, Math.floor(x - rr)), x1 = Math.min(W - 1, Math.ceil(x + rr));
-  const y0 = Math.max(0, Math.floor(y - rr)), y1 = Math.min(H - 1, Math.ceil(y + rr));
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a, sq = power === 2;
+  // Đủ to thì gradient đã trơn hơn cả lưới render: lấy một mẫu ở tâm mỗi điểm ảnh gameplay rồi
+  // rải vào cả khối S×S. Số phép *ghi* không đổi -- phải chạm đủ bốn mẫu, bằng không mép vệt
+  // sáng hở ra lưới thô -- nhưng sqrt/fpow chỉ còn một phần tư, và đây là primitive được gọi
+  // nhiều nhất trong một khung có chiêu.
+  //
+  // Hai điều kiện, không phải một: `rr >= 24` loại các đốm nhỏ (spark, lõi 1-3 px) vì ở đó
+  // chính bốn mẫu ấy *là* hình dáng; `rr >= power * 8` loại các lõi power cao, nơi phần sáng
+  // thật co về giữa theo `rr / power` nên một vệt r=24 power=6 vẫn cần lưới tinh.
+  if (S > 1 && rr >= 24 && rr >= power * 8) {
+    const hc = (S - 1) * 0.5;
+    const ly0 = Math.max(0, Math.floor((y - rr - hc) / S));
+    const ly1 = Math.min(H - 1, Math.ceil((y + rr - hc) / S));
+    for (let ly = ly0; ly <= ly1; ly++) {
+      const dy = ly * S + hc - y;
+      if (Math.abs(dy) >= rr) continue;
+      const hw = Math.sqrt(rr * rr - dy * dy);
+      const lxa = Math.max(0, Math.floor((x - hw - hc) / S));
+      const lxb = Math.min(W - 1, Math.ceil((x + hw - hc) / S));
+      for (let lx = lxa; lx <= lxb; lx++) {
+        const dx = lx * S + hc - x, d = Math.sqrt(dx * dx + dy * dy) / rr;
+        if (d >= 1) continue;
+        let m = 1 - d; m = sq ? m * m : fpow(m, power);
+        const v0 = m * c0, v1 = m * c1, v2 = m * c2;
+        for (let sy = 0; sy < S; sy++) {
+          const row = (ly * S + sy) * RW + lx * S;
+          for (let sx = 0; sx < S; sx++) {
+            const i3 = (row + sx) * 3;
+            buf[i3] += v0; buf[i3 + 1] += v1; buf[i3 + 2] += v2;
+          }
+        }
+      }
+    }
+    return;
+  }
+  const x0 = Math.max(0, Math.floor(x - rr)), x1 = Math.min(RW - 1, Math.ceil(x + rr));
+  const y0 = Math.max(0, Math.floor(y - rr)), y1 = Math.min(RH - 1, Math.ceil(y + rr));
   for (let py = y0; py <= y1; py++) {
     const dy = py - y;
     // Row-tight x span. The disc inside the square wastes a fifth of the box, which is nothing
@@ -25,7 +60,7 @@ function core(x, y, r, col, a, power) {
       const dx = px - x, d = Math.sqrt(dx * dx + dy * dy) / rr;
       if (d >= 1) continue;
       let m = 1 - d; m = sq ? m * m : fpow(m, power);
-      const i3 = (py * W + px) * 3;
+      const i3 = (py * RW + px) * 3;
       buf[i3] += m * c0; buf[i3 + 1] += m * c1; buf[i3 + 2] += m * c2;
     }
   }
@@ -33,7 +68,8 @@ function core(x, y, r, col, a, power) {
 
 function beam(x, y, ang, r0, r1, w0, w1, col, a, sharp, fade) {
   if (a <= 0 || r1 <= r0) return;
-  x -= CAMX; y -= CAMY;
+  x = (x - CAMX) * RENDER_SCALE; y = (y - CAMY) * RENDER_SCALE;
+  r0 *= RENDER_SCALE; r1 *= RENDER_SCALE; w0 *= RENDER_SCALE; w1 *= RENDER_SCALE;
   if (sharp === undefined) sharp = 1.5;
   if (fade === undefined) fade = 2;
   const ca = Math.cos(ang), sa = Math.sin(ang), wm = Math.max(w0, w1) + 1;
@@ -43,8 +79,8 @@ function beam(x, y, ang, r0, r1, w0, w1, col, a, sharp, fade) {
     if (px < ax) ax = px; if (px > bx) bx = px;
     if (py < ay) ay = py; if (py > by) by = py;
   }
-  const x0 = Math.max(0, Math.floor(ax)), x1 = Math.min(W - 1, Math.ceil(bx));
-  const y0 = Math.max(0, Math.floor(ay)), y1 = Math.min(H - 1, Math.ceil(by));
+  const x0 = Math.max(0, Math.floor(ax)), x1 = Math.min(RW - 1, Math.ceil(bx));
+  const y0 = Math.max(0, Math.floor(ay)), y1 = Math.min(RH - 1, Math.ceil(by));
   const span = Math.max(r1 - r0, 1e-3);
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a;
   for (let py = y0; py <= y1; py++) {
@@ -57,20 +93,21 @@ function beam(x, y, ang, r0, r1, w0, w1, col, a, sharp, fade) {
       const e = 1 - Math.abs(v) / hw;
       if (e <= 0) continue;
       const m = fpow(e, sharp) * fpow(1 - t, fade);
-      const i3 = (py * W + px) * 3;
+      const i3 = (py * RW + px) * 3;
       buf[i3] += m * c0; buf[i3 + 1] += m * c1; buf[i3 + 2] += m * c2;
     }
   }
 }
 function ring(x, y, r, thick, col, a, squash, sharp) {
   if (a <= 0) return;
-  x -= CAMX; y -= CAMY;
+  x = (x - CAMX) * RENDER_SCALE; y = (y - CAMY) * RENDER_SCALE;
+  r *= RENDER_SCALE; thick *= RENDER_SCALE;
   if (squash === undefined) squash = 1;
   if (sharp === undefined) sharp = 1.6;
   const th = Math.max(thick, 1e-3), sq = Math.max(squash, 1e-3);
-  const x0 = Math.max(0, Math.floor(x - r - th)), x1 = Math.min(W - 1, Math.ceil(x + r + th));
+  const x0 = Math.max(0, Math.floor(x - r - th)), x1 = Math.min(RW - 1, Math.ceil(x + r + th));
   const ey = (r + th) * sq;
-  const y0 = Math.max(0, Math.floor(y - ey)), y1 = Math.min(H - 1, Math.ceil(y + ey));
+  const y0 = Math.max(0, Math.floor(y - ey)), y1 = Math.min(RH - 1, Math.ceil(y + ey));
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a;
   const ro = r + th, ri = Math.max(r - th, 0);
   for (let py = y0; py <= y1; py++) {
@@ -91,7 +128,7 @@ function ring(x, y, r, thick, col, a, squash, sharp) {
         const dx = px - x, d = Math.sqrt(dx * dx + dy * dy);
         const e = 1 - Math.abs(d - r) / th;
         if (e <= 0) continue;
-        const m = fpow(e, sharp), i3 = (py * W + px) * 3;
+        const m = fpow(e, sharp), i3 = (py * RW + px) * 3;
         buf[i3] += m * c0; buf[i3 + 1] += m * c1; buf[i3 + 2] += m * c2;
       }
     }
@@ -101,7 +138,8 @@ function ring(x, y, r, thick, col, a, squash, sharp) {
 // Crescent slash: annulus slice fading to nothing at both tips.
 function arc(x, y, r, ang, sweep, thick, col, a, squash, sharp, taper) {
   if (a <= 0) return;
-  x -= CAMX; y -= CAMY;
+  x = (x - CAMX) * RENDER_SCALE; y = (y - CAMY) * RENDER_SCALE;
+  r *= RENDER_SCALE; thick *= RENDER_SCALE;
   if (squash === undefined) squash = 1;
   if (sharp === undefined) sharp = 1.5;
   if (taper === undefined) taper = 2;
@@ -126,8 +164,8 @@ function arc(x, y, r, ang, sweep, thick, col, a, squash, sharp, taper) {
     if (px < ax) ax = px; if (px > bx) bx = px;
     if (py < ay) ay = py; if (py > by) by = py;
   }
-  const x0 = Math.max(0, Math.floor(ax)), x1 = Math.min(W - 1, Math.ceil(bx));
-  const y0 = Math.max(0, Math.floor(ay)), y1 = Math.min(H - 1, Math.ceil(by));
+  const x0 = Math.max(0, Math.floor(ax)), x1 = Math.min(RW - 1, Math.ceil(bx));
+  const y0 = Math.max(0, Math.floor(ay)), y1 = Math.min(RH - 1, Math.ceil(by));
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a;
   for (let py = y0; py <= y1; py++) {
     const dy = (py - y) / sq, ady = Math.abs(dy);
@@ -148,7 +186,7 @@ function arc(x, y, r, ang, sweep, thick, col, a, squash, sharp, taper) {
         da = Math.abs(((da + Math.PI) % TAU + TAU) % TAU - Math.PI);
         if (da >= half) continue;
         const m = fpow(e, sharp) * fpow(1 - da / half, inv);
-        const i3 = (py * W + px) * 3;
+        const i3 = (py * RW + px) * 3;
         buf[i3] += m * c0; buf[i3 + 1] += m * c1; buf[i3 + 2] += m * c2;
       }
     }
@@ -158,16 +196,18 @@ function line(x0_, y0_, x1_, y1_, thick, col, a, sharp, fadeEnd) {
   if (a <= 0) return;
   if (sharp === undefined) sharp = 1.5;
   if (fadeEnd === undefined) fadeEnd = 0;
-  const px_ = x1_ - x0_, py_ = y1_ - y0_, ln2 = px_ * px_ + py_ * py_;
-  const th = Math.max(thick, 1e-3);
+  const ldx = x1_ - x0_, ldy = y1_ - y0_, l2 = ldx * ldx + ldy * ldy;
   // The degenerate case delegates to core(), which subtracts the camera itself, so this
   // early-out has to happen while the coordinates are still in world space.
-  if (ln2 < 1e-6) { core(x0_, y0_, th, col, a); return; }
-  x0_ -= CAMX; y0_ -= CAMY; x1_ -= CAMX; y1_ -= CAMY;
+  if (l2 < 1e-6) { core(x0_, y0_, thick, col, a); return; }
+  x0_ = (x0_ - CAMX) * RENDER_SCALE; y0_ = (y0_ - CAMY) * RENDER_SCALE;
+  x1_ = (x1_ - CAMX) * RENDER_SCALE; y1_ = (y1_ - CAMY) * RENDER_SCALE;
+  const px_ = x1_ - x0_, py_ = y1_ - y0_, ln2 = px_ * px_ + py_ * py_;
+  const th = Math.max(thick * RENDER_SCALE, 1e-3);
   const x0 = Math.max(0, Math.floor(Math.min(x0_, x1_) - th));
-  const x1 = Math.min(W - 1, Math.ceil(Math.max(x0_, x1_) + th));
+  const x1 = Math.min(RW - 1, Math.ceil(Math.max(x0_, x1_) + th));
   const y0 = Math.max(0, Math.floor(Math.min(y0_, y1_) - th));
-  const y1 = Math.min(H - 1, Math.ceil(Math.max(y0_, y1_) + th));
+  const y1 = Math.min(RH - 1, Math.ceil(Math.max(y0_, y1_) + th));
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a;
   for (let py = y0; py <= y1; py++) {
     for (let px = x0; px <= x1; px++) {
@@ -178,7 +218,7 @@ function line(x0_, y0_, x1_, y1_, thick, col, a, sharp, fadeEnd) {
       if (e <= 0) continue;
       let m = fpow(e, sharp);
       if (fadeEnd) { const f = 1 - fadeEnd * t; m *= f * f; }
-      const i3 = (py * W + px) * 3;
+      const i3 = (py * RW + px) * 3;
       buf[i3] += m * c0; buf[i3 + 1] += m * c1; buf[i3 + 2] += m * c2;
     }
   }
@@ -295,17 +335,19 @@ function bolt(x0, y0, x1, y1, col, hot, a, segs, jg, seed, thick, branches) {
 }
 
 function column(x, ytop, ybot, wtop, wbot, col, hot, a) {
-  x -= CAMX; ytop -= CAMY; ybot -= CAMY;
+  x = (x - CAMX) * RENDER_SCALE;
+  ytop = (ytop - CAMY) * RENDER_SCALE; ybot = (ybot - CAMY) * RENDER_SCALE;
+  wtop *= RENDER_SCALE; wbot *= RENDER_SCALE;
   const h = Math.max(ybot - ytop, 1e-3), wm = Math.max(wtop, wbot);
-  const x0 = Math.max(0, Math.floor(x - wm)), x1 = Math.min(W - 1, Math.ceil(x + wm));
-  const y0 = Math.max(0, Math.floor(ytop)), y1 = Math.min(H - 1, Math.ceil(ybot));
+  const x0 = Math.max(0, Math.floor(x - wm)), x1 = Math.min(RW - 1, Math.ceil(x + wm));
+  const y0 = Math.max(0, Math.floor(ytop)), y1 = Math.min(RH - 1, Math.ceil(ybot));
   for (let py = y0; py <= y1; py++) {
     const t = c01((py - ytop) / h), hw = Math.max(wtop + (wbot - wtop) * t, 0.4);
     for (let px = x0; px <= x1; px++) {
       const e = 1 - Math.abs(px - x) / hw;
       if (e <= 0) continue;
       const m1 = fpow(e, 1.3) * a, m2 = fpow(e, 5.0) * a;
-      const i3 = (py * W + px) * 3;
+      const i3 = (py * RW + px) * 3;
       buf[i3] += m1 * col[0] + m2 * hot[0];
       buf[i3 + 1] += m1 * col[1] + m2 * hot[1];
       buf[i3 + 2] += m1 * col[2] + m2 * hot[2];
@@ -315,13 +357,14 @@ function column(x, ytop, ybot, wtop, wbot, col, hot, a) {
 // Irregular ground splat -- radius wobbled by two harmonics so no circle shows.
 function puddle(x, y, rw, rh, col, a, seed, lobes, power) {
   if (a <= 0) return;
-  x -= CAMX; y -= CAMY;
+  x = (x - CAMX) * RENDER_SCALE; y = (y - CAMY) * RENDER_SCALE;
+  rw *= RENDER_SCALE; rh *= RENDER_SCALE;
   if (lobes === undefined) lobes = 5;
   if (power === undefined) power = 1.1;
   const rng = mulberry32(seed), ph1 = rng.range(0, TAU), ph2 = rng.range(0, TAU);
   const ew = rw * 1.32, eh = rh * 1.32;
-  const x0 = Math.max(0, Math.floor(x - ew)), x1 = Math.min(W - 1, Math.ceil(x + ew));
-  const y0 = Math.max(0, Math.floor(y - eh)), y1 = Math.min(H - 1, Math.ceil(y + eh));
+  const x0 = Math.max(0, Math.floor(x - ew)), x1 = Math.min(RW - 1, Math.ceil(x + ew));
+  const y0 = Math.max(0, Math.floor(y - eh)), y1 = Math.min(RH - 1, Math.ceil(y + eh));
   const iw = 1 / Math.max(rw, 1e-3), ih = 1 / Math.max(rh, 1e-3);
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a;
   for (let py = y0; py <= y1; py++) {
@@ -338,7 +381,7 @@ function puddle(x, y, rw, rh, col, a, seed, lobes, power) {
       const wob = 1 + 0.17 * Math.sin(lobes * th + ph1) + 0.10 * Math.sin((lobes + 3) * th + ph2);
       const d = Math.sqrt(dx * dx + dy * dy) / wob;
       if (d >= 1) continue;
-      const m = fpow(1 - d, power), i3 = (py * W + px) * 3;
+      const m = fpow(1 - d, power), i3 = (py * RW + px) * 3;
       buf[i3] += m * c0; buf[i3 + 1] += m * c1; buf[i3 + 2] += m * c2;
     }
   }
@@ -465,16 +508,16 @@ function veil(col, a) {
 // *Removes* light: the only way to draw a true void. resolve() clamps at zero.
 function unlight(x, y, r, a, power) {
   if (power === undefined) power = 1.2;
-  x -= CAMX; y -= CAMY;
-  const rr = Math.max(r, 1e-3);
-  const x0 = Math.max(0, Math.floor(x - rr)), x1 = Math.min(W - 1, Math.ceil(x + rr));
-  const y0 = Math.max(0, Math.floor(y - rr)), y1 = Math.min(H - 1, Math.ceil(y + rr));
+  x = (x - CAMX) * RENDER_SCALE; y = (y - CAMY) * RENDER_SCALE;
+  const rr = Math.max(r * RENDER_SCALE, 1e-3);
+  const x0 = Math.max(0, Math.floor(x - rr)), x1 = Math.min(RW - 1, Math.ceil(x + rr));
+  const y0 = Math.max(0, Math.floor(y - rr)), y1 = Math.min(RH - 1, Math.ceil(y + rr));
   for (let py = y0; py <= y1; py++) {
     const dy = py - y;
     for (let px = x0; px <= x1; px++) {
       const dx = px - x, d = Math.sqrt(dx * dx + dy * dy) / rr;
       if (d >= 1) continue;
-      const m = fpow(1 - d, power) * a, i3 = (py * W + px) * 3;
+      const m = fpow(1 - d, power) * a, i3 = (py * RW + px) * 3;
       buf[i3] -= m; buf[i3 + 1] -= m; buf[i3 + 2] -= m;
     }
   }
@@ -556,10 +599,11 @@ function heatring(x, y, rw, rh, col, a, phase, seed, segs) {
 // and paper.
 function crystal(x, y, rw, up, down, lit, dark, hot, a) {
   if (a <= 0 || rw <= 0) return;
-  x -= CAMX; y -= CAMY;
+  x = (x - CAMX) * RENDER_SCALE; y = (y - CAMY) * RENDER_SCALE;
+  rw *= RENDER_SCALE; up *= RENDER_SCALE; down *= RENDER_SCALE;
   const iu = 1 / (up > 1e-3 ? up : 1e-3), id = 1 / (down > 1e-3 ? down : 1e-3);
-  const x0 = Math.max(0, Math.floor(x - rw)), x1 = Math.min(W - 1, Math.ceil(x + rw));
-  const y0 = Math.max(0, Math.floor(y - up)), y1 = Math.min(H - 1, Math.ceil(y + down));
+  const x0 = Math.max(0, Math.floor(x - rw)), x1 = Math.min(RW - 1, Math.ceil(x + rw));
+  const y0 = Math.max(0, Math.floor(y - up)), y1 = Math.min(RH - 1, Math.ceil(y + down));
   for (let py = y0; py <= y1; py++) {
     const dy = py - y, v = dy < 0 ? dy * iu : dy * id;   // -1 at the top point, +1 at the base
     const t = v < 0 ? -v : v;
@@ -579,7 +623,7 @@ function crystal(x, y, rw, up, down, lit, dark, hot, a) {
         if (d > 0) gl += d * d;
       }
       const m = a * (0.26 + 0.74 * sh), hm = a * (rim * 0.9 + gl * 0.55);
-      const i3 = (py * W + px) * 3;
+      const i3 = (py * RW + px) * 3;
       buf[i3]     += (dark[0] + (lit[0] - dark[0]) * sh) * m + hot[0] * hm;
       buf[i3 + 1] += (dark[1] + (lit[1] - dark[1]) * sh) * m + hot[1] * hm;
       buf[i3 + 2] += (dark[2] + (lit[2] - dark[2]) * sh) * m + hot[2] * hm;
@@ -617,8 +661,11 @@ function ghost(grid, x, y, col, a, flip, edge) {
       // cũ, chỉ đổi màu); còn để thân gần như tắt thì còn lại một cái khung ảnh rỗng. Ô hở hai
       // phía -- góc, vai, mũi chân, đỉnh đầu -- mới ăn đủ, và chính chúng vẽ ra dáng người.
       const m = a * (open >= 2 ? edge : open ? edge * 0.72 : 0.85);
-      const i3 = (py * W + px) * 3;
-      buf[i3] += col[0] * m; buf[i3 + 1] += col[1] * m; buf[i3 + 2] += col[2] * m;
+      for (let sy = 0; sy < RENDER_SCALE; sy++)
+        for (let sx = 0; sx < RENDER_SCALE; sx++) {
+          const i3 = ((py * RENDER_SCALE + sy) * RW + px * RENDER_SCALE + sx) * 3;
+          buf[i3] += col[0] * m; buf[i3 + 1] += col[1] * m; buf[i3 + 2] += col[2] * m;
+        }
     }
   }
 }

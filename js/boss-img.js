@@ -53,8 +53,10 @@ const ANIM_IMG = {};
     // bh là chỗ treo thanh máu (render.js: y - f.h - 5), và nó phải cao hơn mọi tư thế còn
     // sống -- kể cả khung giơ tay và kể cả lúc đang nhấp lên -- vì một thanh máu nằm giữa hai
     // cái sừng là thanh máu không đọc được đúng lúc cần đọc nó nhất.
-    const bh = Math.max(...[].concat(idle, walk, cast, hit).map(f => f.g.length - f.dy));
-    ANIM_IMG[k] = { idle, walk, cast, hit, death, pal, cw: A.cw, bw: A.bw, bh };
+    const scale = typeof BOSS_ART_SCALE === 'number' ? BOSS_ART_SCALE : 1;
+    const bh = Math.max(...[].concat(idle, walk, cast, hit).map(f => f.g.length / scale - f.dy));
+    ANIM_IMG[k] = { idle, walk, cast, hit, death, pal, scale,
+                    cw: A.cw / scale, bw: Math.floor(A.bw / scale), bh };
   }
 }
 

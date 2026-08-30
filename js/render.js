@@ -41,9 +41,14 @@ function drawFoe(f) {
   // Cỡ lấy từ *chính khung đang vẽ*, không từ f.w/f.h. Với lưới vẽ tay hai cái bằng nhau
   // (unit() đặt f.w/f.h từ lưới) nên không đổi gì; với art thì mỗi khung một cỡ, và neo là
   // (giữa lưới, đáy lưới) -- nên tay giơ lên thì cao thêm về phía đầu, chân vẫn tại chỗ.
-  const gw = fr.g[0].length, gh = fr.g.length;
-  blit(fr.g, Math.round(f.x - (gw >> 1)), Math.round(f.y - gh) + fr.dy,
-       flash, f.flip, alpha, dim, im ? im.pal : null);
+  const sourceScale = im ? im.scale : 1;
+  const gw = fr.g[0].length / sourceScale, gh = fr.g.length / sourceScale;
+  const gx = f.x - (fr.g[0].length - 1) / (2 * sourceScale);
+  const gy = f.y - gh + fr.dy;
+  if (im && sourceScale > 1)
+    blitFine(fr.g, gx, gy, sourceScale, flash, f.flip, alpha, dim, im.pal);
+  else
+    blit(fr.g, Math.round(gx), Math.round(gy), flash, f.flip, alpha, dim, im ? im.pal : null);
   if (f.dying) return;
   if (f.boss) {
     const bw = BOSS_BAR_W, x0 = Math.round(f.x - (bw >> 1)), y0 = Math.round(f.y - f.h - 5);

@@ -7,6 +7,13 @@
       "runtimeArgs": ["-m", "http.server", "8123"],
       "port": 8123,
       "url": "http://localhost:8123"
+    },
+    {
+      "name": "static-alt",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8137"],
+      "port": 8137,
+      "url": "http://localhost:8137"
     }
   ]
 }

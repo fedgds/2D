@@ -117,12 +117,26 @@ let floorCamX = -1, floorCamY = -1;
 function syncFloor(force) {
   if (!force && floorCamX === CAMX && floorCamY === CAMY) return;
   floorCamX = CAMX; floorCamY = CAMY;
+  const S = RENDER_SCALE;
   for (let y = 0; y < H; y++) {
-    const src = (CAMY + y) * WW + CAMX, dst = y * W;
+    const src = (CAMY + y) * WW + CAMX, top = y * S * RW;
+    // Floor art is deliberately one logical pixel, so it fills the finer render grid with
+    // copies of itself. Only the *first* render row of each logical row goes through the
+    // tone tables; the other S-1 rows are the same bytes, and copyWithin moves them far
+    // faster than TID/TONE_* can regenerate them. VFX and imported art still use the
+    // subpixels -- this is the one layer that has nothing to put in them.
     for (let x = 0; x < W; x++) {
-      const t = TID[src + x], t3 = t * 3, i3 = (dst + x) * 3;
-      FLOOR[i3] = TONE_F[t3]; FLOOR[i3 + 1] = TONE_F[t3 + 1]; FLOOR[i3 + 2] = TONE_F[t3 + 2];
-      FLOOR_U32[dst + x] = TONE_U32[t];
+      const t = TID[src + x], t3 = t * 3;
+      const f0 = TONE_F[t3], f1 = TONE_F[t3 + 1], f2 = TONE_F[t3 + 2], u = TONE_U32[t];
+      for (let sx = 0; sx < S; sx++) {
+        const i = top + x * S + sx, i3 = i * 3;
+        FLOOR[i3] = f0; FLOOR[i3 + 1] = f1; FLOOR[i3 + 2] = f2;
+        FLOOR_U32[i] = u;
+      }
+    }
+    for (let sy = 1; sy < S; sy++) {
+      FLOOR.copyWithin((top + sy * RW) * 3, top * 3, (top + RW) * 3);
+      FLOOR_U32.copyWithin(top + sy * RW, top, top + RW);
     }
   }
 }
@@ -146,14 +160,23 @@ function shadowAt(cx, cy, rw, rh, a) {
 // silhouette, colour difference loses, and this is what keeps the player findable.
 function heroLight(cx, cy, strength, rw, rh) {
   rw = rw || 17; rh = rh || 9;
-  cx -= CAMX; cy -= CAMY;
-  for (let y = Math.floor(cy - rh); y <= Math.ceil(cy + rh); y++)
-    for (let x = Math.floor(cx - rw); x <= Math.ceil(cx + rw); x++) {
-      const dx = (x - cx) / rw, dy = (y - cy) / rh, d = dx * dx + dy * dy;
-      if (d > 1 || x < 0 || y < 0 || x >= W || y >= H) continue;
-      const f = (1 - d) * (1 - d), i3 = (y * W + x) * 3;
-      buf[i3] += HERO_GLOW[0] * strength * f;
-      buf[i3 + 1] += HERO_GLOW[1] * strength * f;
-      buf[i3 + 2] += HERO_GLOW[2] * strength * f;
+  const S = RENDER_SCALE;
+  cx = (cx - CAMX) * S; cy = (cy - CAMY) * S;
+  rw *= S; rh *= S;
+  const g0 = HERO_GLOW[0] * strength, g1 = HERO_GLOW[1] * strength, g2 = HERO_GLOW[2] * strength;
+  // Vẫn một mẫu cho mỗi điểm ảnh *render*, không gộp khối như `core`. Đã thử: gộp lại chỉ tiết
+  // được 0,002 ms trên một lời gọi 0,012 ms -- vệt này cố định cỡ 17x9 nên bé quá để đáng -- mà
+  // 768 điểm ảnh trong vệt lại lệch một bậc trong 16 bậc. Đổi ảnh ra để lấy con số nằm trong
+  // sai số đo thì không đáng.
+  for (let py = Math.floor(cy - rh); py <= Math.ceil(cy + rh); py++) {
+    if (py < 0 || py >= RH) continue;
+    const dy = (py - cy) / rh;
+    for (let px = Math.floor(cx - rw); px <= Math.ceil(cx + rw); px++) {
+      if (px < 0 || px >= RW) continue;
+      const dx = (px - cx) / rw, d = dx * dx + dy * dy;
+      if (d > 1) continue;
+      const f = (1 - d) * (1 - d), i3 = (py * RW + px) * 3;
+      buf[i3] += g0 * f; buf[i3 + 1] += g1 * f; buf[i3 + 2] += g2 * f;
     }
+  }
 }

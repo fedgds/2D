@@ -8,9 +8,9 @@ if (typeof document !== 'undefined') {
   const ctx = screen.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   const off = document.createElement('canvas');
-  off.width = W; off.height = H;
+  off.width = RW; off.height = RH;
   const octx = off.getContext('2d');
-  const img = octx.createImageData(W, H);
+  const img = octx.createImageData(RW, RH);
   // Bậc nhảy nhỏ nhất của bộ đệm canvas mà vẫn giữ **đúng** tỉ lệ W/H, nên điểm ảnh game luôn
   // vuông: (W/g, H/g) với g = gcd(W, H). Tính một lần ở đây vì W chốt lúc nạp trang (xem FRAME_W
   // trong index.html) và layout() chạy lại mỗi lần đổi cỡ cửa sổ.

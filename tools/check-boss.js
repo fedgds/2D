@@ -278,7 +278,8 @@ const IMG = LAB.ANIM_IMG || {};
     // lúc cần đọc nó nhất. bw thì phải nằm trong lưới, vì hitbox rộng hơn lưới là trúng đòn ở
     // chỗ không có gì cả.
     const alive = [...a.idle, ...a.walk, ...a.cast, ...a.hit];
-    ge(k + ': bh cao hơn mọi tư thế còn sống', a.bh, Math.max(...alive.map(f => f.g.length - f.dy)));
+    ge(k + ': bh cao hơn mọi tư thế còn sống', a.bh,
+       Math.max(...alive.map(f => f.g.length / (a.scale || 1) - f.dy)));
     le(k + ': bw nằm trong lưới', a.bw, a.cw);
     const u = LAB.unit(k, 100, 100);
     eq(k + ': unit() lấy hộp theo art', u.w + 'x' + u.h, a.bw + 'x' + a.bh);

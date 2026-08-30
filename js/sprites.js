@@ -66,10 +66,14 @@ const GLYPHS = {
 function setPixS(x, y, col, a) {
   x |= 0; y |= 0;
   if (x < 0 || y < 0 || x >= W || y >= H || a <= 0) return;
-  const i3 = (y * W + x) * 3, k = a > 1 ? 1 : a, inv = 1 - k;
-  buf[i3] = buf[i3] * inv + col[0] * k;
-  buf[i3 + 1] = buf[i3 + 1] * inv + col[1] * k;
-  buf[i3 + 2] = buf[i3 + 2] * inv + col[2] * k;
+  const k = a > 1 ? 1 : a, inv = 1 - k;
+  for (let sy = 0; sy < RENDER_SCALE; sy++)
+    for (let sx = 0; sx < RENDER_SCALE; sx++) {
+      const i3 = ((y * RENDER_SCALE + sy) * RW + x * RENDER_SCALE + sx) * 3;
+      buf[i3] = buf[i3] * inv + col[0] * k;
+      buf[i3 + 1] = buf[i3 + 1] * inv + col[1] * k;
+      buf[i3 + 2] = buf[i3 + 2] * inv + col[2] * k;
+    }
 }
 function setPix(x, y, col, a) { setPixS(x - CAMX, y - CAMY, col, a); }
 // Enemies take a full white silhouette when hit (their identity is a coloured blob);
@@ -98,6 +102,44 @@ function blit(grid, x, y, flash, flip, alpha, dim, pal) {
         _tmp[0] = _tmp[0] * iv + f; _tmp[1] = _tmp[1] * iv + f; _tmp[2] = _tmp[2] * iv + f;
       }
       setPix(x + col, y + row, _tmp, alpha);
+    }
+  }
+}
+
+// Imported boss art is authored at two samples per logical world pixel.  Drawing it through
+// setPix() would collapse every 2x2 source block before the browser ever sees it—the exact
+// loss of detail this renderer scale is meant to avoid.  This inverse sampler keeps the boss
+// the same logical height/hitbox while feeding its denser palette grid straight to render pixels.
+function blitFine(grid, x, y, sourceScale, flash, flip, alpha, dim, pal) {
+  flash = flash || 0; alpha = alpha === undefined ? 1 : alpha; dim = dim === undefined ? 1 : dim;
+  sourceScale = sourceScale || 1;
+  if (alpha <= 0) return;
+  const P = pal || PAL, sw = grid[0].length, sh = grid.length;
+  const dw = Math.max(1, Math.round(sw * RENDER_SCALE / sourceScale));
+  const dh = Math.max(1, Math.round(sh * RENDER_SCALE / sourceScale));
+  const rx0 = Math.round((x - CAMX) * RENDER_SCALE), ry0 = Math.round((y - CAMY) * RENDER_SCALE);
+  const k = alpha > 1 ? 1 : alpha, inv = 1 - k;
+  for (let ry = 0; ry < dh; ry++) {
+    const sy = Math.min(sh - 1, Math.floor(ry * sourceScale / RENDER_SCALE));
+    const line = grid[sy], py = ry0 + ry;
+    if (py < 0 || py >= RH) continue;
+    for (let rx = 0; rx < dw; rx++) {
+      const raw = Math.min(sw - 1, Math.floor(rx * sourceScale / RENDER_SCALE));
+      const ch = line[flip ? sw - 1 - raw : raw];
+      if (ch === '.') continue;
+      const p = P[ch];
+      if (!p) continue;
+      const px = rx0 + rx;
+      if (px < 0 || px >= RW) continue;
+      _tmp[0] = p[0] * dim; _tmp[1] = p[1] * dim; _tmp[2] = p[2] * dim;
+      if (flash > 0) {
+        const f = flash > 1 ? 1 : flash, iv = 1 - f;
+        _tmp[0] = _tmp[0] * iv + f; _tmp[1] = _tmp[1] * iv + f; _tmp[2] = _tmp[2] * iv + f;
+      }
+      const i3 = (py * RW + px) * 3;
+      buf[i3] = buf[i3] * inv + _tmp[0] * k;
+      buf[i3 + 1] = buf[i3 + 1] * inv + _tmp[1] * k;
+      buf[i3 + 2] = buf[i3 + 2] * inv + _tmp[2] * k;
     }
   }
 }

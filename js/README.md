@@ -41,9 +41,12 @@ sắc hay mờ:
 > **vật lý** — tức là `px CSS × devicePixelRatio` — và gốc của hộp cũng phải nằm tròn trên lưới
 > điểm ảnh đó.
 
-Khớp được thì bước cuối (canvas → màn hình) là copy 1:1, và lần phóng to duy nhất trong cả
-đường đi là `ctx.drawImage` với `imageSmoothingEnabled = false`, tức nearest thật: một điểm ảnh
-game ra 4 hoặc 5 điểm ảnh vật lý, mép nào cũng cứng.
+Khớp được thì bước cuối (canvas → màn hình) là copy 1:1, và lần phóng cuối trong cả đường đi là
+`ctx.drawImage` với `imageSmoothingEnabled = false`. Gameplay vẫn dùng lưới logic `W×H`, nhưng
+browser vẽ VFX và art nhập ở `RW×RH = 2W×2H`: một điểm gameplay có bốn subpixel render. Nhờ vậy
+frame vũ khí không còn bị thu 300 px xuống 72–100 px trước khi phóng lên, còn sàn/sprite vẽ tay
+vẫn giữ đúng cỡ pixel authored. Harness node không có `document` nên `RENDER_SCALE = 1` và ảnh
+kiểm 320×180 cũ không đổi.
 
 Bản trước chốt bộ đệm ở `320 * round(w / 320)` rồi để CSS kéo nó vào cái hộp đang có. Trên
 Windows ở mức phóng 125% (`devicePixelRatio = 1.25`) hộp 1221 px CSS là 1526,25 điểm ảnh thật
@@ -82,10 +85,10 @@ Kiểm nhanh trong console — cả bốn dòng phải đúng:
 Dòng cuối là phép đo trực tiếp: engine lượng hoá về 16 mức mỗi kênh nên mọi giá trị nguồn là
 bội của 17, và một điểm nào **không** phải bội của 17 là bằng chứng có nội suy.
 
-Một chuyện khác hay bị lẫn với mờ: art boss gốc cao ~1536 px còn cả khung game chỉ cao 180, nên
-`tools/gen-boss-frames.js` hạ thân boss về 40 px (`BODY_H`). Chi tiết mất đi ở đó là *cố ý* và
-không sửa được bằng đường vẽ — muốn boss nhiều nét hơn thì nâng `BODY_H`, và nhớ là hitbox với
-thanh máu đi theo.
+Art boss gốc cao ~1536 px không còn bị hạ thẳng xuống 40 mẫu ảnh. Generator dùng
+`BOSS_ART_SCALE = 2`, sinh thân cao 80 mẫu rồi `blitFine` đưa chúng thẳng vào lưới render 2×;
+`boss-img.js` chia kích cỡ về 40 đơn vị gameplay khi dựng `bw/bh`. Vì vậy ngoại hình có gấp đôi
+chi tiết nhưng hitbox, thanh máu và kích cỡ con boss trong thế giới không đổi.
 
 ## Bề rộng khung chạy theo máy — `H = 180` là bất biến, `W` thì không
 
@@ -104,7 +107,8 @@ duy nhất không phải bỏ một thứ gì.
 Bốn chuyện ở đây không đổi được:
 
 - **Phải chốt trước `core.js`.** File đó cấp `buf`, `FLOOR`, `FLOOR_RGBA` ngay lúc chạy theo
-  `NP = W * H`. Một con số quyết định muộn hơn một dòng là một bộ đệm sai cỡ vĩnh viễn.
+  `NP = RW * RH`, mà `RW/RH` lại suy từ `W/H`. Một con số quyết định muộn hơn một dòng là một
+  bộ đệm sai cỡ vĩnh viễn.
 - **Đo `window.screen`, không đo viewport.** Viewport co lại theo thanh địa chỉ rồi giãn ra khi
   vào fullscreen, mà bộ đệm chỉ cấp được một lần; `screen` thì đứng yên cả phiên. Hệ quả phải
   biết: máy càng dài thì thấy *nhiều sân hơn* một chút so với bản chơi bằng chuột.
@@ -434,4 +438,3 @@ Bốn bộ trong art không khớp một-một với trạng thái `world.js` đ
 `hit ← f.flash`, `walk` thì art không có nên là bộ đứng cộng nhịp nhấp. Không thêm trường trạng
 thái nào vào foe. Thứ tự ưu tiên death > cast > hit > walk/idle, và cast **trên** hit là có chủ
 ý: boss đang tung chiêu mà bị đánh thì thứ người chơi cần đọc vẫn là chiêu đó.
-
