@@ -79,6 +79,9 @@ function renderWorld(w, out) {
     drawPropFlat(p, w.t);
   }
   for (const e of w.fxs) if (e.sk.under) e.sk.under(w, e, e.p);
+  // Vòng ngắm của người chơi trên hiệu ứng của chính mình nhưng *dưới* cảnh báo của quái: nó là
+  // thứ mình đang chủ động điều khiển nên không được che thứ đang sắp đánh mình.
+  drawAimCue(w);
   // Monster warnings go on last of the ground layers: a mark you cannot see because a
   // player effect is sitting on it is not a warning.
   for (const e of w.tels) drawTellUnder(w, e);
@@ -154,17 +157,68 @@ function drawWeaponCue(w) {
             3.6, MOMO_H, 0.60 * fl, 1.0, 0.8);
   }
 }
+// Vòng ngắm của chế độ điện thoại. `w.aimUI` do shell dựng và chỉ tồn tại trong browser, nên ở
+// harness node hàm này là một lệnh không làm gì -- không phải thêm nhánh nào cho nó.
+//
+// Nó vẽ bằng đúng những nét mà cảnh báo của quái đang dùng (ellipse nén GSQ trên sàn, mũi nhọn
+// chỉ hướng, tâm sáng ở chỗ sẽ nổ), vì người chơi đã học đọc thứ ngôn ngữ đó suốt cả trận: một
+// bộ hình thứ hai cho riêng phần ngắm là bắt học lại từ đầu đúng lúc đang bị ba con vây.
+function drawAimCue(w) {
+  const a = w.aimUI;
+  if (!a || !a.on) return;
+  const col = a.col, r = a.r;
+  // Tầm xa nhất: một ellipse mảnh, mờ. Mảnh và mờ là *cố ý* -- nó là vạch giới hạn, không phải
+  // một chiêu; đậm lên là nó tranh chỗ đọc với vùng đỏ của quái đang đứng trong đó.
+  //
+  // Hệ số nén lấy từ *chính thứ đang ngắm*: skill lấy GSQ như mọi hình vẽ trên sàn, còn lướt né
+  // lấy 0,75 -- tỉ lệ y/x của phép đi lại -- vì với nó vòng này không phải hình trang trí mà là
+  // đúng tập những chỗ chân hạ xuống được. Vẽ nó bằng GSQ là hứa một vùng mà cú lướt không tới.
+  const sq = a.ky || GSQ;
+  ring(a.hx, a.hy, r, 1.0, col, 0.18, sq, 2.0);
+  const dx = a.x - a.hx, dy = a.y - a.hy;
+  const ang = Math.atan2(dy, dx), len = Math.hypot(dx, dy);
+  if (a.mode === 'dir') {
+    // Chiêu theo hướng: cả nan quạt là con đường, nên vẽ một dải loe ra tới điểm ngắm rồi một mũi
+    // nhọn ở đầu. Người chơi điều khiển *góc*, và góc chỉ đọc được khi có hai đầu để so.
+    beam(a.hx, a.hy, ang, 4, Math.max(8, len), 2.2, 5.2, col, 0.22, 1.3, 0.55);
+    // Ba mũi rải trên *đúng đoạn thẳng tới điểm ngắm*, không phải trên một cung dựng lại từ góc:
+    // điểm ngắm đã nén trục y một lần rồi, nén thêm lần nữa là ba mũi trôi ra khỏi dải sáng.
+    for (let i = 0; i < 3; i++) {
+      const t = 1 - i * 0.15;
+      chevron(a.hx + dx * t, a.hy + dy * t, ang, 4.4 - i * 0.8, col, 0.45 - i * 0.1, 1.0, 0.85);
+    }
+    return;
+  }
+  // Chiêu theo điểm: một sợi chỉ từ chân người tới đích, rồi một tâm ngắm. Sợi chỉ là thứ nói
+  // "chiêu này của *mình*" khi đích rơi vào giữa một bầy quái đang có vùng cảnh báo riêng.
+  if (len > 6) beam(a.hx, a.hy, ang, 5, len - 4, 0.6, 1.2, col, 0.20, 1.4, 0.5);
+  ring(a.x, a.y, 7.5, 1.1, col, 0.5, GSQ, 1.5);
+  ring(a.x, a.y, 3.0, 0.9, col, 0.3, GSQ, 1.6);
+  core(a.x, a.y, 2.0, col, 0.34, 1.9);
+  // Bốn mũi chụm vào tâm: ở cỡ 320x180 một vòng tròn 7 px giữa sàn sáng đọc ra là một hạt bụi,
+  // còn bốn mũi chỉ vào nhau thì đọc ra là "chỗ này".
+  for (let i = 0; i < 4; i++) {
+    const t = i / 4 * TAU + Math.PI / 4;
+    chevron(a.x + Math.cos(t) * 11, a.y + Math.sin(t) * 11 * GSQ, t + Math.PI, 3.2, col, 0.42, 1.0, 0.8);
+  }
+}
 // The minimap is the only thing on screen that is *not* in world space: it is drawn
 // through setPixS so the camera cannot drag it off the corner.
 const MM_W = 62, MM_H = 35;
+// Ở chế độ điện thoại góc dưới phải là chỗ đặt ngón cái, nên minimap dời lên góc trên phải.
+// `MM` là hộp mà harness loại ra khỏi phép kiểm "mép màn hình phải là sàn", nên nó phải đi theo
+// cùng một công tắc: một hằng số cứng ở đây và một chỗ khác vẽ là hai nguồn sự thật cho một con
+// số, và bản trước của boss đã trả giá đúng chuyện đó. Node không có DOM nên mặc định là góc cũ.
+let MM_TOP = false;
 // The whole painted rectangle, border included -- exported so the harness can exclude it
 // from the "the screen edge must be floor" check instead of quietly widening a threshold.
 const MM = { x: W - MM_W - 4, y: H - MM_H - 4, w: MM_W + 2, h: MM_H + 2 };
+function setMinimapTop(on) { MM_TOP = !!on; MM.y = MM_TOP ? 3 : H - MM_H - 4; }
 const MM_BG = hexc('#0a0a12'), MM_ED = hexc('#3b3b54'), MM_VIEW = hexc('#8fd6ff');
 const MM_FOE = hexc('#c0374a'), MM_HERO = hexc('#eaf9ff');
 const MM_WARN = hexc('#ffd24a');
 function drawMinimap(w) {
-  const x0 = W - MM_W - 3, y0 = H - MM_H - 3;
+  const x0 = W - MM_W - 3, y0 = MM_TOP ? 4 : H - MM_H - 3;
   const sx = MM_W / WW, sy = MM_H / WH;
   // Opaque, not blended. At 0.62 a torch standing behind the panel -- or any bright cast in
   // the bottom-right corner -- bled through as a warm haze and drowned the dots, because the

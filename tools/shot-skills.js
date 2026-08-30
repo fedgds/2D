@@ -31,6 +31,13 @@ const VIEW = {
   _default: { w: 180, h: 120, dy: -10, scale: 3 },
   arcane_rain: { w: 240, h: 160, dy: -18, scale: 2 },
   gale_vortex: { w: 200, h: 150, dy: -22, scale: 2 },
+  // Trụ phán xét neo vào *mép trên* khung 320x180, không vào điểm ngắm: crop chặt là cắt mất
+  // chỗ cây cột bắt đầu, và câu hỏi duy nhất về chiêu này là có thấy nó từ trên trời xuống hay
+  // không. `h: 150` với `dy: -26` là đủ cao để mép trên khung nằm trong ảnh.
+  judgment_beam: { w: 220, h: 150, dy: -26, scale: 2 },
+  // Cú sụp kết bằng một sóng xung kích bán kính ~64: crop 180x120 cắt mất chính cái khung
+  // đáng xem nhất của chiêu.
+  void_collapse: { w: 220, h: 150, dy: -14, scale: 2 },
 };
 const MARKS = [0.06, 0.20, 0.36, 0.55, 0.74, 0.93];
 const COLS = 3;

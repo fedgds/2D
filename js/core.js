@@ -3,6 +3,9 @@
 // 0. Pixel core -- additive HDR buffer -> tonemap -> Bayer dither -> 16 levels.
 //    Straight port of skillfx/core.py, so the frames look like the sketches.
 // ===========================================================================
+// SCALE là *cỡ tham chiếu* của khung 320x180 khi phóng lên (4x = 1280x720), dùng cho ảnh chụp
+// ở tools/ và cho việc suy luận. Nó **không** còn là tỉ lệ mà browser dùng: shell.js chốt bộ
+// đệm canvas theo số điểm ảnh vật lý của cửa sổ, nên tỉ lệ thật là số lẻ (4,75 chẳng hạn).
 const W = 320, H = 180, SCALE = 4, EXPO = 1.3, LEVELS = 16;
 const NP = W * H;
 const buf = new Float32Array(NP * 3);

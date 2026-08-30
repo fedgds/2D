@@ -15,7 +15,13 @@ function core(x, y, r, col, a, power) {
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a, sq = power === 2;
   for (let py = y0; py <= y1; py++) {
     const dy = py - y;
-    for (let px = x0; px <= x1; px++) {
+    // Row-tight x span. The disc inside the square wastes a fifth of the box, which is nothing
+    // for a 3 px spark and about 11000 pixels for a 160 px field -- and the ice king now draws
+    // several of those per frame.
+    if (Math.abs(dy) >= rr) continue;
+    const hw = Math.sqrt(rr * rr - dy * dy);
+    const xa = Math.max(x0, Math.floor(x - hw)), xb = Math.min(x1, Math.ceil(x + hw));
+    for (let px = xa; px <= xb; px++) {
       const dx = px - x, d = Math.sqrt(dx * dx + dy * dy) / rr;
       if (d >= 1) continue;
       let m = 1 - d; m = sq ? m * m : fpow(m, power);
@@ -66,14 +72,28 @@ function ring(x, y, r, thick, col, a, squash, sharp) {
   const ey = (r + th) * sq;
   const y0 = Math.max(0, Math.floor(y - ey)), y1 = Math.min(H - 1, Math.ceil(y + ey));
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a;
+  const ro = r + th, ri = Math.max(r - th, 0);
   for (let py = y0; py <= y1; py++) {
-    const dy = (py - y) / sq;
-    for (let px = x0; px <= x1; px++) {
-      const dx = px - x, d = Math.sqrt(dx * dx + dy * dy);
-      const e = 1 - Math.abs(d - r) / th;
-      if (e <= 0) continue;
-      const m = fpow(e, sharp), i3 = (py * W + px) * 3;
-      buf[i3] += m * c0; buf[i3 + 1] += m * c1; buf[i3 + 2] += m * c2;
+    const dy = (py - y) / sq, ady = Math.abs(dy);
+    if (ady >= ro) continue;
+    // A ring row is the outer chord minus the inner one -- two spans, not one. On a 6 px ring
+    // that is a rounding error; on the 160 px collapse ring it is 96% of the box, and the box
+    // was being walked in full.
+    const xo = Math.sqrt(ro * ro - dy * dy);
+    const xi = ady < ri ? Math.sqrt(ri * ri - dy * dy) : -1;
+    for (let sd = 0; sd < 2; sd++) {
+      let lo, hi;
+      if (xi < 0) { if (sd) break; lo = x - xo; hi = x + xo; }
+      else if (sd === 0) { lo = x - xo; hi = x - xi; }
+      else { lo = x + xi; hi = x + xo; }
+      const xa = Math.max(x0, Math.floor(lo)), xb = Math.min(x1, Math.ceil(hi));
+      for (let px = xa; px <= xb; px++) {
+        const dx = px - x, d = Math.sqrt(dx * dx + dy * dy);
+        const e = 1 - Math.abs(d - r) / th;
+        if (e <= 0) continue;
+        const m = fpow(e, sharp), i3 = (py * W + px) * 3;
+        buf[i3] += m * c0; buf[i3 + 1] += m * c1; buf[i3 + 2] += m * c2;
+      }
     }
   }
 }
@@ -87,22 +107,50 @@ function arc(x, y, r, ang, sweep, thick, col, a, squash, sharp, taper) {
   if (taper === undefined) taper = 2;
   const th = Math.max(thick, 1e-3), sq = Math.max(squash, 1e-3);
   const half = Math.max(sweep * 0.5, 1e-3), inv = 1 / Math.max(taper, 1e-3);
-  const x0 = Math.max(0, Math.floor(x - r - th)), x1 = Math.min(W - 1, Math.ceil(x + r + th));
-  const ey = (r + th) * sq;
-  const y0 = Math.max(0, Math.floor(y - ey)), y1 = Math.min(H - 1, Math.ceil(y + ey));
+  // Bound the *slice*, not the ellipse it was cut from: the two end rays, plus whichever axis
+  // directions the sweep actually contains. A 70-degree wedge of a 236 px radius used to bound
+  // out to the whole frame -- 57000 pixels tested to paint two thousand of them.
+  const ro = r + th, ri = Math.max(r - th, 0);
+  let ax = 1e9, bx = -1e9, ay = 1e9, by = -1e9;
+  for (let i = 0; i < 4; i++) {
+    const aa = ang + ((i & 1) ? half : -half), rr = i < 2 ? ri : ro;
+    const px = x + Math.cos(aa) * rr, py = y + Math.sin(aa) * rr * sq;
+    if (px < ax) ax = px; if (px > bx) bx = px;
+    if (py < ay) ay = py; if (py > by) by = py;
+  }
+  for (let q = 0; q < 4; q++) {
+    const qa = q * (Math.PI / 2);
+    if (half < Math.PI
+      && Math.abs(((qa - ang + Math.PI) % TAU + TAU) % TAU - Math.PI) >= half) continue;
+    const px = x + Math.cos(qa) * ro, py = y + Math.sin(qa) * ro * sq;
+    if (px < ax) ax = px; if (px > bx) bx = px;
+    if (py < ay) ay = py; if (py > by) by = py;
+  }
+  const x0 = Math.max(0, Math.floor(ax)), x1 = Math.min(W - 1, Math.ceil(bx));
+  const y0 = Math.max(0, Math.floor(ay)), y1 = Math.min(H - 1, Math.ceil(by));
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a;
   for (let py = y0; py <= y1; py++) {
-    const dy = (py - y) / sq;
-    for (let px = x0; px <= x1; px++) {
-      const dx = px - x, d = Math.sqrt(dx * dx + dy * dy);
-      const e = 1 - Math.abs(d - r) / th;
-      if (e <= 0) continue;
-      let da = Math.atan2(dy, dx) - ang;
-      da = Math.abs(((da + Math.PI) % TAU + TAU) % TAU - Math.PI);
-      if (da >= half) continue;
-      const m = fpow(e, sharp) * fpow(1 - da / half, inv);
-      const i3 = (py * W + px) * 3;
-      buf[i3] += m * c0; buf[i3 + 1] += m * c1; buf[i3 + 2] += m * c2;
+    const dy = (py - y) / sq, ady = Math.abs(dy);
+    if (ady >= ro) continue;
+    const xo = Math.sqrt(ro * ro - dy * dy);
+    const xi = ady < ri ? Math.sqrt(ri * ri - dy * dy) : -1;
+    for (let sd = 0; sd < 2; sd++) {
+      let lo, hi;
+      if (xi < 0) { if (sd) break; lo = x - xo; hi = x + xo; }
+      else if (sd === 0) { lo = x - xo; hi = x - xi; }
+      else { lo = x + xi; hi = x + xo; }
+      const xa = Math.max(x0, Math.floor(lo)), xb = Math.min(x1, Math.ceil(hi));
+      for (let px = xa; px <= xb; px++) {
+        const dx = px - x, d = Math.sqrt(dx * dx + dy * dy);
+        const e = 1 - Math.abs(d - r) / th;
+        if (e <= 0) continue;
+        let da = Math.atan2(dy, dx) - ang;
+        da = Math.abs(((da + Math.PI) % TAU + TAU) % TAU - Math.PI);
+        if (da >= half) continue;
+        const m = fpow(e, sharp) * fpow(1 - da / half, inv);
+        const i3 = (py * W + px) * 3;
+        buf[i3] += m * c0; buf[i3 + 1] += m * c1; buf[i3 + 2] += m * c2;
+      }
     }
   }
 }
@@ -278,8 +326,15 @@ function puddle(x, y, rw, rh, col, a, seed, lobes, power) {
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a;
   for (let py = y0; py <= y1; py++) {
     const dy = (py - y) * ih;
-    for (let px = x0; px <= x1; px++) {
-      const dx = (px - x) * iw, th = Math.atan2(dy, dx);
+    // The wobble can only swell the radius to 1.27, so anything past that is out before the
+    // angle is worth computing -- and the angle costs an atan2 and two sines per pixel.
+    if (Math.abs(dy) >= 1.27) continue;
+    const hw = Math.sqrt(1.6129 - dy * dy) * rw;
+    const xa = Math.max(x0, Math.floor(x - hw)), xb = Math.min(x1, Math.ceil(x + hw));
+    for (let px = xa; px <= xb; px++) {
+      const dx = (px - x) * iw;
+      if (dx * dx + dy * dy >= 1.6129) continue;
+      const th = Math.atan2(dy, dx);
       const wob = 1 + 0.17 * Math.sin(lobes * th + ph1) + 0.10 * Math.sin((lobes + 3) * th + ph2);
       const d = Math.sqrt(dx * dx + dy * dy) / wob;
       if (d >= 1) continue;
@@ -321,24 +376,38 @@ function cracks(x, y, n, length, col, a, seed, squash, thick) {
 }
 // Ice spike out of the floor. An additive taper saturates through the middle and
 // reads as a blunt tube, so both lit edges are drawn from base to tip.
-function shard(x, ybase, h, w, col, hot, a, lean) {
+// `glint` adds the specular a real crystal has: one hot point on the lit edge plus a cross
+// flare off the tip. Without it a spike is a lit triangle, which is to say a paper cutout.
+function shard(x, ybase, h, w, col, hot, a, lean, glint) {
   if (lean === undefined) lean = 0;
+  if (glint === undefined) glint = 0;
   const ang = -Math.PI / 2 + lean;
   beam(x, ybase, ang, 0, h, w, 0.5, col, a, 1.8, 0.9);
   const tx = x + Math.cos(ang) * h, ty = ybase + Math.sin(ang) * h;
   line(x + w * 0.34, ybase, tx, ty, 0.8, hot, a * 0.7);
   line(x - w * 0.34, ybase, tx, ty, 0.8, hot, a * 0.5);
   core(tx, ty, 2.0, hot, a * 0.9);
+  if (glint > 0) {
+    const q = 0.62;                                  // up the lit edge, not at the middle
+    core(x + w * 0.34 + (tx - x - w * 0.34) * q, ybase + (ty - ybase) * q,
+         1.7, hot, a * glint, 1.4);
+    glare(tx, ty, 4.2 + 2.2 * glint, 3.0 + 1.6 * glint, hot, a * glint * 0.85);
+  }
 }
 
-function hexshield(x, y, r, col, hot, a, seed, cells) {
+// `rot` and `thick` exist so two of these can be stacked and still read as two: the outer
+// frame wants to be heavy and still, the inner lattice thin and turning. Drawn at the same
+// weight they fuse into one flat plate, which is what the reflect shield used to look like.
+function hexshield(x, y, r, col, hot, a, seed, cells, rot, thick) {
   if (cells === undefined) cells = 7;
+  if (rot === undefined) rot = 0;
+  if (thick === undefined) thick = 1.6;
   const rng = mulberry32(seed), pts = [];
   for (let i = 0; i <= 6; i++)
-    pts.push([x + Math.cos(i / 6 * TAU - Math.PI / 2) * r,
-              y + Math.sin(i / 6 * TAU - Math.PI / 2) * r * 0.92]);
-  polyline(pts, 1.6, col, a);
-  polyline(pts, 0.7, hot, a * 0.9);
+    pts.push([x + Math.cos(i / 6 * TAU - Math.PI / 2 + rot) * r,
+              y + Math.sin(i / 6 * TAU - Math.PI / 2 + rot) * r * 0.92]);
+  polyline(pts, thick, col, a);
+  polyline(pts, thick * 0.44, hot, a * 0.9);
   core(x, y, r, col, a * 0.35, 3.0);
   for (let k = 0; k < cells; k++) {
     const ang = rng.range(0, TAU), rr = r * rng.range(0.35, 0.88);
@@ -407,6 +476,149 @@ function unlight(x, y, r, a, power) {
       if (d >= 1) continue;
       const m = fpow(1 - d, power) * a, i3 = (py * W + px) * 3;
       buf[i3] -= m; buf[i3 + 1] -= m; buf[i3 + 2] -= m;
+    }
+  }
+}
+
+// ===========================================================================
+// 1b. Composed shapes. Everything above is one field; these are the five things
+//     the skills kept re-deriving badly by hand -- a wave with a direction, a
+//     flame that flickers, a rim that breathes heat, a crystal with a lit face,
+//     and a sprite drawn as light instead of as dimmed matter.
+// ===========================================================================
+
+// A wave *front*, not a drawn circle. ring() at any thickness is a stroke: symmetric, so it
+// says nothing about which way the energy is going. Three rings offset around r do: a faint
+// scout ahead, a hot hairline at the front, and a fat dim body dragging behind.
+function shockwave(x, y, r, w, col, hot, a, squash) {
+  if (squash === undefined) squash = 1;
+  if (a <= 0 || r <= 0) return;
+  ring(x, y, r + w * 0.75, w * 0.55, col, a * 0.22, squash, 0.9);
+  ring(x, y, r, w * 0.42, hot, a * 0.95, squash, 1.9);
+  ring(x, y, r - w * 0.55, w * 1.15, col, a * 0.62, squash, 1.0);
+  ring(x, y, r - w * 1.7, w * 1.5, col, a * 0.26, squash, 0.8);
+}
+
+// Flame column. A single tapered beam saturates through the middle and reads as a blunt
+// tube -- which is exactly why the ember pillars looked like toothpicks. A flame is stacked
+// lit blobs instead: radius falls with height, x drifts with height, and `beat` phases the
+// whole thing so no two pillars in a ring ever breathe together.
+function flame(x, ybase, h, w, col, hot, a, beat) {
+  if (a <= 0 || h <= 0) return;
+  const ph = beat * TAU, segs = 6;
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    // Sway grows with height: the foot of a fire is pinned to whatever is burning, the tip
+    // is not, and that difference is most of what makes it read as alive.
+    const sx = x + Math.sin(ph + t * 2.6) * w * 0.9 * t * t;
+    const sy = ybase - h * t;
+    const br = w * (1 - 0.66 * t) * (1 + 0.18 * Math.sin(ph * 1.9 + t * 6.0));
+    core(sx, sy, br > 0.6 ? br : 0.6, col, a * (0.95 - 0.34 * t), 1.7);
+    if (t < 0.74) core(sx, sy, br * 0.44 > 0.5 ? br * 0.44 : 0.5, hot,
+                       a * (0.8 - 0.58 * t), 1.9);
+  }
+  core(x + Math.sin(ph + 2.6) * w * 0.9, ybase - h, w * 0.34 > 0.6 ? w * 0.34 : 0.6,
+       hot, a * 0.5, 1.5);
+  core(x, ybase, w * 1.4, col, a * 0.4, 2.2);        // pool of light at the foot
+}
+
+// Heat rim: an ellipse whose radius wobbles per angle *and* per time, with a skirt of soft
+// blobs leaning outward. A ring() is ink on paper; this is air moving over something hot,
+// and it is the difference between a diagram of fire and fire.
+function heatring(x, y, rw, rh, col, a, phase, seed, segs) {
+  if (a <= 0) return;
+  if (segs === undefined) segs = 22;
+  const rng = mulberry32((seed | 0) + 1), j1 = rng.range(0, TAU), j2 = rng.range(0, TAU);
+  let px = 0, py = 0;
+  for (let i = 0; i <= segs; i++) {
+    const th = i / segs * TAU;
+    const wob = 1 + 0.085 * Math.sin(3 * th + j1 + phase * 2.1)
+                  + 0.055 * Math.sin(5 * th + j2 - phase * 1.5);
+    const cx = x + Math.cos(th) * rw * wob, cy = y + Math.sin(th) * rh * wob;
+    if (i) {
+      line(px, py, cx, cy, 1.7, col, a, 1.4);
+      // Outward skirt: dense at the rim, thinning away from it -- a burn gradient rather
+      // than a hard edge, so the ring stops looking cut out with scissors.
+      const mx = (px + cx) * 0.5, my = (py + cy) * 0.5;
+      const ux = Math.cos(th - Math.PI / (segs || 1)), uy = Math.sin(th - Math.PI / (segs || 1));
+      core(mx + ux * 2.6, my + uy * 1.3, 3.4, col, a * 0.34, 2.0);
+      core(mx + ux * 5.4, my + uy * 2.7, 3.0, col, a * 0.14, 2.2);
+      core(mx - ux * 2.2, my - uy * 1.1, 2.6, col, a * 0.30, 1.8);
+    }
+    px = cx; py = cy;
+  }
+}
+
+// Solid crystal, filled. An outline is a wireframe, and a wireframe has no volume no matter
+// how well drawn: a body needs a gradient across its faces. Scanlines carry a lit->dark ramp
+// keyed to a light from the upper left, the silhouette keeps a hot edge, and two diagonal
+// bands cut across the surface -- that pair of glints is the whole difference between glass
+// and paper.
+function crystal(x, y, rw, up, down, lit, dark, hot, a) {
+  if (a <= 0 || rw <= 0) return;
+  x -= CAMX; y -= CAMY;
+  const iu = 1 / (up > 1e-3 ? up : 1e-3), id = 1 / (down > 1e-3 ? down : 1e-3);
+  const x0 = Math.max(0, Math.floor(x - rw)), x1 = Math.min(W - 1, Math.ceil(x + rw));
+  const y0 = Math.max(0, Math.floor(y - up)), y1 = Math.min(H - 1, Math.ceil(y + down));
+  for (let py = y0; py <= y1; py++) {
+    const dy = py - y, v = dy < 0 ? dy * iu : dy * id;   // -1 at the top point, +1 at the base
+    const t = v < 0 ? -v : v;
+    if (t >= 1) continue;
+    const hw = rw * (1 - t);
+    if (hw < 0.4) continue;
+    const xa = Math.max(x0, Math.floor(x - hw)), xb = Math.min(x1, Math.ceil(x + hw));
+    for (let px = xa; px <= xb; px++) {
+      const u = (px - x) / hw;
+      if (u < -1 || u > 1) continue;
+      const sh = c01(0.58 - u * 0.44 - v * 0.15);
+      const rim = fpow(Math.abs(u), 7);
+      const q = u * 0.8 + v * 0.55;                     // diagonal surface coordinate
+      let gl = 0;
+      for (let k = 0; k < 2; k++) {
+        const d = 1 - Math.abs(q - (k ? 0.22 : -0.42)) / 0.1;
+        if (d > 0) gl += d * d;
+      }
+      const m = a * (0.26 + 0.74 * sh), hm = a * (rim * 0.9 + gl * 0.55);
+      const i3 = (py * W + px) * 3;
+      buf[i3]     += (dark[0] + (lit[0] - dark[0]) * sh) * m + hot[0] * hm;
+      buf[i3 + 1] += (dark[1] + (lit[1] - dark[1]) * sh) * m + hot[1] * hm;
+      buf[i3 + 2] += (dark[2] + (lit[2] - dark[2]) * sh) * m + hot[2] * hm;
+    }
+  }
+}
+
+// Sprite silhouette as light. blit() dims a *palette*, and a dimmed sprite over a dark floor
+// is a grey smudge -- which is the one thing a motion ghost must never be. Flat colour for
+// the body, `edge` times brighter wherever a cell has an empty neighbour, so the shape still
+// reads as the character at a = 0.15.
+//
+// Ô trống trong mọi lưới của game là `'.'`, **không** phải dấu cách (xem `blit()` ở
+// sprites.js). Bản đầu ở đây so với `' '` nên không ô nào bị bỏ qua và cả lưới 11x14 được
+// tô: cái bóng ra một khối chữ nhật đặc, viền sáng đúng ở rìa lưới -- không phải hình người.
+// Chuỗi HERO không có dấu cách nào để lộ ra chuyện đó, nên lỗi chỉ đọc được bằng mắt.
+const gOff = ch => ch === '.' || ch === ' ' || ch === undefined;
+function ghost(grid, x, y, col, a, flip, edge) {
+  if (a <= 0) return;
+  if (edge === undefined) edge = 2.2;
+  x -= CAMX; y -= CAMY;
+  const gh = grid.length, gw = grid[0].length;
+  for (let ry = 0; ry < gh; ry++) {
+    const row = grid[ry], py = y + ry;
+    if (py < 0 || py >= H) continue;
+    for (let rx = 0; rx < gw; rx++) {
+      if (gOff(row[rx])) continue;
+      const px = x + (flip ? gw - 1 - rx : rx);
+      if (px < 0 || px >= W) continue;
+      const open = gOff(row[rx - 1]) + gOff(row[rx + 1])
+                 + (ry > 0 ? gOff(grid[ry - 1][rx]) : true)
+                 + (ry < gh - 1 ? gOff(grid[ry + 1][rx]) : true);
+      // Thân *có* được tô, chỉ mờ hơn mép một bậc. Hai cực đều sai: nhân đủ `edge` cho mọi ô
+      // chạm nền thì hình người 11 px sáng đều thành một tấm ván (đúng lỗi của bản `blit()`
+      // cũ, chỉ đổi màu); còn để thân gần như tắt thì còn lại một cái khung ảnh rỗng. Ô hở hai
+      // phía -- góc, vai, mũi chân, đỉnh đầu -- mới ăn đủ, và chính chúng vẽ ra dáng người.
+      const m = a * (open >= 2 ? edge : open ? edge * 0.72 : 0.85);
+      const i3 = (py * W + px) * 3;
+      buf[i3] += col[0] * m; buf[i3 + 1] += col[1] * m; buf[i3 + 2] += col[2] * m;
     }
   }
 }

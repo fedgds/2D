@@ -22,7 +22,7 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `weapon.js` | 5 vũ khí: sheet 16 khung (`ART`), `drawSwing`, `drawHeld`, `swing` |
 | `sfx.js` | `SFX` — mọi tiếng đều tổng hợp bằng WebAudio lúc chạy |
 | `world.js` | hero, quái, damage, `newWorld`, `step`, các hàm trúng đòn |
-| `render.js` | thứ tự vẽ một khung, thanh HP quái, minimap |
+| `render.js` | thứ tự vẽ một khung, thanh HP quái, vòng ngắm cảm ứng (`drawAimCue`), minimap (`setMinimapTop` cho chế độ điện thoại) |
 | `skills.js` | 16 skill (`SKILLS`) |
 | `dash.js` | chiêu lướt né mặc định — không tính vào 3 slot |
 | `foe-abil.js` | chiêu quái + vùng cảnh báo vẽ trên sàn |
@@ -30,7 +30,189 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `boss-abil.js` | 12 chiêu boss + `BOSS_SHAPE` (vùng tô, và chính nó là vùng gây damage) |
 | `lab.js` | `globalThis.LAB`: cửa cho harness node, không cần DOM |
 | `icons.js` | icon 32×32 vẽ bằng canvas cho hotbar và bảng chọn |
-| `shell.js` | shell browser: layout, menu/hướng dẫn, input, vòng lặp khung |
+| `shell.js` | shell browser: layout, menu/hướng dẫn, input, phím cảm ứng, vòng lặp khung |
+
+## Lưới điểm ảnh — vì sao game từng trông mờ
+
+`layout()` trong `shell.js` giữ **một** bất biến, và nó là thứ duy nhất quyết định game trông
+sắc hay mờ:
+
+> Bộ đệm canvas (`screen.width/height`) phải bằng đúng cỡ của hộp `#stage` tính theo điểm ảnh
+> **vật lý** — tức là `px CSS × devicePixelRatio` — và gốc của hộp cũng phải nằm tròn trên lưới
+> điểm ảnh đó.
+
+Khớp được thì bước cuối (canvas → màn hình) là copy 1:1, và lần phóng to duy nhất trong cả
+đường đi là `ctx.drawImage` với `imageSmoothingEnabled = false`, tức nearest thật: một điểm ảnh
+game ra 4 hoặc 5 điểm ảnh vật lý, mép nào cũng cứng.
+
+Bản trước chốt bộ đệm ở `320 * round(w / 320)` rồi để CSS kéo nó vào cái hộp đang có. Trên
+Windows ở mức phóng 125% (`devicePixelRatio = 1.25`) hộp 1221 px CSS là 1526,25 điểm ảnh thật
+cho một bộ đệm 1280 — **màn hình** lấy mẫu lại ở tỉ lệ 1,1924, và `image-rendering: pixelated`
+không cứu được: thuộc tính đó chỉ giữ mép cứng khi phóng lên số nguyên lần, còn `round()` thì
+thường xuyên cho ra bộ đệm *lớn hơn* hộp, và thu nhỏ thì trình duyệt nội suy trơn. Kết quả là
+mọi thứ mờ đi — sprite vẽ tay, art boss, sàn, hiệu ứng, chữ HUD.
+
+Ba chỗ dễ làm hỏng lại bất biến đó:
+
+1. **`border` trên `#screen`.** Với `* { box-sizing: border-box }` một viền 1 px ăn 2 px ra khỏi
+   đúng cái hộp vừa tính. Đường viền khung giờ là `outline` trên `#stage` — vẽ ngoài hộp, không
+   tính vào layout.
+2. **Làm tròn bề rộng và chiều cao riêng nhau.** Cỡ vật lý là `u * 16 × u * 9`, một số nguyên
+   lần 16:9, nên `bw/320` và `bh/180` bằng nhau *đúng bằng nhau* và điểm ảnh game vuông. Lấy
+   `round()` cho từng chiều thì hai tỉ lệ lệch nhau chút một và mọi vòng tròn hơi méo.
+3. **Vị trí, không chỉ kích cỡ.** `#stage` do flexbox căn giữa; chỗ trống chia ra số lẻ là mép
+   rơi vào *giữa* một điểm ảnh vật lý và cả canvas bị trộn lại lần nữa. `snapStage()` đo rồi đẩy
+   về lưới bằng một `translate` nhỏ hơn 1 px CSS. Nó chạy hai lần mỗi lượt layout: lúc nạp trang
+   hotbar còn chưa có ô nào nên `#app` còn cao lên nữa sau đó.
+
+Kiểm nhanh trong console — cả bốn dòng phải đúng:
+
+```js
+(() => { const c = screen, r = c.getBoundingClientRect(), d = devicePixelRatio; return {
+  'bộ đệm == hộp': r.width * d === c.width && r.height * d === c.height,
+  'ô vuông': c.width / 320 === c.height / 180,
+  'gốc trên lưới': Number.isInteger(Math.round(r.left * d * 64) / 64),
+  'nearest': c.getContext('2d').getImageData(0, 0, c.width, 8).data.every(v => v % 17 === 0) }; })()
+```
+
+Dòng cuối là phép đo trực tiếp: engine lượng hoá về 16 mức mỗi kênh nên mọi giá trị nguồn là
+bội của 17, và một điểm nào **không** phải bội của 17 là bằng chứng có nội suy.
+
+Một chuyện khác hay bị lẫn với mờ: art boss gốc cao ~1536 px còn cả khung game chỉ cao 180, nên
+`tools/gen-boss-frames.js` hạ thân boss về 40 px (`BODY_H`). Chi tiết mất đi ở đó là *cố ý* và
+không sửa được bằng đường vẽ — muốn boss nhiều nét hơn thì nâng `BODY_H`, và nhớ là hitbox với
+thanh máu đi theo.
+
+## Chế độ điện thoại — một lớp CSS, không phải một bản game thứ hai
+
+MENU → **CHẾ ĐỘ ĐIỆN THOẠI** bật `body.mob`, và đó là *toàn bộ* công tắc: không có trang riêng,
+không có đường vào sim riêng. Lựa chọn nhớ ở `localStorage['sl.mob']`; lần đầu mở mà máy chỉ có
+con trỏ thô (`(pointer: coarse)` và không có `(pointer: fine)`) thì tự bật.
+
+Ba lời hứa của phần này, và mỗi cái là một lý do để *không* viết nhánh riêng:
+
+1. **Một chiêu bấm bằng ngón tay và cùng chiêu đó bấm bằng phím `1` là đúng một thứ.** Năm nút
+   bên phải cuối cùng đều gọi `fire(n, at)` — cùng hàm mà chuột và bàn phím gọi, chỉ khác là chỗ
+   ngắm được truyền thẳng vào thay vì để `aimWorld()` tự đoán. Joystick chỉ ghi vào
+   `stick.dx/dy` rồi `frame()` **cộng** vào `inp.dx/dy` cạnh WASD. `step()` tự chuẩn hoá vector
+   đó, nên nghiêng cần ít hay nhiều không đổi tốc độ chạy: nửa tốc độ chỉ là nửa tốc độ *sai* với
+   mọi con số né đòn mà cả game được cân theo.
+2. **Ô hotbar và nút cảm ứng không thể nói khác nhau.** Một slot có nhiều *mặt*: `slotFaces[n]`
+   là danh sách mặt, `paint()` và `paintCds()` tính một lần rồi ghi ra tất cả. Thứ mỗi ô đang
+   mang thì suy ra từ `loadout` qua `slotInfo(n)`, không ai tự nhớ.
+3. **Lưới điểm ảnh vẫn nguyên bất biến ở trên.** `layout()` chỉ đổi *hộp nào* được lấp: mobile
+   là khung 16:9 lớn nhất nằm trong cả viewport (bỏ topbar với hotbar), rồi vẫn đúng phép tính
+   `u*16 × u*9` theo điểm ảnh vật lý và vẫn `snapStage()`.
+
+Những chỗ đã phải sửa vì *không có chuột*, và tại sao không có cách nào rẻ hơn:
+
+- **Joystick có bệ cố định.** `stickHome()` đặt bệ cách hai mép vùng nhận `0,28` lần đường kính
+  và **không ai dời nó nữa**: hướng đi là vector từ tâm bệ tới ngón, núm kẹp ở vành
+  (`stickTo`), vùng chết `0,16` để tay không vững không thành ý muốn đi. Bản trước cho bệ nhảy
+  tới chỗ ngón vừa đặt rồi *kéo cả bệ theo* khi trượt quá vành. Nghe hợp lý cho tới lúc chơi
+  thật: bệ đi lang thang khắp màn hình, và vì "giữa" luôn nằm ở chỗ ngón vừa rời khỏi nên không
+  bao giờ cảm được mình đang đẩy hướng nào mà không nhìn xuống tay — đúng thứ mà một cần điều
+  khiển tồn tại để khỏi phải làm. Con số `0,28 × đường kính` thay cho `12 px`: sát mép là bờ máy
+  chặn mất một phần cung ngón cái quét được, và trên máy màn cong thì mất cả cảm giác chạm. Người
+  chơi *đặt* được bệ ở đâu (dưới) thì `stickHome()` lấy chỗ đó thay cho mặc định, nhưng vẫn kẹp
+  trong vùng nhận `#tstick` một khoảng bằng bán kính bệ — bệ nằm nửa ngoài vùng nhận là một cần
+  điều khiển đẩy sang phải được mà sang trái thì không.
+- **Cụm nút bên phải là một nan quạt, và hình dạng đó nằm trong CSS.** `.tb[data-slot="N"]` khai
+  một vector đơn vị (`--dx/--dy`) với một bán kính cung (`--arc`), neo là *tâm* nút đánh thường
+  cách hai mép `1,05 --tu`. `buildTouch()` chỉ đẻ ra năm cái nút rồi gắn `data-slot`, không dựng
+  hàng nào — nên đổi bố cục là đổi bốn dòng CSS, và đổi cỡ cả cụm là đổi `--tu`. Ngón cái quay
+  quanh một khớp ở gốc bàn tay: chỗ nó với tới thoải mái là một vòng cung, không phải một bảng
+  hai hàng. Ba skill sát nhau trên cung trong là *cố ý* (ngón đảo giữa ba nút kề nhanh hơn nhiều
+  so với ba nút rời rạc); lướt né tách lên cung ngoài để không bấm lẫn lúc đang cuống.
+- **Ngắm.** `aimWorld()` rẽ sang `touchAim()`: con còn sống gần nhất trong `AIM_R = 170`, rồi
+  hướng joystick, rồi hướng đang nhìn. Chặn bán kính là bắt buộc — `cast()` chỉ kẹp theo mép sân
+  chứ không kẹp tầm, nên ngắm con quái ở cuối map là cho nổ một chiêu ngoài màn hình. Khoảng cách
+  đo với `dy / 0.75` đúng như mọi phép đo tầm khác, nên "gần nhất" ở đây và "trúng" ở `hitCone` là
+  cùng một hình học.
+- **Giữ để ngắm** (`holdStart`/`holdTrack`/`holdEnd`) cho ba skill có mục tiêu **và cho lướt né**.
+  Chạm rồi nhả ngay là tung nhanh vào chỗ `touchAim()` chọn; giữ rồi kéo quá `AIM_DEAD = 12` px thì
+  tự ngắm, kéo hết `AIM_DRAG` lần bề rộng nút là tới hết tầm. Ba con số tả *thứ đang ngắm* thay cho
+  ba nhánh `if` rải trong hàm vẽ: `aimUI.r` (tầm), `aimUI.ky` (hệ số nén trục y), `aimUI.fix`
+  ("luôn hết tầm", cho chiêu `dir` và cho lướt né — kéo dài thêm không có nghĩa gì khi cái chọn được
+  chỉ là góc). Bốn chuyện ở đây không đổi được: `pointercancel` **huỷ** chứ không tung (mất chiêu vì
+  có người gọi điện là mất một lần hồi chiêu mà người chơi không hề bấm); chiêu đang hồi thì không
+  vào chế độ ngắm (ngắm xong mới biết bấm không được là mất đúng cái nhịp vừa dùng để ngắm — lướt né
+  đếm hồi ở `world.dcd`, không trong `world.cds`); đánh thường **không** ngắm, vì nó tự chọn con gần
+  nhất và bấm liên tục, thêm một nhịp chờ nhả tay là làm chậm đúng nhịp nền của cả trận; và điểm
+  ngắm tính lại **mỗi khung** từ chỗ ngón đang đặt (`aimWorld()` gọi `holdTrack`), vì người chơi vẫn
+  đẩy joystick trong lúc ngắm nên một điểm chốt cứng lúc `pointermove` sẽ trôi lại phía sau người.
+- **Lướt né ngắm được, và tầm của nó là `DASH_LEN = 62` px *thật*.** Đây là chỗ duy nhất trong cả
+  phần ngắm có một con số không phải phát minh của shell: `AIM_MAX = 150` là hạn do shell tự đặt vì
+  `cast()` không kẹp tầm, còn 62 px thì `dash()` đi đúng bấy nhiêu, không hơn. Nên vòng của nó nhỏ
+  hơn hẳn vòng của ba skill, và trục y nén **0,75** — tỉ lệ của phép đi lại — chứ không `GSQ = 0,5`
+  của hình vẽ trên sàn: với ba skill vòng ngắm là "chỗ sẽ nổ", với lướt né nó là *đúng tập những chỗ
+  chân hạ xuống được*. Một vòng hứa xa hơn chỗ thật, trên một chiêu mà cả công dụng là ra khỏi vùng
+  nổ, là một cái bẫy. Điểm ngắm dựng ra là `(hx + ux·62, hy + uy·62·0,75)`, và `fire(DASH_SLOT, at)`
+  chia lại cho `0,75` để đảo đúng phép nén đó, nên chân hạ xuống **đúng** tâm vòng vừa vẽ (harness
+  trong browser: sai số 0,0000 px ở năm góc khác nhau).
+- **Chạm mà không kéo thì không truyền điểm ngắm nào.** `hold.drag` bật khi ngón đi quá `AIM_DEAD`,
+  và `holdEnd` gọi `fire(n, drag ? at : null)`. Với ba skill hai đường cho ra cùng một điểm nên
+  không thấy gì; với lướt né đó là cả sự khác biệt: ngắm tự động của nó là **hướng joystick đang
+  đẩy**, còn `aimUI` lúc chưa kéo đang trỏ vào con quái gần nhất — tức là né *vào* mặt nó. Kéo ra
+  rồi kéo về trong ngưỡng cũng quay lại đúng cú chạm đó: đổi ý vẫn còn kịp.
+- **Vòng ngắm nằm ở `render.js`, không ở DOM.** `world.aimUI` là thứ shell ghi và `drawAimCue(w)`
+  đọc; node vm không có nó nên hàm đó là lệnh không làm gì, không phải thêm nhánh nào cho harness.
+  Nó vẽ bằng đúng những nét mà cảnh báo của quái đang dùng (ellipse nén `GSQ` trên sàn, mũi nhọn
+  chỉ hướng, tâm sáng ở chỗ sẽ nổ) — người chơi đã học đọc thứ ngôn ngữ đó suốt cả trận, một bộ
+  hình thứ hai cho riêng phần ngắm là bắt học lại từ đầu đúng lúc đang bị ba con vây. Điểm ngắm
+  nằm trên *ellipse* bán trục `(a.r, a.r * a.ky)` chứ không trên vòng tròn: vẽ vòng tròn thật là
+  hứa một vùng mà chiêu không nổ tới. Hai bán trục đó đọc từ `aimUI` chứ không viết cứng `AIM_MAX`
+  với `GSQ`, vì đúng cùng hàm này vẽ cả vòng của skill (150 × 75) và vòng của lướt né (62 × 46,5 —
+  đo bằng cách diff điểm ảnh hai khung đóng băng, ra 301,8 × 150,5 với 125,8 × 93,8 px cả vòng).
+  Nó nằm trên hiệu ứng của chính người chơi nhưng **dưới** `w.tels`: thứ mình đang chủ động điều
+  khiển không được che thứ đang sắp đánh mình.
+- **Bảng xếp lại phím (`scene === 'touch'`, `body.tedit`) kéo *chính hai cái nút thật*.** Không có
+  bản thu nhỏ để xem trước, vì một khung xem trước là cơ hội để "chỗ mình thấy" và "chỗ mình bấm"
+  lệch nhau, và cái lệch đó chỉ lộ ra khi đang đánh boss. `touchLayer` vẫn hiện trong scene này dù
+  không chơi, các nút đổi sang viền nét đứt để nói "đang xếp chứ không đang bấm", và `editDown` ghi
+  lại *độ lệch* giữa ngón với tâm nút nên không cái gì nhảy một đoạn lúc mới chạm.
+- **Vị trí lưu thành phân số viewport, không phải pixel**, ở `localStorage['sl.touch']` (`tcfg`):
+  máy quay ngang, mở bàn phím, hay đổi hẳn máy thì `0,82 × chiều rộng` vẫn là chỗ cũ còn `640px`
+  thì ra ngoài màn hình. `null` nghĩa là "chưa đặt": lúc đó `actsHome()` gọi `removeProperty` trên
+  `--ax/--ay` và CSS quay về công thức mặc định của nó, chứ không có ai đi tính lại mặc định bằng
+  JS — hai chỗ tính cùng một vị trí là hai chỗ để lệch nhau. `resetTcfg()` chỉ là gán lại
+  `TCFG_DEF` rồi `layout()`.
+- **Cụm nút bị kẹp để luôn bấm tới được.** Neo là một điểm 0×0 (`#tacts`), và nút xa nhất nằm cách
+  nó `3,45 --tu`, nên `actsHome()` giữ tâm cụm cách mép trong ít nhất `3,45 --tu` *khi màn hình còn
+  đủ rộng cho con số đó* — không đủ thì nhường về `0,66 --tu`, đủ để nút đánh thường không rơi nửa
+  ra ngoài. Đây là chỗ `clamp(v, a, b)` của repo cắn: nó **trả về `a` khi `a > b`**, nên mỗi cận
+  phải bọc thêm `Math.min`/`Math.max`, bằng không trên màn nhỏ cụm nút bị đẩy thẳng ra giữa sân.
+- **Hai thanh cỡ là *hệ số nhân*, đặt sau phép kẹp của `layout()`.** `--tu` và `--js` vẫn kẹp theo
+  cạnh ngắn của viewport trước (44–96 px và 96–210 px), rồi mới nhân `tcfg.as`/`tcfg.js` trong
+  khoảng 0,7–1,6. Kẹp lần thứ hai *sau* khi nhân nghe an toàn hơn nhưng là phủ quyết lựa chọn của
+  người chơi: ai chọn 160% trên máy lớn thì đúng là muốn nút lớn hơn cái mà công thức cho là vừa.
+- **`body.tedit #tstick { pointer-events: none }` với `#tbase { pointer-events: auto }`.** Vùng
+  nhận của joystick rộng gần nửa màn hình và trùm lên đúng chỗ hai nút "ĐẶT LẠI MẶC ĐỊNH" với
+  "XONG" của bảng; để nguyên thì cú bấm ra khỏi bảng lại thành một cú kéo bệ, và không còn đường
+  nào ra. Sự kiện của bệ vẫn **nổi lên** `#tstick` dù cha đang `pointer-events: none`, nên chỗ xử
+  lý kéo không phải nhân thêm một bản.
+- **Minimap.** Góc dưới phải là chỗ đặt ngón cái, nên `setMinimapTop(true)` dời nó lên góc trên
+  phải. `MM` (hộp mà harness loại khỏi phép kiểm "mép màn hình phải là sàn") đi theo cùng hàm đó:
+  một hằng số ở đây và một chỗ khác vẽ là hai nguồn sự thật cho một con số.
+- **`pointerdown`, không phải `click`.** Trên cảm ứng `click` chỉ đến sau khi nhả tay, và một
+  chiêu ra sau khi ngón đã rời màn hình là một chiêu ra sai nhịp — đúng thứ mà cả hệ thống cảnh
+  báo trên sàn đang dạy người chơi đọc. Giữ nút đánh thường thì `atkHeld` cho `frame()` đánh tiếp
+  mỗi lần `world.wcd` cạn (chỉ khi đã cạn: gọi `swing` lúc còn hồi là một tiếng "blocked" mỗi
+  khung). Cặp `mousedown/mouseup` giả mà trình duyệt cảm ứng phát thêm bị chặn ở đầu handler,
+  bằng không một cú chạm joystick sẽ vung kiếm thêm một nhát không ai gọi.
+- **`setScene()` phải nhả joystick và huỷ lần ngắm đang treo.** Ẩn phần tử đang giữ pointer thì
+  không bao giờ có `pointerup` nữa, tức là nhân vật chạy mãi một hướng sau khi mở menu — và một
+  chiêu đang chờ nhả sẽ nổ vào lúc quay lại trận.
+- **`window.screen`, không phải `screen`.** Trong `shell.js` tên `screen` đã là canvas của game,
+  nên khoá hướng màn hình phải viết đủ `window.screen.orientation`.
+- **Fullscreen và khoá hướng xin trong `setMob()`**, không phải lúc nạp trang: cả hai đòi một cử
+  chỉ của người dùng. Cả hai đều có thể bị từ chối (iPhone không có Fullscreen API), và đó không
+  phải lỗi — chế độ này vẫn chơi được, chỉ là còn thanh địa chỉ. Cầm dọc thì `#rotate` (một
+  `@media (orientation: portrait)`) nói một câu thay vì vẽ một khung 16:9 cao bằng đốt ngón tay.
+
+`touch-action` là thứ dễ làm hỏng nhất: `none` trên `body` sẽ giết luôn việc cuộn bảng hướng dẫn.
+Nó nằm ở `#touch` với `body.mob #screen`, còn `body.mob .panel` được `pan-y` — bảng hướng dẫn là
+chỗ **duy nhất** còn cuộn được trong chế độ này.
 
 ## Không bọc IIFE — ngược với `map/`
 

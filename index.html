@@ -2,12 +2,17 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8">
+<!-- `viewport-fit=cover` để khung 16:9 ăn cả phần dưới tai thỏ khi quay ngang, và không cho
+     phóng to: một cú nhấp đôi vào lúc đánh nhau mà phóng cả trang lên là mất luôn màn hình. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>SKILL LAB — Arena Pixel 2D</title>
 <style>
   /* The whole game lives inside one fixed frame: --sw/--sh are written by layout()
      in JS (largest 16:9 box that still leaves room for the hotbar), so the page
      itself never scrolls no matter how short the window is. */
-  :root { color-scheme: dark; --sw: 1280px; --sh: 720px; --ico: 47px; --rowh: 60px; --pk: 1 }
+  :root { color-scheme: dark; --sw: 1280px; --sh: 720px; --ico: 47px; --rowh: 60px; --pk: 1;
+          /* Cỡ nút cảm ứng, layout() ghi lại theo chiều *ngắn* của máy. */
+          --tu: 56px; --js: 128px }
   * { box-sizing: border-box }
   html, body { height: 100% }
   body {
@@ -31,9 +36,15 @@
   }
   .tbtn:hover { border-color: #54608a; color: #eaf2ff; background: #141828 }
   .tbtn:focus-visible { outline: 1px solid #fff; outline-offset: 1px }
-  #stage { position: relative; line-height: 0; flex: 0 0 auto; width: var(--sw); height: var(--sh) }
+  /* Đường viền của khung là `outline`, không phải `border`: layout() chốt #stage theo một số
+     nguyên điểm ảnh *vật lý* để lưới 320x180 rơi đúng lên lưới điểm ảnh của màn hình, còn
+     `border` (với box-sizing: border-box ở trên) sẽ ăn lại 2 px của đúng cái hộp đó. */
+  #stage {
+    position: relative; line-height: 0; flex: 0 0 auto;
+    width: var(--sw); height: var(--sh); outline: 1px solid #222233;
+  }
   canvas { image-rendering: pixelated; border: 1px solid #222233; display: block }
-  #screen { width: 100%; height: 100% }
+  #screen { width: 100%; height: 100%; border: 0 }
   #hud {
     position: absolute; left: 8px; top: 8px; font-size: max(9px, calc(var(--sw) / 116));
     color: #9fb0cc; text-shadow: 0 1px 0 #000; pointer-events: none; white-space: pre;
@@ -214,6 +225,139 @@
   }
   .gsk s { text-decoration: none; color: #dfe8f7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
   .gsk em { font-style: normal; font-size: 8px; color: #6f7f9c; letter-spacing: .06em }
+
+  /* ---- chế độ điện thoại -------------------------------------------------------------
+     Đúng một công tắc (`body.mob`) đổi ba thứ, và không có thứ tư: layout() lấy cả viewport
+     thay vì chừa chỗ cho header với hotbar, lớp #touch lên thay bàn phím và con chuột, và
+     minimap dời khỏi góc dưới phải vì góc đó giờ là chỗ đặt ngón cái. Sim, HUD, menu và
+     hướng dẫn vẫn là đúng một bản dùng chung -- đây là *bố cục*, không phải một phiên bản
+     game khác. */
+  body.mob {
+    overscroll-behavior: none; -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body.mob #app { padding: 0; gap: 0 }
+  body.mob #topbar, body.mob #bar { display: none }
+  body.mob #stage { outline: 0 }
+  body.mob #screen { touch-action: none }
+  /* Bảng hướng dẫn cao hơn màn ngang của điện thoại, nên nó là chỗ *duy nhất* còn cuộn được. */
+  body.mob .panel { touch-action: pan-y }
+  body.mob #hud { font-size: max(8px, calc(var(--sw) / 148)) }
+  body.mob #title { top: 34px }
+
+  /* Lớp phím cảm ứng nằm ngoài #stage và phủ cả viewport: ngón tay đặt ở mép *máy*, không phải
+     mép khung 16:9 -- màn 20:9 để lại hai dải đen hai bên và đó là chỗ tốt nhất để đặt nút,
+     không phải chỗ bị mất. Chỉ hiện lúc đang chơi, nên nó không bao giờ tranh chấp với bảng
+     menu nằm trong stage. */
+  #touch { position: fixed; inset: 0; z-index: 30; pointer-events: none; touch-action: none }
+  #touch[hidden] { display: none }
+  #tstick, #tacts, #tpause { pointer-events: auto }
+  /* Vùng nhận ngón trái rộng gần nửa màn hình, nhưng **bệ đứng một chỗ** như joystick của mọi
+     game MOBA: hướng đi là vector từ tâm bệ tới ngón, núm kẹp ở vành. Bản trước cho bệ chạy theo
+     ngón nên kéo được đi khắp màn hình, và một cần điều khiển không có chỗ cố định thì không có
+     "giữa" -- người chơi mất luôn khả năng cảm được mình đang đẩy hướng nào mà không nhìn xuống.
+     Bệ cách hai mép 0,28 lần đường kính, không phải 12 px: sát mép là ngón bị bờ máy chặn mất
+     một phần cung, và trên máy có màn cong thì mất cả cảm giác chạm. */
+  #tstick { position: absolute; left: 0; bottom: 0; width: min(46%, 420px); height: 74% }
+  #tbase, #tknob {
+    position: absolute; border-radius: 50%; transform: translate(-50%, -50%);
+    pointer-events: none; transition: opacity .14s;
+  }
+  #tbase {
+    width: var(--js); height: var(--js); border: 2px solid #8fd6ff40;
+    background: radial-gradient(circle, #0a101ca8 60%, #05070d70);
+    box-shadow: inset 0 0 20px #000a, 0 2px 10px #0008; opacity: .42;
+  }
+  #tknob {
+    width: calc(var(--js) * .46); height: calc(var(--js) * .46);
+    border: 2px solid #bfe6ffcc; background: radial-gradient(circle at 50% 34%, #2b4a6be6, #0b1524e6);
+    box-shadow: 0 0 12px #8fd6ff40, inset 0 1px #ffffff2e; opacity: .55;
+  }
+  #tstick.on #tbase { opacity: .74 }
+  #tstick.on #tknob { opacity: .96; border-color: #eaf9ff }
+
+  /* Cụm nút bên phải là một *nan quạt* quanh nút đánh thường, không phải một bảng hai hàng: ngón
+     cái quay quanh một khớp ở gốc bàn tay, nên chỗ nó với tới thoải mái là một vòng cung -- đúng
+     lý do mọi game MOBA trên điện thoại xếp kiểu này. Mỗi ô khai một vector đơn vị (--dx/--dy)
+     rồi nhân với bán kính cung, nên chỉ cần đổi --tu là cả cụm tự giãn theo, không có toạ độ nào
+     phải sửa tay. Neo là *tâm* nút đánh thường, mặc định cách hai mép đúng 1,05 --tu: nút to nhất
+     còn thừa 0,39 --tu tới mép máy, đủ để bờ màn hình cong không ăn mất một phần nút. Người chơi
+     tự kéo cụm đi chỗ khác thì shell ghi --ax/--ay (px tính từ mép phải/dưới), nên chỗ đặt là
+     *một* con số ở một chỗ, còn hình dạng cung vẫn nằm nguyên trong CSS. */
+  #tacts {
+    position: absolute;
+    right: var(--ax, calc(var(--tu) * 1.05)); bottom: var(--ay, calc(var(--tu) * 1.05));
+    width: 0; height: 0;
+    --r1: calc(var(--tu) * 1.78);   /* ba skill */
+    --r2: calc(var(--tu) * 2.95);   /* lướt né, nối tiếp cung lên trên */
+  }
+  .tb {
+    --accent: #8fd6ff; --deep: #112234; --sz: var(--tu); --dx: 0; --dy: 0; --arc: 0;
+    position: absolute; right: calc(var(--sz) / -2); bottom: calc(var(--sz) / -2);
+    width: var(--sz); height: var(--sz);
+    /* `translate`/`scale` riêng chứ không phải `transform`: nút lún xuống lúc bấm là một `scale`
+       và nó không được xoá mất chỗ đứng trên cung. */
+    translate: calc(var(--dx) * var(--arc)) calc(var(--dy) * var(--arc));
+    padding: 0; border-radius: 50%;
+    display: grid; place-items: center; overflow: hidden; cursor: pointer; color: inherit; font: inherit;
+    border: 2px solid color-mix(in srgb, var(--accent) 50%, #24263a);
+    background: radial-gradient(circle at 50% 34%, var(--deep), #06070ded);
+    box-shadow: 0 3px 12px #000b, inset 0 0 14px #0008;
+    transition: scale .08s, border-color .12s, box-shadow .12s;
+  }
+  /* Đánh thường ở chính tâm cung và to nhất -- nó là nút bấm nhiều nhất trong cả trận. Ba skill
+     rải trên cung 168°/130°/92°, cách nhau 38° nên viền chỉ hở 0,16 --tu: sát nhau là *cố ý*,
+     ngón cái đảo giữa ba nút cạnh nhau nhanh hơn nhiều so với ba nút rời rạc. Lướt né đi tiếp
+     cung ở bán kính ngoài, tách khỏi ba skill để không bấm lẫn lúc đang cuống. */
+  .tb[data-slot="0"] { --sz: calc(var(--tu) * 1.32) }
+  .tb[data-slot="1"] { --dx: -.978; --dy: -.208; --arc: var(--r1) }
+  .tb[data-slot="2"] { --dx: -.643; --dy: -.766; --arc: var(--r1) }
+  .tb[data-slot="3"] { --dx: -.035; --dy: -.999; --arc: var(--r1) }
+  .tb[data-slot="4"] { --dx: -.174; --dy: -.985; --arc: var(--r2) }
+  .tb canvas { width: 66%; height: 66%; display: block; image-rendering: pixelated }
+  .tb:active { scale: .93; border-color: var(--accent) }
+  .tb.on { border-color: var(--accent) }
+  /* Đang ngắm: nút phồng lên và sáng viền, vì lúc đó ngón tay đã rời khỏi nút và thứ duy nhất
+     nói "chiêu này đang chờ nhả" là cái nút bị bỏ lại. */
+  .tb.aiming {
+    scale: 1.06; border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent), 0 3px 12px #000b;
+  }
+  .tb u {
+    position: absolute; z-index: 4; bottom: 1px; left: 50%; transform: translateX(-50%);
+    text-decoration: none; font-size: 7px; letter-spacing: .06em; color: #ffe29b;
+  }
+  .tb .cooldown-mask, .tb .cooldown-value { border-radius: 50% }
+  .tb.cooling canvas { filter: saturate(.25) brightness(.65) }
+  .tb.cooling .cooldown-value { opacity: 1 }
+  /* Đang sắp xếp phím (MENU → SẮP XẾP PHÍM): viền gạch là dấu hiệu "cái này kéo được", và nó
+     phải khác hẳn lúc chơi -- ở đó cùng một nút bấm vào là ra chiêu. Nút tạm dừng biến mất vì
+     lúc này cả màn hình là một chỗ để kéo, không phải chỗ để bấm. */
+  body.tedit #tbase { opacity: .92; border-style: dashed; border-color: #ffe29bb3 }
+  body.tedit #tknob { opacity: .45 }
+  body.tedit .tb { border-style: dashed; border-color: #ffe29b8c; cursor: grab }
+  body.tedit .tb:active { scale: 1 }
+  body.tedit #tpause { display: none }
+  /* Vùng nhận rộng của joystick tắt đi, và *cái bệ* thành thứ để kéo: vùng đó phủ gần nửa màn hình,
+     tức là phủ luôn hai cái nút của bảng nằm dưới nó, và một cái "XONG" bấm ra thành cú kéo bệ là
+     không còn đường nào ra khỏi bảng. Sự kiện của bệ vẫn *nổi lên* #tstick dù cha đang
+     pointer-events: none, nên chỗ xử lý kéo không phải nhân thêm một bản. */
+  body.tedit #tstick { pointer-events: none }
+  body.tedit #tbase { pointer-events: auto; cursor: grab }
+  #tpause {
+    position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
+    padding: 5px 11px; border: 1px solid #2b2f45; border-radius: 3px; background: #0a0c14cc;
+    color: #a9b8d4; font: inherit; font-size: 10px; letter-spacing: .1em; cursor: pointer;
+  }
+  /* Cầm dọc thì cả bố cục trên vô nghĩa, nên nói thẳng một câu thay vì vẽ một khung 16:9 cao
+     bằng đốt ngón tay. */
+  #rotate {
+    position: fixed; inset: 0; z-index: 60; display: none; place-items: center;
+    padding: 24px; text-align: center; background: #04050af2;
+  }
+  #rotate b { display: block; font-size: 15px; letter-spacing: .18em; color: #eaf6ff; margin-bottom: 8px }
+  #rotate span { font-size: 10px; line-height: 1.7; letter-spacing: .1em; color: #7f8ea9 }
+  @media (orientation: portrait) { body.mob #rotate { display: grid } }
 </style>
 </head>
 <body>
@@ -235,6 +379,8 @@
         <div class="tagline">ARENA PIXEL 2D</div>
         <button type="button" class="mbtn primary" data-act="start">BẮT ĐẦU CHƠI</button>
         <button type="button" class="mbtn" data-act="guide">HƯỚNG DẪN</button>
+        <button type="button" class="mbtn" data-act="mobile" id="btnMob" aria-pressed="false">CHẾ ĐỘ ĐIỆN THOẠI: TẮT</button>
+        <button type="button" class="mbtn" data-act="touch">SẮP XẾP PHÍM CẢM ỨNG</button>
         <div class="sblock" id="soundBox"></div>
         <div class="hint">ENTER bắt đầu · H hướng dẫn · M tắt/bật âm</div>
       </div>
@@ -258,10 +404,24 @@
         <div class="tagline">ARENA ĐANG ĐỢI</div>
         <button type="button" class="mbtn primary" data-act="resume">TIẾP TỤC</button>
         <button type="button" class="mbtn" data-act="loadout">ĐỔI VŨ KHÍ / SKILL</button>
+        <button type="button" class="mbtn" data-act="touch">SẮP XẾP PHÍM CẢM ỨNG</button>
         <button type="button" class="mbtn" data-act="guide">HƯỚNG DẪN</button>
         <button type="button" class="mbtn" data-act="restart">CHƠI LẠI</button>
         <button type="button" class="mbtn" data-act="home">VỀ MENU CHÍNH</button>
         <div class="hint">ESC tiếp tục</div>
+      </div>
+      <!-- Sắp xếp phím: bảng này *không* vẽ lại joystick trong một khung xem trước. Lớp #touch
+           thật nằm trên nó, và thứ người chơi kéo là đúng cái nút sẽ bấm lúc đánh nhau -- một bản
+           mô phỏng thu nhỏ là chỗ để chỗ đặt thật và chỗ đặt thấy được trôi ra khỏi nhau. -->
+      <div class="panel" id="pnTouch" hidden>
+        <div class="brand">SẮP XẾP PHÍM</div>
+        <div class="tagline">KÉO ĐỂ ĐẶT · TRƯỢT ĐỂ ĐỔI CỠ</div>
+        <div id="touchBox"></div>
+        <p class="pnote">Kéo thẳng <b>joystick</b> hoặc <b>cụm nút</b> trên màn hình tới chỗ vừa
+          tay. Chỗ đặt lưu theo <b>tỉ lệ</b> màn hình, nên quay máy hay đổi máy vẫn đúng chỗ đó.
+          Joystick chỉ đi trong vùng nhận ngón ở nửa dưới bên trái.</p>
+        <button type="button" class="mbtn" data-act="treset">ĐẶT LẠI MẶC ĐỊNH</button>
+        <button type="button" class="mbtn primary" data-act="back">XONG (ESC)</button>
       </div>
       <div class="panel wide" id="pnGuide" hidden>
         <div class="gtitle">HƯỚNG DẪN</div>
@@ -275,13 +435,35 @@
               <b>Shift</b> hoặc <b>chuột phải</b> lướt né (có sẵn, không tốn ô skill)<br>
               <b>Esc</b> tạm dừng · <b>M</b> tắt/bật âm thanh
             </p>
+            <div class="gsec">CHƠI TRÊN ĐIỆN THOẠI</div>
+            <p class="glist">
+              <b>MENU → CHẾ ĐỘ ĐIỆN THOẠI</b> bật khung phủ kín màn hình ngang, ẩn header
+              với hotbar rồi thay bằng phím cảm ứng: <b>joystick bên trái</b> (bệ đứng
+              một chỗ như mọi game MOBA — hướng đi là hướng từ tâm bệ tới ngón, kéo xa
+              hơn vành cũng không đổi tốc độ), và bên phải là một <b>nan quạt</b> quanh
+              nút <b>đánh thường</b> to nhất ở góc: <b>ba skill</b> trên cung trong,
+              <b>lướt né</b> tách lên cung ngoài. Giữ nút đánh thường thì đánh liên tục.<br>
+              <b>Chạm nhanh một skill</b> là tung ngay vào con gần nhất trong tầm nhìn
+              (sân trống thì bay theo hướng joystick). <b>Giữ rồi kéo</b> là tự ngắm:
+              vòng mờ trên sàn là tầm xa nhất, tâm ngắm là chỗ chiêu sẽ nổ, kéo bao xa
+              là nổ bấy xa — nhả tay mới ra chiêu, nên kéo lại gần vẫn kịp đổi ý.
+              <b>Lướt né cũng ngắm được</b>, chỉ là tầm <b>ngắn hơn hẳn</b>: vòng của nó
+              đúng bằng 62 px chân hạ xuống, nên tâm ngắm là chỗ mình sẽ đứng. Chạm nhanh
+              thì vẫn lướt theo hướng joystick như cũ. Chiêu đánh quanh mình và đánh
+              thường thì <b>ra ngay</b>, không chờ nhả.<br>
+              <b>MENU → SẮP XẾP PHÍM CẢM ỨNG</b> để tự kéo joystick với cụm nút tới chỗ
+              vừa tay và phóng to / thu nhỏ cả hai.
+              Minimap dời lên <b>góc trên phải</b>, và <b>☰ MENU</b> ở giữa mép trên là
+              chỗ tạm dừng. Máy chỉ có cảm ứng thì chế độ này tự bật ngay lần đầu mở.
+            </p>
             <div class="gsec">LƯỚT NÉ</div>
             <p class="glist">
               Chiêu <b>duy nhất mọi lần vào trận đều có</b>, nằm ở ô thứ 5 và không chiếm
               slot skill nào. Lướt <b>62 px</b> theo hướng WASD đang giữ (không giữ hướng
               nào thì lướt về phía con trỏ), và trong <b>0.30 giây</b> đó bạn
               <b>bất tử</b> — chiêu quái đi xuyên qua người, hiện chữ <b>NÉ</b>, và cả
-              damage khi va vào quái cũng không tính.<br>
+              damage khi va vào quái cũng không tính. Trên điện thoại, <b>giữ rồi kéo</b>
+              nút NÉ thì chọn được thẳng chỗ hạ chân.<br>
               Bù lại nó <b>không huỷ được</b>: đã lướt là đi hết đường, và phải chờ
               <b>1.05 giây</b> mới lướt lại. Nên nhìn viền đỏ rồi hãy bấm — lướt sớm là
               đứng trong vùng nổ với hồi chiêu trắng tay.
@@ -352,6 +534,18 @@
   </div>
   <div id="bar"></div>
 </div>
+<!-- Phím cảm ứng: nằm ngoài #app vì nó bám mép *máy*, không bám mép khung 16:9. Nội dung của
+     #tacts do shell.js dựng cùng lúc với hotbar, nên năm ô ở đây và năm ô ở hotbar không thể
+     nói khác nhau về thứ bạn đang mang. -->
+<div id="touch" hidden>
+  <div id="tstick"><div id="tbase"></div><div id="tknob"></div></div>
+  <div id="tacts"></div>
+  <button type="button" id="tpause">☰ MENU</button>
+</div>
+<div id="rotate"><div>
+  <b>QUAY NGANG MÁY</b>
+  <span>Chế độ điện thoại chơi ở màn hình ngang.<br>Tắt lại ở MENU → CHẾ ĐỘ ĐIỆN THOẠI.</span>
+</div></div>
 <!-- Arenas. Each file pushes one definition onto globalThis.GAME_MAPS and nothing else,
      so adding a map is adding a file plus a line here -- see map/README.md. Load order
      does not matter: the engine sorts the registry by `order`. -->

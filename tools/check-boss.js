@@ -88,11 +88,11 @@ function cast(w, f, key, seed) {
 // từng đốt/làn nếu shape rải chúng tới sát mép. Ngoài mép đó thì không được đau -- đây là nửa
 // "và ngược lại" của lời hứa thứ nhất.
 function bnd(A) {
-  if (A.shape === 'nodes') return A.r + A.nr;
+  if (A.shape === 'rain' || A.shape === 'smite') return A.r + A.nr;
   if (A.shape === 'veins' || A.shape === 'spokes') return A.r + A.thick * 0.9;
-  if (A.shape === 'web') return A.r + Math.max(A.nr, A.thick * 0.9);
+  if (A.shape === 'web' || A.shape === 'sigil') return A.r + Math.max(A.nr, A.thick * 0.9);
   if (A.shape === 'blades') return A.r + A.rad;
-  return A.r;                           // sweep, waves, spiral, echo
+  return A.r;                           // sweep, waves, spiral, vortex, echo
 }
 // Mọi trạng thái đáng đo của một cast: giữa lúc gồng, rồi từng mốc sau khi phát. Shape đánh
 // theo nhịp thì mỗi nhịp là một trạng thái riêng, vì chỉ nhịp vừa nổ mới gây damage.
