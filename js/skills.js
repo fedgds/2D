@@ -42,7 +42,7 @@ const SKILLS = [];
 const srLiv = p => { const o = c01((p - 0.55) / 0.45); return 1 - o * o * 0.92; };
 
 SKILLS.push({
-  id: 'star_rupture', name: 'Sao Vỡ', mode: 'point', dur: 0.70, cd: 1.70, shake: 3.2,
+  id: 'star_rupture', name: 'Sao Vỡ', mode: 'point', dur: 0.70, cd: 1.70, mp: 14, shake: 3.2,
   under(w, e, p) {
     const g = pop(p, 0.10), fd = srLiv(p);
     puddle(e.x, e.y, 34 * g, 15 * g, C.cyan, 0.16 * fd, e.seed, 7);
@@ -122,7 +122,7 @@ function bladeSweep(cx, cy, lead, r, sq, a, hot, tail, thick, seed) {
   sparks(tx, ty, 8, 0, 9, C.pale, 0.85 * a, seed, 1.0, 1, lead - 1.1, lead + 1.1, 7);
 }
 SKILLS.push({
-  id: 'whirl_slash', name: 'Lốc Chém', mode: 'self', dur: 0.48, cd: 0.90, shake: 1.6,
+  id: 'whirl_slash', name: 'Lốc Chém', mode: 'self', dur: 0.48, cd: 0.90, mp: 8, shake: 1.6,
   under(w, e, p) {
     const h = w.hero, fy = h.y - 1;
     // Lấy đà: bụi bị *kéo vào* trước khi lưỡi thứ nhất tới. Không có nhịp này thì chiêu
@@ -208,7 +208,7 @@ function embFlare(p) {
 // 0,018, tức mọi lớp lửa biến mất hẳn trước khi nhịp trừ máu cuối (0,92) kịp xảy ra.
 const embLiv = p => 1 - fpow(c01((p - 0.70) / 0.30), 1.6);
 SKILLS.push({
-  id: 'ember_field', name: 'Ruộng Than', mode: 'point', dur: 1.20, cd: 3.40, shake: 1.4,
+  id: 'ember_field', name: 'Ruộng Than', mode: 'point', dur: 1.20, cd: 3.40, mp: 22, shake: 1.4,
   under(w, e, p) {
     const g = pop(p, 0.18), liv = embLiv(p), fl = embFlare(p);
     // Vết cháy phải tắt *cùng* mọi thứ khác. Bản trước chốt alpha 0,30 trong khi mọi lớp
@@ -267,7 +267,7 @@ const fzLiv = p => 1 - fpow(c01((p - 0.70) / 0.30), 1.5) * 0.92;
 // trên đầu gai cùng sáng lên ở đây, nên cái mắt thấy trùng với cái tay cảm.
 function fzBurst(p) { const d = 1 - Math.abs(p - 0.24) / 0.16; return d > 0 ? d * d : 0; }
 SKILLS.push({
-  id: 'frost_prison', name: 'Ngục Băng', mode: 'point', dur: 1.30, cd: 5.80, shake: 2.0,
+  id: 'frost_prison', name: 'Ngục Băng', mode: 'point', dur: 1.30, cd: 5.80, mp: 30, shake: 2.0,
   under(w, e, p) {
     const g = pop(p, 0.20), liv = fzLiv(p), bs = fzBurst(p);
     puddle(e.x, e.y - 2, 46 * g, 19 * g, C.cyan, 0.22 * (0.35 + 0.65 * liv), e.seed, 7);
@@ -323,7 +323,7 @@ SKILLS.push({
   },
 });
 SKILLS.push({
-  id: 'chain_bolt', name: 'Sấm Chuỗi', mode: 'point', dur: 0.60, cd: 2.50, shake: 2.2,
+  id: 'chain_bolt', name: 'Sấm Chuỗi', mode: 'point', dur: 0.60, cd: 2.50, mp: 18, shake: 2.2,
   init(w, e) {
     const h = w.hero, picked = [];
     e.data.nodes = [[h.x + (h.flip ? -9 : 9), h.y - 15]];
@@ -362,7 +362,7 @@ SKILLS.push({
 });
 
 SKILLS.push({
-  id: 'blood_rend', name: 'Xé Máu', mode: 'dir', dur: 0.50, cd: 1.30, shake: 2.4,
+  id: 'blood_rend', name: 'Xé Máu', mode: 'dir', dur: 0.50, cd: 1.30, mp: 12, shake: 2.4,
   init(w, e) {
     const h = w.hero;
     e.data.cx = h.x + Math.cos(e.ang) * 26;
@@ -484,7 +484,7 @@ const vdImp = p => c01((p - 0.76) / 0.10);         // sụp vào tâm
 const vdFls = p => c01((p - 0.82) / 0.07);         // loé
 const vdOut = p => c01((p - 0.89) / 0.11);         // tắt
 SKILLS.push({
-  id: 'void_collapse', name: 'Hư Không Sụp', mode: 'point', dur: 1.10, cd: 6.50, shake: 2.6,
+  id: 'void_collapse', name: 'Hư Không Sụp', mode: 'point', dur: 1.10, cd: 6.50, mp: 34, shake: 2.6,
   under(w, e, p) {
     const g = pop(p, 0.25), imp = vdImp(p), fls = vdFls(p), out = vdOut(p);
     const liv = 1 - imp * 0.55, fl = fls * (1 - out * out);
@@ -561,7 +561,7 @@ function jbEnv(p) {
   return (1 - t * t) * (1 - 0.35 * t);               // tan: còn ~0,22 ở khung cuối của sheet
 }
 SKILLS.push({
-  id: 'judgment_beam', name: 'Trụ Phán Xét', mode: 'point', dur: 0.95, cd: 8.00, shake: 3.6,
+  id: 'judgment_beam', name: 'Trụ Phán Xét', mode: 'point', dur: 0.95, cd: 8.00, mp: 40, shake: 3.6,
   under(w, e, p) {
     const g = pop(p, 0.14), env = jbEnv(p), land = c01((p - 0.20) / 0.10);
     puddle(e.x, e.y, 52 * g, 22 * g, C.holy, 0.35 * env, e.seed, 8);
@@ -646,7 +646,7 @@ function alongPath(pts, seg, tot, p) {
 }
 
 SKILLS.push({
-  id: 'ricochet_shot', name: 'Đạn Nảy', mode: 'point', dur: 0.62, cd: 2.10, shake: 1.8,
+  id: 'ricochet_shot', name: 'Đạn Nảy', mode: 'point', dur: 0.62, cd: 2.10, mp: 16, shake: 1.8,
   init(w, e) {
     const h = w.hero, picked = [];
     let cx = e.x, cy = e.y - 8;
@@ -744,7 +744,7 @@ SKILLS.push({
 // khung đọc ra là lỗi vẽ chứ không phải chiêu.
 const sdLiv = p => 1 - 0.78 * fpow(c01((p - 0.18) / 0.82), 1.6);
 SKILLS.push({
-  id: 'shadow_dash', name: 'Bóng Lướt', mode: 'point', dur: 0.55, cd: 3.00, shake: 1.2,
+  id: 'shadow_dash', name: 'Bóng Lướt', mode: 'point', dur: 0.55, cd: 3.00, mp: 18, shake: 1.2,
   init(w, e) {
     const h = w.hero;
     e.data.from = [h.x, h.y];
@@ -814,7 +814,7 @@ SKILLS.push({
 });
 
 SKILLS.push({
-  id: 'spirit_summon', name: 'Triệu Linh', mode: 'point', dur: 1.00, cd: 3.80, shake: 1.6,
+  id: 'spirit_summon', name: 'Triệu Linh', mode: 'point', dur: 1.00, cd: 3.80, mp: 24, shake: 1.6,
   under(w, e, p) {
     const g = pop(p, 0.20), fd = fade(p, 0.55);
     ring(e.x, e.y, 34 * g, 2.2, C.spirit, 0.50 * fd, 0.40);
@@ -843,7 +843,7 @@ SKILLS.push({
   },
 });
 SKILLS.push({
-  id: 'toxic_bloom', name: 'Nụ Độc', mode: 'point', dur: 1.50, cd: 4.20, shake: 1.0,
+  id: 'toxic_bloom', name: 'Nụ Độc', mode: 'point', dur: 1.50, cd: 4.20, mp: 24, shake: 1.0,
   under(w, e, p) {
     const g = pop(p, 0.22), fd = fade(p, 0.62);
     puddle(e.x, e.y, 40 * g, 17 * g, C.toxic, 0.24 * (0.45 + 0.55 * fd), e.seed, 7);
@@ -890,7 +890,7 @@ function galeAxis(e, p, t) {                          // trục: một con sóng
   return e.x + Math.sin(p * 7.4 + t * 3.0) * 5.2 * t;
 }
 SKILLS.push({
-  id: 'gale_vortex', name: 'Xoáy Cuồng Phong', mode: 'point', dur: 1.20, cd: 5.20, shake: 1.4,
+  id: 'gale_vortex', name: 'Xoáy Cuồng Phong', mode: 'point', dur: 1.20, cd: 5.20, mp: 28, shake: 1.4,
   init(w, e) {
     // Mảnh vỡ đi theo *ba cánh xoắn*, không phải mười lăm quỹ đạo riêng: góc của một mảnh do
     // độ cao của nó quyết định (`t`), nên các mảnh cùng một cánh xếp thành một đường xoắn
@@ -1018,7 +1018,7 @@ SKILLS.push({
 // là lỗi hiển thị. Từ 0,62 khiên co lại và bung thành hạt sáng.
 const agBk = p => c01((p - 0.62) / 0.38);
 SKILLS.push({
-  id: 'aegis_reflect', name: 'Khiên Phản', mode: 'self', dur: 0.85, cd: 4.60, shake: 1.8,
+  id: 'aegis_reflect', name: 'Khiên Phản', mode: 'self', dur: 0.85, cd: 4.60, mp: 26, shake: 1.8,
   under(w, e, p) {
     const h = w.hero, g = pop(p, 0.15), bk = agBk(p), liv = 1 - bk * bk;
     ring(h.x, h.y - 1, 30 * g * (1 + 0.22 * bk), 2.2, C.gold, 0.45 * liv, 0.38);
@@ -1100,7 +1100,7 @@ const RAIN_CLS = [
   { w: 1.2, len: 118, ret: 15, imp: 8,  rays: 6,  cd: 0.28, col: C.lilac, ring: 11 },
 ];
 SKILLS.push({
-  id: 'arcane_rain', name: 'Mưa Ma Thuật', mode: 'point', dur: 1.45, cd: 7.20, shake: 1.2,
+  id: 'arcane_rain', name: 'Mưa Ma Thuật', mode: 'point', dur: 1.45, cd: 7.20, mp: 38, shake: 1.2,
   init(w, e) {
     const rng = mulberry32(e.seed), ms = [];
     for (const q of RAIN_SEQ) {
@@ -1258,7 +1258,7 @@ SKILLS.push({
   },
 });
 SKILLS.push({
-  id: 'time_halt', name: 'Ngưng Thời', mode: 'point', dur: 1.30, cd: 9.50, shake: 0.8,
+  id: 'time_halt', name: 'Ngưng Thời', mode: 'point', dur: 1.30, cd: 9.50, mp: 45, shake: 0.8,
   under(w, e, p) {
     const g = pop(p, 0.18), fd = fade(p, 0.65), SQ = 0.38;
     ring(e.x, e.y, 74 * g, 3.0, C.steel, 0.55 * fd, SQ);

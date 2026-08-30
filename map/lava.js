@@ -1,9 +1,9 @@
-// Dung nham -- basalt plates cracked open over something still molten.
+// Dung nham -- basalt cracked open over something still molten.
 //
-// The floor is offset masonry: plates of chilled basalt, each row shifted sideways by its
-// own noise value so the seams never line up into a grid the eye can lock onto. Then two
-// passes cut it back open -- long wandering fissures, and seeps where a warm patch has a
-// hot vein walked through the middle of it.
+// The floor is a broad sheet of chilled basalt, warmer where the rock has thinned, cut back
+// open by two passes: wandering fissures at every angle, and seeps where a warm patch has a
+// hot vein walked through the middle of it. No plates and no seams between them -- masonry
+// at this scale only ever read as ruled lines across the arena.
 //
 // Everything that actually glows is a prop or a particle. It has to be: the floor tone
 // budget tops out well below the dither gate (see map/README.md), so a lava *tone* can only
@@ -19,6 +19,19 @@ function ember(rng, cam, anywhere) {
            y: cam.y + (anywhere ? rng.range(-10, 190) : rng.range(160, 200)),
            vx: rng.range(-5, 5), vy: rng.range(-19, -7), r: rng.range(0.5, 1.3),
            ph: rng.range(0, 6.28), t: 0, life: rng.range(1.4, 3.4) };
+}
+
+// One octave of value noise, sampled with a smoothstep ramp rather than held flat across a
+// coarse cell and then stepped -- with four tones to spend, a stepped octave reads as a wall
+// of tone rather than as rock thinning out. Same helper as the one in map/cave.js; the maps
+// each keep their own copy because each file is its own IIFE (see map/README.md).
+function oct(vnoise, a, b, s) {
+  const xa = a / s, ya = b / s, ix = Math.floor(xa), iy = Math.floor(ya);
+  const fx = xa - ix, fy = ya - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const t0 = vnoise(ix, iy) + (vnoise(ix + 1, iy) - vnoise(ix, iy)) * sx;
+  const t1 = vnoise(ix, iy + 1) + (vnoise(ix + 1, iy + 1) - vnoise(ix, iy + 1)) * sx;
+  return t0 + (t1 - t0) * sy;
 }
 
 (globalThis.GAME_MAPS = globalThis.GAME_MAPS || []).push({
@@ -42,31 +55,45 @@ function ember(rng, cam, anywhere) {
   },
 
   floor(F) {
-    const { WW, WH, tid, rng, vnoise, clamp, c01, walk, blob } = F, tile = 28;
-    const th = Math.ceil(WH / tile), pw = Math.ceil(WW / tile) + 2;
+    const { WW, WH, tid, rng, vnoise, clamp, c01, walk, blob } = F, cell = 28;
+    const tw = Math.ceil(WW / cell) + 2, th = Math.ceil(WH / cell) + 2;
 
-    // Each row of plates slides sideways by its own amount, which is the whole trick: the
-    // vertical seams break every row instead of running the height of the world.
-    const rowOff = new Int32Array(th);
-    for (let ty = 0; ty < th; ty++) rowOff[ty] = Math.floor(vnoise(ty * 3 + 1, 7) * tile);
-
-    // Plate tones skewed dark -- the `2.4` puts most plates on id 0/1 and only the brightest
-    // noise on id 3, so the emissive props have somewhere to read against.
-    const idx = new Uint8Array(pw * th);
-    for (let ty = 0; ty < th; ty++) for (let tx = 0; tx < pw; tx++) {
-      const lit = c01(0.06 + 0.92 * vnoise(tx >> 3, ty >> 3) + 0.44 * (vnoise(tx, ty) - 0.5));
-      idx[ty * pw + tx] = clamp(Math.round(lit * 2.4), 0, 3);
+    // Broad sheets of chilled basalt, warmer where the rock is thinner. The value is kept
+    // continuous on the lattice, bilerped per pixel, then dithered into a tone id against a
+    // per-pixel hash (map/README.md).
+    //
+    // This used to be offset masonry -- one id per 28 px plate with a seam painted on every
+    // plate edge. Staggering the rows kept the *vertical* seams from lining up, but the
+    // horizontal ones still ran the full width of the world every 28 px, so the floor read
+    // as ruled lines. There are no plates left to seam: the heat map is smooth, and what
+    // breaks the rock open is the fissure pass below.
+    //
+    // The `2.5` (rather than 3) is the same dark skew the plates had: most of the floor sits
+    // on id 0/1 and only the hottest noise reaches id 3, so the emissive props have
+    // somewhere to read against.
+    const val = new Float32Array(tw * th);
+    for (let ty = 0; ty < th; ty++) for (let tx = 0; tx < tw; tx++) {
+      val[ty * tw + tx] = 2.5 * c01(0.06 + 0.92 * oct(vnoise, tx, ty, 8)
+                                         + 0.30 * (oct(vnoise, tx, ty, 2) - 0.5)
+                                         + 0.20 * (vnoise(tx, ty) - 0.5));
     }
     for (let y = 0; y < WH; y++) {
-      const ty = Math.floor(y / tile), off = rowOff[ty], base = ty * pw, o = y * WW;
-      const gy = y % tile === 0;
+      const gy = y / cell, ry = gy | 0, fy = gy - ry, r0 = ry * tw, r1 = r0 + tw, o = y * WW;
       for (let x = 0; x < WW; x++) {
-        const sx = x + off;
-        tid[o + x] = (gy || sx % tile === 0) ? 4 : idx[base + ((sx / tile) | 0)];
+        const gx = x / cell, rx = gx | 0, fx = gx - rx;
+        const t0 = val[r0 + rx] + (val[r0 + rx + 1] - val[r0 + rx]) * fx;
+        const t1 = val[r1 + rx] + (val[r1 + rx + 1] - val[r1 + rx]) * fx;
+        const v = t0 + (t1 - t0) * fy, lo = v | 0;
+        tid[o + x] = clamp(lo + (v - lo > vnoise(x, y) ? 1 : 0), 0, 3);
       }
     }
 
-    // Fissures: short wandering seams that cut across the masonry at any angle.
+    // Fissure networks: the long ones carry the map now that the plates are gone. Low wobble
+    // so a fissure holds a heading for a while, at any angle -- never axis-aligned.
+    for (let i = 0; i < 240; i++)
+      walk(rng.int(0, WW), rng.int(0, WH), rng.int(60, 200), 4, 0.4);
+
+    // Fissures: short wandering seams that cut across the sheet at any angle.
     for (let i = 0; i < 620; i++)
       walk(rng.int(0, WW), rng.int(0, WH), rng.int(14, 70), 4, 1.15);
 

@@ -33,6 +33,14 @@ const LAB = { W, H, SCALE, SKILLS, buf, newWorld, spawnFoe, unit, cast, step,
               // Art boss dựng từ ảnh. `ANIM_IMG` là bộ khung thật sự được vẽ; `BOSS_ART` là
               // dữ liệu thô sinh ra nó, cần cho harness để đối chiếu cw/bw/bh và palette.
               BOSS_ART, BOSS_ART_CH, ANIM_IMG, foeImgFrame,
+              // Mana, trang bị, hành trang. Cả bảng dữ liệu và cả bốn hàm đổi trạng thái đều ra
+              // đây: harness phải chứng minh được "không mặc gì thì mọi con số y như trước", và
+              // câu đó chỉ kiểm được khi nó tự dựng được một bộ trang bị rồi tháo hết ra.
+              GEAR_SLOTS, GEAR_RARITY, GEAR_STATS, SLOT_BY_ID, RARITY_BY_ID, STAT_BY_ID,
+              BAG_MAX, GEAR_DROP, GEAR_BOSS_BOOST,
+              gearIcon, gearName, statText, gearScore, rollGear, rollRarity, rollDrop, gearSum,
+              syncGear, equipGear, unequipGear, trashGear, dropLoot, defMul,
+              HERO_HP, HERO_MP, MP_REGEN, HUD_BOX, drawHeroBars,
               cam: () => ({ x: CAMX, y: CAMY }) };
 if (typeof globalThis !== 'undefined') globalThis.LAB = LAB;
 

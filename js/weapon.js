@@ -495,8 +495,10 @@ function swingHit(w, e) {
 // distance and angle, and neither of these can be expressed in those terms. The saber's
 // bonus reads how wounded the target already is; the gauntlet's reads whether it is casting.
 function swingRiders(w, wp, crit) {
-  if (!crit || (!wp.exec && !wp.cut)) return null;
-  const r = {};
+  // `phys` is unconditional: a swing is the physical path, so gear scales it by +ATK rather
+  // than +Magic ATK. The other two riders only exist on the finisher beat.
+  const r = { phys: true };
+  if (!crit || (!wp.exec && !wp.cut)) return r;
   if (wp.exec) r.amp = f => wp.dmg * wp.exec * c01(1 - f.hp / f.maxhp);
   if (wp.cut) r.onHit = f => cutCast(w, f, wp.cut);
   return r;
@@ -602,7 +604,7 @@ function arrowHit(w, e) {
     // là mũi chính đã trúng, trong khi mũi chính vừa bay trượt.
     const amt = (s.near + (s.far - s.near) * k) * d.mul;
     hurt(w, f, amt, wp.col, k > 0.85 && d.mul >= 1,
-      ca * s.push * k * d.mul, sa * s.push * k * 0.5 * d.mul);
+      ca * s.push * k * d.mul, sa * s.push * k * 0.5 * d.mul, true);
   }
 }
 
@@ -692,7 +694,9 @@ function swing(w, tx, ty) {
   // từ chỗ cũ.
   if (wp.lunge) lungeHero(w, e.ang, wp);
   w.fxs.push(e);
-  w.wcd = e.momo ? wp.momentum.cd : wp.cd;
+  // +Attack Speed shortens the wait rather than speeding up the animation: the swing art is
+  // authored at one tempo, and the thing the player feels is how soon the next one is legal.
+  w.wcd = (e.momo ? wp.momentum.cd : wp.cd) / (1 + w.gs.aspd / 100);
   w.shake = Math.max(w.shake, wp.shake * 0.5);
   h.flip = e.x < h.x;
   SFX.cast(wp.id, clamp((h.x - w.cam.x - W * 0.5) / (W * 0.5), -1, 1));

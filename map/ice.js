@@ -3,7 +3,8 @@
 // Broad noise sheets instead of masonry: no tiles, no grid, just slow drifts of packed snow
 // over darker ice, cut by long shallow cracks. `walk` gets a low wobble here so the cracks
 // run for a distance in one direction, which is what makes them read as fracture rather
-// than as the cave's crumbling grout.
+// than as the cave's short crumbling cracks. (This map went noise-first; the other two
+// followed later, when their tile grids were taken out.)
 //
 // The tone budget bites hardest on this map: white snow is exactly what the dither gate
 // forbids (see map/README.md), and `#224455` is about as pale as a blue can get and still

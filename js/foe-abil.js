@@ -123,6 +123,16 @@ function hitHero(w, amount, col) {
     SFX.dodge();
     return 0;
   }
+  // Gear's +%Dodge is a second, smaller version of the same escape: it plays as a dodge
+  // because that is what it is, but it does not grant i-frames -- one roll, one attack. The
+  // roll is on `grng` and skipped outright at 0%, so a bare run neither rolls nor drifts.
+  if (w.gs.dodge > 0 && w.grng() * 100 < w.gs.dodge) {
+    w.dodges++;
+    w.nums.push({ s: 'NÉ', x: Math.round(h.x - textW('NÉ') / 2),
+                  y: Math.round(h.y - h.h - 6), col: C.pale, t: 0, life: 0.7 });
+    SFX.dodge();
+    return 0;
+  }
   h.flash = Math.min(0.6, h.flash + 0.5);
   SFX.hurt();
   if (w.god) return 0;
@@ -131,6 +141,7 @@ function hitHero(w, amount, col) {
   // starts and shuts on the frame it ends. Nothing here knows which weapon that is -- it
   // reads `guard` off whatever is swinging, so a second planted weapon needs no new code.
   if (w.sw && w.sw.wp.guard) amount *= w.sw.wp.guard;
+  amount *= defMul(w);
   amount = Math.round(amount);
   h.hp = Math.max(0, h.hp - amount); w.taken += amount;
   const s = String(amount);

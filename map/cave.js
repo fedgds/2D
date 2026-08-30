@@ -1,14 +1,15 @@
-// Hang động -- the original arena, lifted out of index.html unchanged.
+// Hang động -- the original arena, lifted out of index.html.
 //
-// Damp tiled stone under torchlight: a grid with grout seams, four stone tones picked by
-// two scales of value noise, and a speck pass that breaks up the repeat. This one is the
-// reference for the map contract, so it is worth reading first: everything the other maps
-// do differently, they do against this.
+// Damp stone under torchlight: broad sheets of four stone tones picked by two scales of
+// value noise, dark puddled hollows, crumbling cracks and a speck pass that breaks up the
+// repeat. This one is the reference for the map contract, so it is worth reading first:
+// everything the other maps do differently, they do against this.
 //
-// The floor generator and the prop table are copied verbatim from the pre-map version
-// (including the quirk in `crack`, where the loop bound is re-drawn every iteration --
-// changing it would redraw 977 props' worth of art to fix nothing). That is deliberate:
-// the refactor is checked by hashing TID and PROPS, and the hash has to come out the same.
+// The prop table is copied verbatim from the pre-map version (including the quirk in
+// `crack`, where the loop bound is re-drawn every iteration -- changing it would redraw 977
+// props' worth of art to fix nothing). The floor is *not*: it used to be tiled masonry with
+// a grout seam on every 20 px cell edge, and that grid was removed on purpose (see
+// `floor` below), so the old TID hash no longer holds. PROPS still does.
 //
 // Everything lives inside an IIFE. Top-level `const` in a classic script lands in the
 // shared global lexical scope, so two maps declaring the same helper name would be a hard
@@ -28,6 +29,20 @@ function mote(rng, cam, anywhere) {
            t: 0, life: rng.range(2.2, 5.0) };
 }
 
+// One octave of value noise, sampled with a smoothstep ramp instead of `>>`. The shift is
+// what an integer lattice makes easy, but it holds a value flat across a whole coarse cell
+// and then jumps: with a 320 px coarse cell and only four floor tones, that jump is a wall
+// of tone standing in the middle of the arena. Interpolating the octave itself spreads the
+// same change over the full cell, which is what turns it into a drift.
+function oct(vnoise, a, b, s) {
+  const xa = a / s, ya = b / s, ix = Math.floor(xa), iy = Math.floor(ya);
+  const fx = xa - ix, fy = ya - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const t0 = vnoise(ix, iy) + (vnoise(ix + 1, iy) - vnoise(ix, iy)) * sx;
+  const t1 = vnoise(ix, iy + 1) + (vnoise(ix + 1, iy + 1) - vnoise(ix, iy + 1)) * sx;
+  return t0 + (t1 - t0) * sy;
+}
+
 (globalThis.GAME_MAPS = globalThis.GAME_MAPS || []).push({
   id: 'cave', name: 'Hang Động', label: 'HANG ĐỘNG', desc: 'đá ẩm · đuốc · tinh thể',
   order: 0,
@@ -41,7 +56,7 @@ function mote(rng, cam, anywhere) {
          Q: '#7a4cd0', q: '#4a2a80', Z: '#c9a8ff', z: '#1d4530' },
 
   // Two streams, two seeds: 4242 lays out the props and 7 grits the floor. Both are the
-  // numbers the pre-map version used, which is what keeps the TID and PROPS hashes intact.
+  // numbers the pre-map version used, which is what keeps the PROPS hash intact.
   seed: 4242, fseed: 7, cell: 56, density: [0.56, 0.42],
 
   init(FX) {
@@ -51,23 +66,53 @@ function mote(rng, cam, anywhere) {
   },
 
   floor(F) {
-    const { WW, WH, tid, rng, vnoise, clamp, c01 } = F, tile = 20;    const tw = Math.ceil(WW / tile), th = Math.ceil(WH / tile);
+    const { WW, WH, tid, rng, vnoise, clamp, c01, walk, blob } = F, cell = 20;
+    const tw = Math.ceil(WW / cell) + 2, th = Math.ceil(WH / cell) + 2;
     // Coarse value noise at two scales, so walking a long way crosses slow patches of
-    // brighter and darker stone instead of one texture repeated forever. The parity term
-    // is what makes neighbouring tiles alternate inside a patch.
-    const idx = new Uint8Array(tw * th);
+    // brighter and darker stone instead of one texture repeated forever.
+    //
+    // The value stays *continuous* on the lattice and is bilerped per pixel, then dithered
+    // into a tone id against a per-pixel hash (see map/README.md, same trick as ice). The
+    // older cut of this floor rounded one id per 20 px cell and painted a grout seam down
+    // every cell edge, so the whole cave read as a chequerboard of hard squares -- a grid
+    // laid over the arena rather than stone. Nothing snaps to a cell now: the patches keep
+    // their shape, and their edges dissolve into speckle instead of stepping.
+    const val = new Float32Array(tw * th);
     for (let ty = 0; ty < th; ty++) for (let tx = 0; tx < tw; tx++) {
-      const lit = c01(0.12 + 1.05 * vnoise(tx >> 4, ty >> 4) + 0.34 * (vnoise(tx >> 2, ty >> 2) - 0.5));
-      idx[ty * tw + tx] = clamp(Math.round(lit * 2) + ((tx + ty) & 1), 0, 3);
-    }
-    const colTile = new Int32Array(WW), colGrout = new Uint8Array(WW);
-    for (let x = 0; x < WW; x++) {
-      colTile[x] = Math.floor(x / tile); colGrout[x] = x % tile === 0 ? 1 : 0;
+      val[ty * tw + tx] = 3 * c01(0.16 + 0.82 * oct(vnoise, tx, ty, 9)
+                                       + 0.46 * (oct(vnoise, tx, ty, 3) - 0.5)
+                                       + 0.32 * (vnoise(tx, ty) - 0.5));
     }
     for (let y = 0; y < WH; y++) {
-      const row = Math.floor(y / tile) * tw, o = y * WW, gy = y % tile === 0;
-      for (let x = 0; x < WW; x++) tid[o + x] = (gy || colGrout[x]) ? 4 : idx[row + colTile[x]];
+      const gy = y / cell, ry = gy | 0, fy = gy - ry, r0 = ry * tw, r1 = r0 + tw, o = y * WW;
+      for (let x = 0; x < WW; x++) {
+        const gx = x / cell, rx = gx | 0, fx = gx - rx;
+        const t0 = val[r0 + rx] + (val[r0 + rx + 1] - val[r0 + rx]) * fx;
+        const t1 = val[r1 + rx] + (val[r1 + rx + 1] - val[r1 + rx]) * fx;
+        const v = t0 + (t1 - t0) * fy, lo = v | 0;
+        tid[o + x] = clamp(lo + (v - lo > vnoise(x, y) ? 1 : 0), 0, 3);
+      }
     }
+
+    // Two mid-scale passes, because one screen is only about two coarse noise cells wide:
+    // without them a whole screenful can sit on one tone. Dark damp hollows where water
+    // stands, pale dry stone where it does not -- both wide and flat so they lie in the same
+    // squashed perspective as everything else.
+    for (let i = 0; i < 150; i++)
+      blob(rng.int(0, WW), rng.int(0, WH), rng.range(10, 30), rng.range(5, 13), 0, 0.62);
+    for (let i = 0; i < 280; i++)
+      blob(rng.int(0, WW), rng.int(0, WH), rng.range(12, 40), rng.range(6, 18), 2, 0.6);
+    for (let i = 0; i < 110; i++)
+      blob(rng.int(0, WW), rng.int(0, WH), rng.range(8, 24), rng.range(4, 11), 3, 0.7);
+
+    // The seam tone survives as actual cracks rather than grout. High wobble and short runs:
+    // cave stone crumbles in every direction at once, which is exactly what ice's long
+    // low-wobble fractures are not.
+    for (let i = 0; i < 150; i++)
+      walk(rng.int(0, WW), rng.int(0, WH), rng.int(26, 90), 4, 0.95);
+    for (let i = 0; i < 420; i++)
+      walk(rng.int(0, WW), rng.int(0, WH), rng.int(6, 26), 4, 1.45);
+
     // Stamp the world wall now, before the specks: they skip any id above 3, so with the
     // wall already down they leave it alone. The engine stamps it again afterwards either
     // way -- this call is only about what the *later passes in here* can see.
@@ -76,7 +121,7 @@ function mote(rng, cam, anywhere) {
     const specks = Math.round(380 * (WW * WH) / (320 * 180));
     for (let i = 0; i < specks; i++) {
       const px = rng.int(0, WW), py = rng.int(0, WH), o = py * WW + px;
-      if (tid[o] > 3) continue;                             // never speckle a grout seam
+      if (tid[o] > 3) continue;                             // never speckle a crack
       tid[o] = clamp(tid[o] + (rng.int(0, 2) * 2 - 1), 0, 3);
     }
   },

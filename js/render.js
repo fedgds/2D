@@ -127,8 +127,50 @@ function renderWorld(w, out) {
   if (MAPDEF.ambDraw && w.amb && w.amb.length) MAPDEF.ambDraw(ambArg(w, 0));
   if (w.danger > 0) drawHeroWarn(w);
   drawWeaponCue(w);
+  drawHeroBars(w);
   drawMinimap(w);
   if (out) resolve(out);
+}
+
+// The hero's own two bars, top-left, in the pixel buffer rather than in the DOM: the numbers
+// they carry change every frame, and a DOM readout that far from the sprite is a thing the
+// player looks *away* to read. Top-left is what is free -- the minimap owns bottom-right, and
+// top-right on a phone (see `setMinimapTop`).
+//
+// Drawn opaque for the same reason the minimap is: the buffer underneath is additive HDR, so
+// a brazier standing behind the panel would otherwise wash the bars out exactly when a fight
+// is worth reading them during. HP carries its number (the 3x5 font has digits), mana does
+// not -- a mana bar you can see the end of is all the warning a cost needs, and the second
+// number would be two more things to read in the same corner.
+const MANA_C = hexc('#3f8fe0'), MANA_H = hexc('#9fd8ff');
+const HUD_BAR_W = 56;
+// The whole painted rectangle, exported next to `MM` and for the same reason: a harness that
+// checks what is on the screen edge has to be able to exclude it by asking rather than by
+// carrying a second copy of these numbers.
+const HUD_BOX = { x: 3, y: 3, w: HUD_BAR_W + 4, h: 16 };
+function hudBar(x, y, wid, hgt, k, col, hi) {
+  const n = Math.round(c01(k) * wid);
+  for (let yy = 0; yy < hgt; yy++)
+    for (let xx = 0; xx < wid; xx++)
+      setPixS(x + xx, y + yy, xx < n ? (yy === 0 ? hi : col) : BAR_BG, 1);
+}
+function drawHeroBars(w) {
+  const h = w.hero, b = HUD_BOX;
+  for (let y = 0; y < b.h; y++)
+    for (let x = 0; x < b.w; x++) setPixS(b.x + x, b.y + y, MM_BG, 1);
+  for (let x = -1; x <= b.w; x++) {
+    setPixS(b.x + x, b.y - 1, MM_ED, 1); setPixS(b.x + x, b.y + b.h, MM_ED, 1);
+  }
+  for (let y = 0; y < b.h; y++) {
+    setPixS(b.x - 1, b.y + y, MM_ED, 1); setPixS(b.x + b.w, b.y + y, MM_ED, 1);
+  }
+  const x0 = b.x + 2, y0 = b.y + 2;
+  const low = h.hp <= h.maxhp * 0.35;
+  hudBar(x0, y0, HUD_BAR_W, 7, h.hp / h.maxhp, low ? BAR_LO : BAR_HI, MM_HERO);
+  hudBar(x0, y0 + 9, HUD_BAR_W, 4, h.mp / Math.max(h.maxmp, 1), MANA_C, MANA_H);
+  // text3x5 is world space, like every other primitive; CAMX/CAMY put it back on the screen.
+  const s = String(Math.max(0, Math.round(h.hp)));
+  text3x5(s, x0 + HUD_BAR_W - textW(s) - 1 + CAMX, y0 + 1 + CAMY, MM_HERO, 0.95);
 }
 
 // The two weapon states that are decisions rather than events. Both are worn by the hero and

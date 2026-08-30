@@ -73,6 +73,64 @@ function snapCam(w) {
 // holds *global* skill indices, so `w.cds` stays the full 16-entry table (a skill you
 // left at home still has a cooldown slot -- simpler than remapping indices everywhere)
 // and the hotbar just reads the three it was told to show.
+//
+// Mana is the second resource: every skill carries an `mp` cost (js/skills.js) and `cast`
+// refuses when the bar is short, the same way it refuses on cooldown. The weapon and the
+// dash stay free -- the dash *is* the dodge, and a dodge you cannot afford is a death
+// sentence the player cannot read off the HUD. Base regen is deliberately generous: the
+// cost is there to price a rotation, not to end a run when the bar empties.
+const HERO_HP = 400, HERO_MP = 120, MP_REGEN = 7.5;
+
+// Equipped gear folded into hero numbers. Called on every equip/unequip and nowhere else:
+// `w.gs` is a plain snapshot, so the hot paths read fields instead of walking five slots.
+//
+// Extra max HP arrives as extra *current* HP and leaves the same way, so swapping a piece
+// in and straight back out is a no-op rather than a slow bleed or a free heal. The floor of
+// 1 is what stops a big +HP piece being a suicide button when it comes off at low health.
+function syncGear(w) {
+  const h = w.hero, was = h.maxhp;
+  w.gs = gearSum(w.equip);
+  h.maxhp = HERO_HP + w.gs.hp;
+  h.maxmp = HERO_MP + w.gs.mp;
+  h.hp = clamp(h.hp + (h.maxhp - was), 1, h.maxhp);
+  h.mp = clamp(h.mp, 0, h.maxmp);
+}
+// Bag index -> worn. Whatever was in that slot goes back to the bag, which is why this
+// cannot overflow: one out for one in.
+function equipGear(w, i) {
+  const it = w.bag[i];
+  if (!it) return false;
+  w.bag.splice(i, 1);
+  const off = w.equip[it.slot];
+  w.equip[it.slot] = it;
+  if (off) w.bag.push(off);
+  syncGear(w);
+  return true;
+}
+function unequipGear(w, slot) {
+  const it = w.equip[slot];
+  if (!it || w.bag.length >= BAG_MAX) return false;
+  w.equip[slot] = null;
+  w.bag.push(it);
+  syncGear(w);
+  return true;
+}
+function trashGear(w, i) {
+  if (!w.bag[i]) return false;
+  w.bag.splice(i, 1);
+  return true;
+}
+// What a kill hands out. Rolled on `w.grng`, so this is invisible to every seeded outcome
+// in the sim. A full bag drops nothing at all rather than silently binning the item: the
+// player is told by the count on the button, and can make room.
+function dropLoot(w, boss) {
+  if (w.bag.length >= BAG_MAX) return null;
+  const it = rollDrop(w.grng, boss ? 1 : GEAR_DROP, boss ? GEAR_BOSS_BOOST : 0);
+  if (!it) return null;
+  w.bag.push(it); w.newGear++; w.loot++;
+  return it;
+}
+
 function newWorld(seed, loadout) {
   const s = seed || 20260827;
   const lo = loadout || {};
@@ -82,9 +140,15 @@ function newWorld(seed, loadout) {
   if (lo.map && MAP_BY_ID[lo.map] && MAPDEF !== MAP_BY_ID[lo.map]) applyMap(lo.map);
   const w = {
     t: 0, frame: 0, rng: mulberry32(s), crng: mulberry32((s ^ 0x5bf03) >>> 0),
+    // A third stream, for loot and for the gear crit roll. It is not the sim stream, so a
+    // dropped item can never shift a seeded outcome, and it is not the cosmetic stream
+    // either -- the number of dust motes a frame happened to spawn must not decide what a
+    // kill hands out. It is still seeded from the run seed, so a run's drops are its own.
+    grng: mulberry32((s ^ 0x1f83d9) >>> 0),
     shake: 0, spawnT: 0,
     hero: { x: WW * 0.5, y: WH * 0.5, w: 11, h: 14, vx: 0, vy: 0, flash: 0, flip: false,
-            hp: 400, maxhp: 400, glow: 0.5, ph: 0, it: 0, mv: 0, fi: 0, atk: -1,
+            hp: HERO_HP, maxhp: HERO_HP, mp: HERO_MP, maxmp: HERO_MP,
+            glow: 0.5, ph: 0, it: 0, mv: 0, fi: 0, atk: -1,
             dsh: 0, dvx: 0, dvy: 0, inv: 0 },
     cam: { x: 0, y: 0 }, props: PROPS, puffs: [], amb: [],
     foes: [], fxs: [], tels: [], nums: [], aim: { x: 0, y: 0 },
@@ -100,6 +164,12 @@ function newWorld(seed, loadout) {
     // -- that entry is gone before the swing it pays for is even asked for. `heals` is a run
     // total like `dmg`, and it is the only place the scythe's harvest shows up as a number.
     momo: 0, heals: 0,
+    // Gear. `equip` is one slot per entry in GEAR_SLOTS, `bag` is the hành trang, and `gs`
+    // is the aggregate every gear-aware line reads -- all zeroes here, so a fresh run is
+    // numerically identical to a run from before gear existed. `newGear` is a badge count
+    // for the shell, not state the sim reads.
+    equip: { helmet: null, armor: null, gloves: null, pants: null, boots: null },
+    bag: [], newGear: 0, loot: 0, gs: gearSum(null),
   };
   snapCam(w);
   w.aim.x = w.hero.x + 60; w.aim.y = w.hero.y - 20;
@@ -124,8 +194,23 @@ function spawnFoe(w, near) {
 
 // Enemy flash is capped at 0.55: above that a hit enemy is just a white blob and you
 // cannot tell what you hit. Poison/freeze use `dim` instead of flash for the same reason.
-function hurt(w, f, amount, col, crit, kx, ky) {
+//
+// Gear scales the hero's output *here* rather than at the twenty-odd call sites: `phys`
+// marks the two weapon paths, which take +ATK, and everything else -- all sixteen skills
+// and every tick of every field -- takes +Magic ATK. Both factors are exactly 1 with
+// nothing equipped, so the numbers tools/check-weapons.js pins do not move.
+function hurt(w, f, amount, col, crit, kx, ky, phys) {
   if (f.dying) return;
+  const gs = w.gs;
+  if (gs) {
+    amount *= 1 + (phys ? gs.atk : gs.mag) / 100;
+    // A weapon's `crit` is the finisher beat -- decided by the swing, not rolled -- and it
+    // prints the `!`. Gear crit rate is the separate thing: a chance on any hit at all. The
+    // roll is on `grng` so the sim stream never sees it, and it is skipped outright at 0%,
+    // so a run with no gear does not advance that stream either.
+    if (!crit && gs.crit > 0 && w.grng() * 100 < gs.crit) crit = true;
+    if (crit && gs.critd > 0) amount *= 1 + gs.critd / 100;
+  }
   amount = Math.round(amount);
   f.hp -= amount;
   f.flash = Math.min(0.55, f.flash + 0.45);
@@ -157,6 +242,11 @@ function healHero(w, amount) {
                 col: HEAL_C, t: 0, life: 0.8 });
   return amount;
 }
+
+// Incoming damage multiplier from +DEF. The usual `100 / (100 + def)` curve: it never
+// reaches zero however much armour is stacked, and at DEF 0 it is exactly 1, so a bare run
+// takes exactly the damage tools/check-boss.js measures.
+function defMul(w) { return 100 / (100 + w.gs.def); }
 
 function foesIn(w, x, y, r) {
   const out = [];
@@ -199,10 +289,11 @@ function hitLine(w, x0, y0, x1, y1, thick, amount, col, crit, kb) {
 //
 // `opt` carries the riders a weapon's identity needs and a skill never does: `amp(f)` adds
 // per-target damage the cone itself cannot know (the saber reads how wounded the target
-// already is) and `onHit(f)` runs a side effect that is not damage at all (the gauntlet
-// snuffs a telegraph). Both are optional and both are called once per foe struck.
+// already is), `onHit(f)` runs a side effect that is not damage at all (the gauntlet snuffs
+// a telegraph), and `phys` marks the cone as a weapon swing so gear scales it by +ATK
+// instead of +Magic ATK. All three are optional.
 function hitCone(w, x, y, ang, range, arc_, amount, col, crit, kb, opt) {
-  const amp = opt && opt.amp, onHit = opt && opt.onHit;
+  const amp = opt && opt.amp, onHit = opt && opt.onHit, phys = opt && opt.phys;
   let n = 0;
   for (const f of w.foes) {
     if (f.dying) continue;
@@ -218,7 +309,7 @@ function hitCone(w, x, y, ang, range, arc_, amount, col, crit, kb, opt) {
     }
     const a = Math.atan2(midY(f) - y, f.x - x);
     hurt(w, f, amount + (amp ? amp(f) : 0), col, crit,
-         Math.cos(a) * (kb || 0), Math.sin(a) * (kb || 0) * 0.5);
+         Math.cos(a) * (kb || 0), Math.sin(a) * (kb || 0) * 0.5, phys);
     if (onHit) onHit(f);
     n++;
   }
@@ -230,6 +321,10 @@ function cast(w, i, tx, ty) {
   const sk = SKILLS[i];
   if (!sk || w.cds[i] > 0) return false;
   const h = w.hero;
+  // Mana is checked with the cooldown and paid at the end, so a refused cast costs nothing
+  // and the shell's one `else SFX.blocked()` branch covers both reasons without asking why.
+  const cost = sk.mp || 0;
+  if (h.mp < cost) return false;
   const e = { sk: sk, i: i, t: 0, dur: sk.dur, p: 0, pt: 0,
               seed: w.rng.int(1, 1e9) | 0, ox: h.x, oy: h.y - h.h * 0.5, data: {} };
   if (sk.mode === 'self') { e.x = h.x; e.y = h.y; }
@@ -239,6 +334,7 @@ function cast(w, i, tx, ty) {
   if (sk.init) sk.init(w, e);
   w.fxs.push(e);
   w.cds[i] = sk.cd;
+  h.mp = Math.max(0, h.mp - cost);
   w.shake = Math.max(w.shake, sk.shake || 0);
   h.flip = e.x < h.x;
   return true;
@@ -271,9 +367,12 @@ function step(w, dt, inp) {
     const l = Math.hypot(dx, dy);
     if (l > 0) {
       dx /= l; dy /= l;
+      // 56 across and 42 down: the same squashed ratio the art is drawn in, so a diagonal
+      // reads as a diagonal. +Move Speed is a factor on both, and it is exactly 1 bare.
+      const ms = 1 + w.gs.mspd / 100;
       const px = h.x, py = h.y;
-      h.x = clamp(h.x + dx * 56 * plant * dt, BOUND.x0, BOUND.x1);
-      h.y = clamp(h.y + dy * 42 * plant * dt, BOUND.y0, BOUND.y1);
+      h.x = clamp(h.x + dx * 56 * plant * ms * dt, BOUND.x0, BOUND.x1);
+      h.y = clamp(h.y + dy * 42 * plant * ms * dt, BOUND.y0, BOUND.y1);
       moved = Math.hypot(h.x - px, h.y - py);
     }
   }
@@ -296,6 +395,12 @@ function step(w, dt, inp) {
   // The sword's window runs on wall time and not on swings, so hesitating is what closes
   // it -- which is the entire question the weapon asks.
   if (w.momo > 0) w.momo = Math.max(0, w.momo - dt);
+  // Mana refills on its own: the cost is meant to price a rotation, not to strand a run.
+  // HP regen is gear-only and starts at zero, so a bare run heals exactly as much as it
+  // always did -- nothing, unless the scythe harvests it. The `/5` is the spec's unit:
+  // the stat lines read "per 5s" but the bars have to move every frame.
+  if (h.mp < h.maxmp) h.mp = Math.min(h.maxmp, h.mp + (MP_REGEN + w.gs.mpr / 5) * dt);
+  if (w.gs.hpr > 0 && h.hp > 0) h.hp = Math.min(h.maxhp, h.hp + w.gs.hpr / 5 * dt);
 
   for (const e of w.fxs) {
     e.pt = e.p; e.t += dt; e.p = c01(e.t / e.dur);
@@ -323,7 +428,13 @@ function step(w, dt, inp) {
     if (f.frozen > 0) f.frozen -= dt;
     if (f.dying) {
       f.dying += dt;
-      if (f.dying > 0.30) { w.foes.splice(i, 1); w.kills++; }
+      if (f.dying > 0.30) {
+        w.foes.splice(i, 1); w.kills++;
+        // Loot lands on the frame the body is cleared, so a foe cannot pay out twice. A boss
+        // always drops and bends the rarity weights up: `bossGate` has usually already let
+        // go of `w.boss` by now, so the kind list is what identifies one.
+        dropLoot(w, BOSS_KINDS.indexOf(f.kind) >= 0);
+      }
       continue;
     }
     stepFoe(w, f, dt);
@@ -423,7 +534,10 @@ function stepFoe(w, f, dt) {
       // The saber's guard covers the drain too. It plants the hero in the middle of whatever
       // he swung at, so mitigating only the telegraphed hits would make the trade a lie.
       const g = w.sw && w.sw.wp.guard ? w.sw.wp.guard : 1;
-      h.hp = Math.max(0, h.hp - 22 * g * dt);
+      // +DEF softens the drain by the same curve it softens a telegraphed hit by (see
+      // `hitHero`), so armour is not quietly worthless against the thing that touches you
+      // most often. `defMul` is exactly 1 at DEF 0.
+      h.hp = Math.max(0, h.hp - 22 * g * defMul(w) * dt);
       h.flash = Math.min(0.6, h.flash + dt * 3);
       SFX.hurt();
     }

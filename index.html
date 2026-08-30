@@ -36,6 +36,9 @@
   }
   .tbtn:hover { border-color: #54608a; color: #eaf2ff; background: #141828 }
   .tbtn:focus-visible { outline: 1px solid #fff; outline-offset: 1px }
+  /* Có món mới chưa xem thì nút đổi màu cam của "huyền thoại" -- cùng màu mà cái chấm trên nút
+     cảm ứng đang dùng, nên hai chỗ nói một câu. */
+  .tbtn.on { border-color: #e8871e80; color: #f2c48a; background: #1b1206 }
   /* Đường viền của khung là `outline`, không phải `border`: layout() chốt #stage theo một số
      nguyên điểm ảnh *vật lý* để lưới 320x180 rơi đúng lên lưới điểm ảnh của màn hình, còn
      `border` (với box-sizing: border-box ở trên) sẽ ăn lại 2 px của đúng cái hộp đó. */
@@ -46,7 +49,11 @@
   canvas { image-rendering: pixelated; border: 1px solid #222233; display: block }
   #screen { width: 100%; height: 100%; border: 0 }
   #hud {
-    position: absolute; left: 8px; top: 8px; font-size: max(9px, calc(var(--sw) / 116));
+    /* Dời xuống dưới hai thanh máu/mana: chúng được vẽ *trong* pixel buffer ở góc trên trái,
+       chiếm 20 dòng đầu của 180 (xem HUD_BOX trong js/render.js), nên `top` phải tính theo
+       chiều cao stage chứ không phải một số px cố định -- stage co giãn theo cửa sổ. */
+    position: absolute; left: 8px; top: calc(var(--sh) * 0.125);
+    font-size: max(9px, calc(var(--sw) / 116));
     color: #9fb0cc; text-shadow: 0 1px 0 #000; pointer-events: none; white-space: pre;
     /* #stage zeroes line-height to kill the inline gap under the canvas, and this element
        inherits it -- without a line-height of its own all nine HUD lines stack on one. */
@@ -117,6 +124,9 @@
   }
   .cell.cooling .skill-icon { filter: saturate(.25) brightness(.65) }
   .cell.cooling .cooldown-value { opacity: 1 }
+  /* Hết mana: xám lạnh chứ không phải mặt nạ quét -- không có giây nào để đếm, chỉ có mana. */
+  .cell.nomana .skill-icon { filter: grayscale(.75) brightness(.5) }
+  .cell.nomana i { color: #3f8fe0 }
   /* Below ~96px per slot the name is two clipped letters, so the hotbar drops to
      icon-only rather than pretending to show a label. */
   #bar.tiny .cell {
@@ -226,6 +236,64 @@
   .gsk s { text-decoration: none; color: #dfe8f7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
   .gsk em { font-style: normal; font-size: 8px; color: #6f7f9c; letter-spacing: .06em }
 
+  /* ---- bảng trạng thái: chỉ số, trang bị, hành trang ---------------------------------
+     Ba cột vì ba câu hỏi khác nhau: "tôi đang mặc gì", "cộng lại thành bao nhiêu", "có gì
+     để đổi". Phẩm chất là màu, và màu đó do JS truyền vào qua --rar/--rdim (lấy từ bảng
+     GEAR_RARITY trong js/gear.js) chứ không viết lại ở đây: bốn màu ở hai nơi là hai nguồn
+     sự thật cho một thứ. */
+  .stcols { display: grid; grid-template-columns: 1.05fr .85fr 1.1fr; gap: 4px 16px; align-items: start }
+  .gslots { display: grid; gap: 4px }
+  .gitem {
+    --rar: #3faa55; --rdim: #16301d;
+    position: relative; min-width: 0; display: grid; column-gap: 7px;
+    grid-template-columns: 30px minmax(0, 1fr); grid-template-areas: "icon name" "icon meta";
+    padding: 4px; cursor: pointer; text-align: left; line-height: 1.25; font: inherit;
+    color: inherit; border: 1px solid var(--rar);
+    background: linear-gradient(135deg, var(--rdim), #06070e);
+    transition: border-color .12s, background .12s, transform .12s;
+  }
+  .gitem:hover { transform: translateY(-1px); background: linear-gradient(135deg, var(--rdim), #0d1019) }
+  .gitem:focus-visible { outline: 1px solid #fff; outline-offset: 1px }
+  .gitem.empty { --rar: #24263a; --rdim: #0c0d15; cursor: default }
+  .gitem.empty:hover { transform: none }
+  .gitem img {
+    grid-area: icon; align-self: center; width: 30px; height: 30px; display: block;
+    image-rendering: pixelated; background: var(--rdim); border: 1px solid var(--rar);
+  }
+  .gitem s {
+    grid-area: name; align-self: end; min-width: 0; text-decoration: none; font-size: 10px;
+    font-weight: 700; color: #dfe8f7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .gitem em {
+    grid-area: meta; align-self: start; min-width: 0; font-style: normal; font-size: 8px;
+    color: var(--rar); letter-spacing: .06em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .stlist { font-size: 10px; color: #93a3c0 }
+  .strow { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0 }
+  .strow b { color: #edf3ff; font-weight: 600 }
+  .strow.up b { color: #7ef2a0 }
+  .gbag { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 3px }
+  .gbag .gc {
+    --rar: #24263a; --rdim: #0c0d15;
+    position: relative; aspect-ratio: 1; padding: 1px; cursor: pointer; font: inherit;
+    border: 1px solid var(--rar); background: var(--rdim); transition: transform .12s;
+  }
+  .gbag .gc:hover { transform: translateY(-1px) }
+  .gbag .gc.on { box-shadow: inset 0 0 0 1px #fff8, 0 0 7px var(--rar) }
+  .gbag .gc img { width: 100%; height: 100%; display: block; image-rendering: pixelated }
+  .gbag .gc.hole { cursor: default; opacity: .5 }
+  .gbag .gc.hole:hover { transform: none }
+  .gdet { margin-top: 6px; min-height: 54px; font-size: 10px; color: #93a3c0 }
+  .gdet .gh { font-size: 10px; font-weight: 700; color: #edf3ff }
+  .gdet .gr { font-size: 8px; letter-spacing: .1em }
+  .gdet ul { margin: 3px 0 5px; padding-left: 12px }
+  .gdet .gcmp { margin: 0 0 5px; font-size: 9px }
+  .gdet .gcmp.up { color: #7ef2a0 }
+  .gdet .gcmp.dn { color: #e07d8e }
+  .gdet .gcmp.eq { color: #93a3c0 }
+  .gdet .row { display: flex; gap: 5px }
+  .gdet .row .mbtn { margin: 0; padding: 5px 8px; font-size: 10px; letter-spacing: .1em }
+
   /* ---- chế độ điện thoại -------------------------------------------------------------
      Đúng một công tắc (`body.mob`) đổi ba thứ, và không có thứ tư: layout() lấy cả viewport
      thay vì chừa chỗ cho header với hotbar, lớp #touch lên thay bàn phím và con chuột, và
@@ -251,7 +319,7 @@
      menu nằm trong stage. */
   #touch { position: fixed; inset: 0; z-index: 30; pointer-events: none; touch-action: none }
   #touch[hidden] { display: none }
-  #tstick, #tacts, #tpause { pointer-events: auto }
+  #tstick, #tacts, #tpause, #tstat { pointer-events: auto }
   /* Vùng nhận ngón trái rộng gần nửa màn hình, nhưng **bệ đứng một chỗ** như joystick của mọi
      game MOBA: hướng đi là vector từ tâm bệ tới ngón, núm kẹp ở vành. Bản trước cho bệ chạy theo
      ngón nên kéo được đi khắp màn hình, và một cần điều khiển không có chỗ cố định thì không có
@@ -338,7 +406,7 @@
   body.tedit #tknob { opacity: .45 }
   body.tedit .tb { border-style: dashed; border-color: #ffe29b8c; cursor: grab }
   body.tedit .tb:active { scale: 1 }
-  body.tedit #tpause { display: none }
+  body.tedit #tpause, body.tedit #tstat { display: none }
   /* Vùng nhận rộng của joystick tắt đi, và *cái bệ* thành thứ để kéo: vùng đó phủ gần nửa màn hình,
      tức là phủ luôn hai cái nút của bảng nằm dưới nó, và một cái "XONG" bấm ra thành cú kéo bệ là
      không còn đường nào ra khỏi bảng. Sự kiện của bệ vẫn *nổi lên* #tstick dù cha đang
@@ -358,11 +426,24 @@
     background: none; backdrop-filter: none; z-index: 60; pointer-events: none;
   }
   body.tedit #pnTouch { pointer-events: auto }
-  #tpause {
+  #tpause, #tstat {
     position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
     padding: 5px 11px; border: 1px solid #2b2f45; border-radius: 3px; background: #0a0c14cc;
     color: #a9b8d4; font: inherit; font-size: 10px; letter-spacing: .1em; cursor: pointer;
   }
+  /* Trên điện thoại thanh trên và hotbar đều ẩn, nên bảng trang bị không còn đường nào để mở.
+     Nút này là đường đó, đặt cạnh nút menu ở mép trên: xa chỗ hai ngón cái đang đặt, nên không
+     bấm nhầm giữa lúc đánh. Dấu tròn cam là số món vừa rơi mà chưa mở ra xem -- đúng thứ mà
+     người chơi cần biết để dừng lại một nhịp, và nó biến mất ngay khi bảng mở. */
+  #tstat { transform: translateX(calc(-50% + 64px)) }
+  #tstat i {
+    display: none; position: absolute; top: -4px; right: -4px; min-width: 13px; height: 13px;
+    box-sizing: border-box; padding: 0 2px; border-radius: 7px; background: #e8871e;
+    color: #1a0e02; font-size: 8px; line-height: 13px; text-align: center; font-style: normal;
+    letter-spacing: 0; font-weight: 700;
+  }
+  #tstat.has { color: #f2c48a; border-color: #e8871e80 }
+  #tstat.has i { display: block }
   /* Cầm dọc thì cả bố cục trên vô nghĩa, nên nói thẳng một câu thay vì vẽ một khung 16:9 cao
      bằng đốt ngón tay. */
   #rotate {
@@ -382,6 +463,7 @@
     <h1>SKILL LAB — <span id="wpCount">5</span> VŨ KHÍ · 16 SKILL · 6 QUÁI CÓ CHIÊU · ARENA PIXEL 2D</h1>
     <span class="grow"></span>
     <button type="button" class="tbtn" id="btnMenu">☰ MENU (ESC)</button>
+    <button type="button" class="tbtn" id="btnStat">▣ TRANG BỊ (I)</button>
     <button type="button" class="tbtn" id="btnGuide">? HƯỚNG DẪN</button>
     <button type="button" class="tbtn" id="btnSound">♪ ÂM THANH: BẬT</button>
   </div>
@@ -420,12 +502,38 @@
         <div class="brand">TẠM DỪNG</div>
         <div class="tagline">ARENA ĐANG ĐỢI</div>
         <button type="button" class="mbtn primary" data-act="resume">TIẾP TỤC</button>
+        <button type="button" class="mbtn" data-act="stat">TRẠNG THÁI &amp; TRANG BỊ (I)</button>
         <button type="button" class="mbtn" data-act="loadout">ĐỔI VŨ KHÍ / SKILL</button>
         <button type="button" class="mbtn" data-act="touch">SẮP XẾP PHÍM CẢM ỨNG</button>
         <button type="button" class="mbtn" data-act="guide">HƯỚNG DẪN</button>
         <button type="button" class="mbtn" data-act="restart">CHƠI LẠI</button>
         <button type="button" class="mbtn" data-act="home">VỀ MENU CHÍNH</button>
         <div class="hint">ESC tiếp tục</div>
+      </div>
+      <!-- Trạng thái nhân vật: mở giữa trận (I), nên nó cũng là một chỗ *ghé qua* -- ESC trả về
+           đúng nơi vừa mở nó, hệt hướng dẫn. Ảnh trang bị là <img> thật lấy từ images/gear, không
+           phải canvas vẽ tay: hai mươi file PNG là art có sẵn, và scale bằng image-rendering:
+           pixelated giữ nguyên từng điểm ảnh. -->
+      <div class="panel wide" id="pnStat" hidden>
+        <div class="gtitle">TRẠNG THÁI NHÂN VẬT</div>
+        <div class="stcols">
+          <div>
+            <div class="gsec">TRANG BỊ</div>
+            <div class="gslots" id="stEquip" role="group" aria-label="Trang bị đang mặc"></div>
+          </div>
+          <div>
+            <div class="gsec">CHỈ SỐ</div>
+            <div class="stlist" id="stStats"></div>
+          </div>
+          <div>
+            <div class="gsec" id="stBagHead">HÀNH TRANG</div>
+            <div class="gbag" id="stBag" role="group" aria-label="Hành trang"></div>
+            <div class="gdet" id="stDet"></div>
+          </div>
+        </div>
+        <p class="pnote">Quái rơi trang bị, boss rơi hàng tốt hơn. Bấm một ô trong hành trang để
+          xem chỉ số rồi <b>MẶC</b>; bấm ô trang bị đang mặc để tháo ra.</p>
+        <button type="button" class="mbtn primary" data-act="back">XONG (ESC)</button>
       </div>
       <!-- Sắp xếp phím: bảng này *không* vẽ lại joystick trong một khung xem trước. Lớp #touch
            thật nằm trên nó, và thứ người chơi kéo là đúng cái nút sẽ bấm lúc đánh nhau -- một bản
@@ -451,6 +559,7 @@
               <b>Click</b> đánh thường bằng vũ khí đang cầm<br>
               <b>1 / 2 / 3</b> ba skill đã chọn · <b>click ô hotbar</b> cũng dùng được<br>
               <b>Shift</b> hoặc <b>chuột phải</b> lướt né (có sẵn, không tốn ô skill)<br>
+              <b>I</b> bảng trạng thái &amp; trang bị · <b>H</b> hướng dẫn<br>
               <b>Esc</b> tạm dừng · <b>M</b> tắt/bật âm thanh
             </p>
             <div class="gsec">CHƠI TRÊN ĐIỆN THOẠI</div>
@@ -479,7 +588,9 @@
               <b>MENU → SẮP XẾP PHÍM CẢM ỨNG</b> để tự kéo joystick và <b>từng nút riêng</b>
               (đánh thường, ba skill, lướt né) tới chỗ vừa tay, phóng to / thu nhỏ cả hai bên.
               Minimap dời lên <b>góc trên phải</b>, và <b>☰ MENU</b> ở giữa mép trên là
-              chỗ tạm dừng. Máy chỉ có cảm ứng thì chế độ này tự bật ngay lần đầu mở.
+              chỗ tạm dừng — cạnh nó là <b>▣ ĐỒ</b> mở bảng trang bị, có <b>chấm cam đếm số
+              món vừa rơi</b> mà bạn chưa xem. Máy chỉ có cảm ứng thì chế độ này tự bật ngay
+              lần đầu mở.
             </p>
             <div class="gsec">LƯỚT NÉ</div>
             <p class="glist">
@@ -500,6 +611,35 @@
               số nhịp trúng, tầm với và góc quét riêng. Đang chơi vẫn đổi được ở
               <b>Esc → ĐỔI VŨ KHÍ / SKILL</b>.
             </p>
+            <div class="gsec">MANA</div>
+            <p class="glist">
+              Thanh xanh dưới thanh máu ở <b>góc trên trái</b>. Mỗi skill có một giá riêng
+              (từ <b>8</b> tới <b>45</b> mana, ghi ngay trên ô hotbar), <b>tự hồi 7.5
+              mana/giây</b>, và không đủ mana thì ô hotbar <b>xám đi</b> — bấm vào chỉ nghe
+              tiếng từ chối, <b>không mất mana và không mất hồi chiêu</b>. Đánh thường và
+              lướt né <b>không tốn mana</b>, nên cạn mana không bao giờ là hết đường đánh.
+            </p>
+            <div class="gsec">TRANG BỊ &amp; HÀNH TRANG</div>
+            <p class="glist">
+              Bấm <b>I</b> (hoặc nút <b>▣ TRANG BỊ</b>) để mở bảng trạng thái: 5 ô mặc
+              (<b>Mũ · Giáp · Găng · Giáp Chân · Giày</b>), toàn bộ chỉ số đang có, và
+              <b>hành trang 24 ô</b>. Mở giữa trận được — Esc trả về đúng chỗ vừa mở, và
+              trận đứng chờ ở đó.<br>
+              Quái rơi đồ (<b>15%</b> mỗi mạng), <b>boss rơi chắc chắn</b> và rơi hàng tốt
+              hơn. Phẩm chất quyết định số dòng chỉ số ngẫu nhiên:
+              <b style="color:#3faa55">THƯỜNG 1 dòng</b> ·
+              <b style="color:#3b7ddd">HIẾM 2</b> ·
+              <b style="color:#9a5cd0">SỬ THI 3</b> ·
+              <b style="color:#e8871e">HUYỀN THOẠI 4</b> — và một món không bao giờ có hai
+              dòng trùng nhau.<br>
+              Mười hai chỉ số: <b>+ATK</b> (chỉ đòn vũ khí) · <b>+Magic ATK</b> (chỉ skill)
+              · <b>+HP</b> · <b>+Mana</b> · <b>+DEF</b> (giảm damage nhận vào) ·
+              <b>+Crit rate</b> / <b>+Crit damage</b> · <b>+Attack Speed</b> (hồi đòn
+              thường nhanh hơn) · <b>+Move Speed</b> · <b>+HP Regen/5s</b> ·
+              <b>+Mana Regen/5s</b> · <b>+%Dodge</b>. Bấm một ô trong hành trang để xem
+              chỉ số rồi <b>MẶC</b>; món cũ ở ô đó tự về túi. Túi đầy thì <b>không rơi
+              thêm</b> — bỏ bớt bằng nút <b>BỎ</b>.
+            </p>
             <div class="gsec">CÔNG CỤ THỬ NGHIỆM</div>
             <p class="glist">
               <b>Space</b> đứng hình · <b>F</b> tiến 1 khung · <b>T</b> slow-mo 0.22x<br>
@@ -511,8 +651,9 @@
             <p class="glist">
               Map <b>2560×1440</b> (8×8 màn hình), camera đi theo nhân vật. Góc dưới phải
               là minimap: khung xanh là vùng đang thấy, đốm màu là mốc phát sáng của sân
-              (đuốc, tinh thể, vực dung nham, trụ băng...). HUD góc trên trái báo FPS,
-              số quái, damage và HP.<br>
+              (đuốc, tinh thể, vực dung nham, trụ băng...). Góc trên trái là
+              <b>thanh máu và thanh mana</b> của bạn, dưới nó là dòng HUD báo FPS, số quái,
+              damage và số món trong túi.<br>
               Ba sân hiện có: <b>HANG ĐỘNG</b> (đá ẩm, đuốc, bụi lơ lửng),
               <b>DUNG NHAM</b> (bazan nứt, vực lửa, tro bay lên) và
               <b>BĂNG TUYẾT</b> (tuyết phủ, băng nứt, tuyết bay ngang). Đổi sân ở
@@ -566,6 +707,7 @@
   <div id="tstick"><div id="tbase"></div><div id="tknob"></div></div>
   <div id="tacts"></div>
   <button type="button" id="tpause">☰ MENU</button>
+  <button type="button" id="tstat" aria-label="Trang bị">▣ ĐỒ<i>0</i></button>
 </div>
 <div id="rotate"><div>
   <b>QUAY NGANG MÁY</b>
@@ -627,6 +769,7 @@
 <script src="js/boss-img.js"></script>
 <script src="js/weapon.js"></script>
 <script src="js/sfx.js"></script>
+<script src="js/gear.js"></script>
 <script src="js/world.js"></script>
 <script src="js/render.js"></script>
 <script src="js/skills.js"></script>

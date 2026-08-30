@@ -246,7 +246,7 @@ if (typeof document !== 'undefined') {
         : isDash
         ? `${sk.name} · lướt né (Shift hoặc chuột phải)\nHồi ${cd.toFixed(2)} giây`
           + `\nBất tử ${DASH_IV.toFixed(2)} giây · đi ${DASH_LEN} px theo hướng đang đi`
-        : `${sk.name} · ${sk.id}\nHồi chiêu ${cd.toFixed(2)} giây`;
+        : `${sk.name} · ${sk.id}\nHồi chiêu ${cd.toFixed(2)} giây · ${sk.mp || 0} mana`;
 
       const hotkey = document.createElement('u');
       hotkey.textContent = weapon ? 'CHUỘT' : isDash ? 'SHIFT' : String(n);
@@ -262,8 +262,11 @@ if (typeof document !== 'undefined') {
       iconWrap.append(icon, mask, cdValue);
       const name = document.createElement('b'); name.textContent = sk.name;
       const meta = document.createElement('i');
+      // Giá mana đứng cạnh hồi chiêu vì hai thứ đó chặn ô này theo đúng một cách: `cast` từ
+      // chối cả hai như nhau, nên ô phải nói cả hai ra.
       meta.textContent = (weapon ? 'ĐÁNH THƯỜNG' : isDash ? 'NÉ · BẤT TỬ' : modeLabel(sk))
-                       + ' · ' + cd.toFixed(2) + 's';
+                       + ' · ' + cd.toFixed(2) + 's'
+                       + (weapon || isDash ? '' : ' · ' + (sk.mp || 0) + ' MP');
       d.append(hotkey, iconWrap, name, meta);
       d.onclick = () => fire(n);
       d.addEventListener('mousedown', ev => ev.preventDefault());   // keep Space/Enter for the game
@@ -286,6 +289,10 @@ if (typeof document !== 'undefined') {
   // The dark sweep and number make a blocked cast readable without dimming its name.
   // Only icons that are actively cooling down receive per-frame style writes.
   const ready = [true, true, true, true, true];
+  // Thiếu mana là lý do *thứ hai* một ô không bấm được, và nó không phải hồi chiêu: cái mặt nạ
+  // quét xuống nói "đợi 2,3 giây nữa", còn ô xám vì hết mana thì đợi bao lâu cũng vô ích nếu
+  // không có mana. Hai trạng thái, hai class.
+  const manaOk = [true, true, true, true, true];
   function paintCds() {
     for (let n = 0; n < BAR_N; n++) {
       const gi = slotKind[n];
@@ -293,6 +300,11 @@ if (typeof document !== 'undefined') {
       const full = gi === -1 ? world.wp.cd : gi === -2 ? DASH_CD : SKILLS[gi].cd;
       const ok = left <= 0;
       const faces = slotFaces[n];
+      const mok = gi < 0 || world.hero.mp >= (SKILLS[gi].mp || 0);
+      if (mok !== manaOk[n]) {
+        manaOk[n] = mok;
+        for (const f of faces) f.cell.classList.toggle('nomana', !mok);
+      }
       if (!ok) {
         const sweep = `scaleY(${c01(left / full).toFixed(3)})`;
         const txt = Math.max(0.1, left).toFixed(1);
@@ -318,12 +330,15 @@ if (typeof document !== 'undefined') {
     pause: document.getElementById('pnPause'),
     guide: document.getElementById('pnGuide'),
     touch: document.getElementById('pnTouch'),
+    stat: document.getElementById('pnStat'),
   };
   let scene = 'menu', backTo = 'menu';
   function setScene(s) {
-    // Hướng dẫn và bảng sắp xếp phím đều là chỗ *ghé qua*: mở từ đâu thì ESC trả về đúng đó, và
-    // mở giữa trận thì trả về bảng tạm dừng chứ không quẳng luôn vào trận đang có ba con vây.
+    // Hướng dẫn, bảng sắp xếp phím và bảng trạng thái đều là chỗ *ghé qua*: mở từ đâu thì ESC trả
+    // về đúng đó, và mở giữa trận thì trả về trận đang đánh chứ không quẳng vào bảng tạm dừng --
+    // bảng trang bị mở ra để đổi một món rồi đánh tiếp.
     if ((s === 'guide' || s === 'touch') && scene !== s) backTo = scene === 'play' ? 'pause' : scene;
+    if (s === 'stat' && scene !== s) { backTo = scene; world.newGear = 0; paintStat(); paintStatBadge(); }
     if (s === 'select') {
       selectFrom = scene === 'pause' ? 'pause' : 'menu';
       // The picker edits `loadout` in place, so backing out has to be able to undo it:
@@ -379,8 +394,156 @@ if (typeof document !== 'undefined') {
   function startRun() {
     world = newWorld((Math.random() * 1e9) | 0, loadout);
     sel = 0; buildBar(); paused = false; slow = false;
+    bagSel = -1;
     setScene('play');
     SFX.fanfare();
+  }
+
+  // ---- Bảng trạng thái: chỉ số, trang bị, hành trang -----------------------
+  // Ba cột đọc thẳng từ `world`, không có model riêng: trang bị là `world.equip`, hành trang là
+  // `world.bag`, và chỉ số cộng lại là `world.gs` -- cái mà chính sim đang đọc. Bảng này chỉ vẽ
+  // lại khi mở ra hoặc khi vừa mặc/tháo một món, nên nó không phải là thứ chạy mỗi khung.
+  const stEquip = document.getElementById('stEquip');
+  const stStats = document.getElementById('stStats');
+  const stBag = document.getElementById('stBag');
+  const stBagHead = document.getElementById('stBagHead');
+  const stDet = document.getElementById('stDet');
+  // Ô hành trang đang chọn, theo *chỉ số* trong `world.bag`: mặc một món làm mảng ngắn đi, nên
+  // giữ tham chiếu tới object là giữ một thứ đã rời khỏi túi.
+  let bagSel = -1, badgeWas = -1;
+  function rarStyle(el, rar) {
+    const r = RARITY_BY_ID[rar];
+    el.style.setProperty('--rar', r.col);
+    el.style.setProperty('--rdim', r.dim);
+  }
+  function itemImg(it) {
+    const g = document.createElement('img');
+    g.src = gearIcon(it); g.alt = gearName(it); g.draggable = false;
+    return g;
+  }
+  function statRow(label, val, up) {
+    const d = document.createElement('div');
+    d.className = up ? 'strow up' : 'strow';
+    const a = document.createElement('span'); a.textContent = label;
+    const b = document.createElement('b'); b.textContent = val;
+    d.append(a, b);
+    return d;
+  }
+  function paintEquip() {
+    stEquip.textContent = '';
+    for (const sl of GEAR_SLOTS) {
+      const it = world.equip[sl.id];
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = it ? 'gitem' : 'gitem empty';
+      const nm = document.createElement('s'), meta = document.createElement('em');
+      if (it) {
+        rarStyle(b, it.rar);
+        b.append(itemImg(it));
+        nm.textContent = gearName(it);
+        meta.textContent = it.stats.map(statText).join(' · ');
+        b.title = 'Bấm để tháo ' + gearName(it);
+        b.onclick = () => {
+          if (unequipGear(world, sl.id)) { SFX.ui('click'); paintStat(); } else SFX.blocked();
+        };
+      } else {
+        const hole = document.createElement('img');
+        hole.alt = ''; hole.src = 'images/gear/' + sl.id + '/common.png';
+        hole.style.opacity = '.16'; hole.draggable = false;
+        b.append(hole);
+        nm.textContent = sl.name;
+        meta.textContent = 'trống';
+        b.disabled = true;
+      }
+      b.append(nm, meta);
+      stEquip.appendChild(b);
+    }
+  }
+  function paintStats() {
+    stStats.textContent = '';
+    const h = world.hero, g = world.gs;
+    stStats.append(
+      statRow('Máu', Math.round(h.hp) + ' / ' + h.maxhp, g.hp > 0),
+      statRow('Mana', Math.round(h.mp) + ' / ' + h.maxmp, g.mp > 0),
+      statRow('Vũ khí', world.wp.name),
+      statRow('Sát thương vũ khí', '+' + g.atk + '%', g.atk > 0),
+      statRow('Sát thương phép', '+' + g.mag + '%', g.mag > 0),
+      statRow('Giáp (DEF)', g.def + ' · giảm ' + Math.round((1 - 100 / (100 + g.def)) * 100) + '%', g.def > 0),
+      statRow('Chí mạng', g.crit + '% · +' + g.critd + '% sát thương', g.crit > 0),
+      statRow('Tốc đánh', '+' + g.aspd + '%', g.aspd > 0),
+      statRow('Tốc chạy', '+' + g.mspd + '%', g.mspd > 0),
+      statRow('Hồi máu', g.hpr + ' / 5s', g.hpr > 0),
+      statRow('Hồi mana', (MP_REGEN * 5).toFixed(0) + ' + ' + g.mpr + ' / 5s', g.mpr > 0),
+      statRow('Né đòn', g.dodge + '%', g.dodge > 0),
+      statRow('Hạ được', String(world.kills)),
+      statRow('Trang bị rơi ra', String(world.loot)));
+  }
+  function paintBag() {
+    stBag.textContent = '';
+    stBagHead.textContent = 'HÀNH TRANG ' + world.bag.length + '/' + BAG_MAX;
+    if (bagSel >= world.bag.length) bagSel = world.bag.length ? world.bag.length - 1 : -1;
+    for (let i = 0; i < BAG_MAX; i++) {
+      const it = world.bag[i];
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'gc' + (it ? (i === bagSel ? ' on' : '') : ' hole');
+      if (it) {
+        rarStyle(b, it.rar);
+        b.append(itemImg(it));
+        b.title = gearName(it) + '\n' + it.stats.map(statText).join('\n');
+        b.onclick = () => { bagSel = i; SFX.ui('hover'); paintBag(); paintDetail(); };
+      } else {
+        b.disabled = true;
+      }
+      stBag.appendChild(b);
+    }
+  }
+  function paintDetail() {
+    stDet.textContent = '';
+    const it = world.bag[bagSel];
+    if (!it) {
+      const p = document.createElement('div');
+      p.textContent = world.bag.length ? 'Chọn một món để xem chỉ số.' : 'Chưa có gì. Đi hạ quái.';
+      stDet.appendChild(p);
+      return;
+    }
+    const r = RARITY_BY_ID[it.rar];
+    const hd = document.createElement('div'); hd.className = 'gh'; hd.textContent = gearName(it);
+    const rr = document.createElement('div'); rr.className = 'gr';
+    rr.style.color = r.col; rr.textContent = r.name.toUpperCase() + ' · ' + r.lines + ' DÒNG';
+    const ul = document.createElement('ul');
+    for (const s of it.stats) {
+      const li = document.createElement('li'); li.textContent = statText(s); ul.appendChild(li);
+    }
+    // Một câu về ô mà nó sẽ thay: người chơi bấm MẶC là để *đổi*, và thứ họ cần biết trước khi
+    // bấm là món đang đeo ở ô đó có tốt hơn không. So bằng tổng chỉ số nhân hệ số phẩm chất --
+    // thô, nhưng nó nói đúng cái mà nó biết, và bốn dòng chỉ số vẫn nằm ngay trên để tự đọc.
+    const cmp = document.createElement('div'); cmp.className = 'gcmp';
+    const worn = world.equip[it.slot];
+    if (!worn) { cmp.textContent = 'Ô ' + SLOT_BY_ID[it.slot].name + ' đang trống.'; cmp.classList.add('up'); }
+    else {
+      const d = gearScore(it) - gearScore(worn);
+      cmp.textContent = 'Thay ' + gearName(worn) + (d > 0 ? ' · tốt hơn' : d < 0 ? ' · kém hơn' : ' · tương đương');
+      cmp.classList.add(d > 0 ? 'up' : d < 0 ? 'dn' : 'eq');
+    }
+    const row = document.createElement('div'); row.className = 'row';
+    const on = document.createElement('button');
+    on.type = 'button'; on.className = 'mbtn primary'; on.textContent = 'MẶC';
+    on.onclick = () => {
+      if (equipGear(world, bagSel)) { SFX.ui('click'); paintStat(); } else SFX.blocked();
+    };
+    const off = document.createElement('button');
+    off.type = 'button'; off.className = 'mbtn'; off.textContent = 'BỎ';
+    off.onclick = () => {
+      if (trashGear(world, bagSel)) { SFX.ui('back'); paintStat(); } else SFX.blocked();
+    };
+    row.append(on, off);
+    stDet.append(hd, rr, ul, cmp, row);
+  }
+  function paintStat() { paintEquip(); paintStats(); paintBag(); paintDetail(); }
+  function toggleStat() {
+    if (scene === 'stat') { SFX.ui('back'); setScene(backTo); }
+    else if (scene === 'play' || scene === 'pause') { SFX.ui('click'); setScene('stat'); }
+    else SFX.blocked();
   }
 
   // ---- The picker ----------------------------------------------------------
@@ -575,6 +738,7 @@ if (typeof document !== 'undefined') {
       case 'mobile': SFX.ui('click'); setMob(!mobOn); break;
       case 'sharp': SFX.ui('click'); setSharp(!sharpOn); break;
       case 'touch': SFX.ui('click'); setScene('touch'); break;
+      case 'stat': SFX.ui('click'); setScene('stat'); break;
       case 'treset': SFX.ui('back'); resetTcfg(); break;
       case 'back': SFX.ui('back'); setScene(backTo); break;
       case 'home': if (scene === 'select') cancelSelect();
@@ -587,7 +751,7 @@ if (typeof document !== 'undefined') {
   });
   function toggleMenu() {
     if (scene === 'play') { SFX.ui('back'); setScene('pause'); }
-    else if (scene === 'guide' || scene === 'touch') { SFX.ui('back'); setScene(backTo); }
+    else if (scene === 'guide' || scene === 'touch' || scene === 'stat') { SFX.ui('back'); setScene(backTo); }
     else if (scene === 'pause') { SFX.ui('click'); setScene('play'); }
     else SFX.ui('hover');
   }
@@ -597,8 +761,10 @@ if (typeof document !== 'undefined') {
   }
   const btnMenu = document.getElementById('btnMenu');
   const btnGuide = document.getElementById('btnGuide');
+  const btnStat = document.getElementById('btnStat');
   btnMenu.onclick = ev => { ev.currentTarget.blur(); toggleMenu(); };
   btnGuide.onclick = ev => { ev.currentTarget.blur(); toggleGuide(); };
+  btnStat.onclick = ev => { ev.currentTarget.blur(); toggleStat(); };
 
   // ---- Mixer ---------------------------------------------------------------
   const soundBox = document.getElementById('soundBox');
@@ -953,6 +1119,17 @@ if (typeof document !== 'undefined') {
   document.getElementById('tpause').addEventListener('pointerdown', ev => {
     ev.preventDefault(); toggleMenu();
   });
+  const tstat = document.getElementById('tstat');
+  tstat.addEventListener('pointerdown', ev => { ev.preventDefault(); toggleStat(); });
+  // Cùng một con số hiện ở hai chỗ: chấm cam trên nút cảm ứng và cái đuôi trên nút thanh trên.
+  // Một hàm vẽ cả hai, vì hai chỗ đọc `world.newGear` riêng là hai chỗ để nó lệch nhau.
+  function paintStatBadge() {
+    const n = world.newGear | 0;
+    tstat.classList.toggle('has', n > 0);
+    tstat.firstElementChild.textContent = String(Math.min(n, 99));
+    btnStat.textContent = n > 0 ? '▣ TRANG BỊ (I) +' + Math.min(n, 99) : '▣ TRANG BỊ (I)';
+    btnStat.classList.toggle('on', n > 0);
+  }
 
   // Không có con trỏ thì ngắm phải *tự động*, và nó lấy theo ba nguồn vì chiêu 'dir'/'point'
   // cần một điểm có nghĩa: con còn sống gần nhất trong tầm nhìn, rồi hướng joystick, rồi hướng
@@ -1281,7 +1458,7 @@ if (typeof document !== 'undefined') {
       return;
     }
     if (k === 'Escape') {
-      if (scene === 'guide' || scene === 'touch') { SFX.ui('back'); setScene(backTo); }
+      if (scene === 'guide' || scene === 'touch' || scene === 'stat') { SFX.ui('back'); setScene(backTo); }
       else if (scene === 'pause') { SFX.ui('click'); setScene('play'); }
       ev.preventDefault(); return;
     }
@@ -1291,6 +1468,10 @@ if (typeof document !== 'undefined') {
       else { SFX.ui('back'); setScene(backTo); }
       ev.preventDefault(); return;
     }
+    // I mở bảng trang bị từ bảng tạm dừng, và đóng lại từ chính nó -- cùng một phím cả hai
+    // chiều, như H với hướng dẫn. Ở menu/chọn đồ thì `toggleStat` tự từ chối: chưa có world
+    // nào để đọc `equip` ra.
+    if (low === 'i') { toggleStat(); ev.preventDefault(); return; }
     if (low === 'h') { toggleGuide(); ev.preventDefault(); }
   }
   // Phím vừa đổi scene. Mọi keydown tiếp theo của *chính phím đó* bị nuốt cho tới khi nhả
@@ -1333,8 +1514,13 @@ if (typeof document !== 'undefined') {
     // with it so a debug boss does not desync the rotation.
     if (low === 'b') { if (!ev.repeat) spawnBoss(world); return; }
     if (low === 'x') { world.cds.fill(0); world.wcd = 0; world.dcd = 0; paint(); SFX.ui('click'); return; }
+    // Một món rơi ra ngay, theo bảng phẩm chất của boss. Cùng lý do như 'b': tỉ lệ rơi là 15%
+    // mỗi mạng, nên xem bốn màu khung và bốn số dòng chỉ số bằng cách đi hạ quái là hàng chục
+    // mạng cho một món -- và cái cần nhìn ở đây là bảng trang bị, không phải cái tỉ lệ.
+    if (low === 'l') { if (!ev.repeat) { dropLoot(world, true) ? SFX.ui('click') : SFX.blocked(); } return; }
     if (low === 'g') { if (!ev.repeat) world.god = !world.god; return; }
     if (low === 'h') { toggleGuide(); eatKey = low; return; }
+    if (low === 'i') { toggleStat(); eatKey = low; return; }
     keys.add(low);
   });
   window.addEventListener('keyup', ev => {
@@ -1403,6 +1589,9 @@ if (typeof document !== 'undefined') {
                    : sel === DASH_SLOT ? DASH_SK.name + ' (lướt né)'
                    : SKILLS[loadout.slots[sel - 1]].name;
     paintCds();
+    // Chỉ vẽ lại nút khi con số đổi: nó là hai lần ghi vào DOM, và mỗi khung một lần trong 60
+    // khung/giây là đúng thứ làm trình duyệt tính lại bố cục ngay giữa lúc đánh nhau.
+    if (world.newGear !== badgeWas) { badgeWas = world.newGear; paintStatBadge(); }
     hud.textContent =
       'FPS ' + fps.toFixed(0) + '   vẽ ' + ms.toFixed(1) + 'ms   fx ' + world.fxs.length +
       '\nquái ' + world.foes.length + '   hạ ' + world.kills + '   dmg ' + world.dmg +
@@ -1416,7 +1605,10 @@ if (typeof document !== 'undefined') {
       '   né ' + world.dodges +
       '\nô ' + (sel === 0 ? 'chuột' : sel === DASH_SLOT ? 'shift' : sel) + ' · ' + slotName +
       '\nHP ' + Math.round(world.hero.hp) + '/' + world.hero.maxhp +
+      '   MP ' + Math.round(world.hero.mp) + '/' + world.hero.maxmp +
       (world.god ? ' (bất tử)' : '') +
+      '\ntúi ' + world.bag.length + '/' + BAG_MAX + ' · rơi ' + world.loot +
+      (world.newGear > 0 ? '   << ' + world.newGear + ' MÓN MỚI (I) >>' : '') +
       '\nsân ' + MAPDEF.label +
       '\nvị trí ' + Math.round(world.hero.x) + ',' + Math.round(world.hero.y) +
       ' / map ' + WW + 'x' + WH +

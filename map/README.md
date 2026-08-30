@@ -98,17 +98,21 @@ nên một map không thể làm lệch `BOUND` — vùng đi lại được lu�
 * `border()` — đóng viền thế giới **ngay lúc này**, cho map nào cần các pass sau
   của chính nó thấy tường (ví dụ pass rắc hạt bỏ qua mọi id > 3). Engine vẫn đóng
   viền lần nữa lúc thoát, nên gọi hay không cũng không đổi kết quả cuối — nó chỉ
-  đổi những gì các pass *bên trong* `floor` nhìn thấy. Đây là chi tiết ảnh hưởng
-  tới dòng rng: hang động phải gọi nó để chuỗi speck trùng bản gốc.
+  đổi những gì các pass *bên trong* `floor` nhìn thấy. Hang động gọi nó trước pass
+  rắc hạt, nên hạt không rơi lên tường.
 
 Sàn được bake **một lần** mỗi lần đổi map, không phải mỗi khung, nên cứ thoải mái
 tính — nhưng 2560×1440 là 3.7 triệu pixel, đừng để thứ gì đắt hơn O(1)/pixel nằm
 trong vòng lặp chính.
 
 Chỉ có 4 tông sàn, nên chuyển tông đột ngột theo ô sẽ ra hình *khối vuông*. Muốn
-sàn mượt (đồng tuyết, cát) thì nội suy giá trị liên tục rồi **dither sang id**:
+sàn mượt (đồng tuyết, cát, đá) thì nội suy giá trị liên tục rồi **dither sang id**:
 `tid = floor(v) + (v - floor(v) > vnoise(x, y) ? 1 : 0)`. Dither ở *id tông*, chứ
-không phải ở byte đầu ra, nên cửa sổ sàn dựng sẵn vẫn đúng. `map/ice.js` làm vậy.
+không phải ở byte đầu ra, nên cửa sổ sàn dựng sẵn vẫn đúng. **Cả ba map đang dùng
+cách này** — bản đầu của hang động và dung nham chốt một id cho mỗi ô rồi kẻ mạch
+vữa quanh ô, và kết quả là một lưới ô vuông kẻ ngang sân chứ không phải mặt đá.
+Nứt thì để `walk` vẽ: nó đi lang thang theo mọi hướng, không bao giờ thẳng theo
+trục như mạch vữa.
 
 ### `props: [...]`
 

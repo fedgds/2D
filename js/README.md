@@ -21,8 +21,9 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `boss-img.js` | `ANIM_IMG`/`foeImgFrame`: bốn bộ ảnh → khung vẽ được, và hộp `bh` |
 | `weapon.js` | 6 vũ khí: sheet 16 khung (`ART`), `drawSwing`, `drawHeld`, `swing`, `reswing`, `lungeHero` |
 | `sfx.js` | `SFX` — mọi tiếng đều tổng hợp bằng WebAudio lúc chạy |
-| `world.js` | hero, quái, damage, `newWorld`, `step`, các hàm trúng đòn |
-| `render.js` | thứ tự vẽ một khung, thanh HP quái, vòng ngắm cảm ứng (`drawAimCue`), minimap (`setMinimapTop` cho chế độ điện thoại) |
+| `gear.js` | 5 ô trang bị × 4 phẩm chất × 12 chỉ số: bảng dữ liệu, `rollGear`, `gearSum` |
+| `world.js` | hero, quái, damage, `newWorld`, `step`, các hàm trúng đòn, mana + `syncGear` |
+| `render.js` | thứ tự vẽ một khung, thanh HP quái, thanh HP/mana của hero (`drawHeroBars`), vòng ngắm cảm ứng (`drawAimCue`), minimap (`setMinimapTop` cho chế độ điện thoại) |
 | `skills.js` | 16 skill (`SKILLS`) |
 | `dash.js` | chiêu lướt né mặc định — không tính vào 3 slot |
 | `foe-abil.js` | chiêu quái + vùng cảnh báo vẽ trên sàn |
@@ -378,6 +379,10 @@ node tools/check-weapons.js
 node tools/check-boss.js
 ```
 
+```bash
+node tools/check-gear.js
+```
+
 Tool đọc chính `index.html`, nối các `<script src>` theo đúng thứ tự trong trang rồi chạy
 bằng `node:vm`, nên nó bắt luôn lỗi **thứ tự file** chứ không chỉ lỗi map: một file đặt sai
 chỗ là `ReferenceError` ngay lúc nạp. Phần shell browser nằm sau
@@ -415,6 +420,70 @@ Một chỗ dễ vướng nếu sửa thêm mục vào tool: shape rải đốt,
 `e.seed`, nên **hai cast khác seed là hai bàn cờ khác nhau**. Mục nào tìm một điểm đo trên
 cast này rồi đo trên cast khác thì phải gieo cùng một seed cho cả hai, không thì `frost_web`
 sẽ "đạt" vì điểm đo rơi vào khe trống của mắt lưới.
+
+`check-gear.js` kiểm mana, trang bị và hành trang. Mười hai chỉ số được kiểm **một lần mỗi
+cái, ở chỗ nó thật sự ăn vào sim** (không phải ở bảng dữ liệu): `+ATK` chỉ nhân đòn vũ khí và
+`+Magic ATK` chỉ nhân chiêu — hai lần gọi `hurt` với cùng một con số, khác nhau đúng cờ
+`phys`; `+Crit rate 100` làm mọi đòn chí mạng và `+Crit damage` nhân lên trên đó; `+DEF 100`
+cho `defMul` đúng 0,5; `+%Dodge 100` làm `hitHero` trả về 0; hai dòng hồi đo bằng cách chạy
+đủ 60 khung rồi so lượng lên; `+Attack Speed 100%` rút `w.wcd` còn nửa; `+Move Speed 50%` đo
+bằng khoảng cách đi được trong nửa giây. Nhưng mục quan trọng nhất là mục cuối:
+
+> chạy hai world cùng seed 900 khung, một cái để nguyên, một cái mặc một món bốn dòng rồi
+> tháo hết ra, và **hai bên phải cho đúng cùng một chuỗi số**.
+
+Câu đó là điều kiện để ba harness kia còn xanh. `check-weapons.js` và `check-boss.js` chốt
+cứng hàng chục con số damage và máu, nên mọi hệ số của trang bị phải là `1 + v/100` hoặc
+`100/(100+v)` — đúng bằng 1 ở mức 0 — và mọi phép bốc thăm của trang bị phải bị **chặn bởi
+`> 0`** để dòng rng không bị đẩy đi một bước. `+HP Regen/5s` vì thế không có nền: nền khác 0
+là mọi con số máu trong hai tool kia lệch đi.
+
+## Mana, trang bị, hành trang
+
+Ba hệ thống, một quy tắc: **không mặc gì thì mọi con số y như trước khi có trang bị.**
+
+`gear.js` chỉ có bảng và hàm thuần — nó không biết `world` là gì. Một món là object phẳng
+`{ slot, rar, stats: [{ id, v }], seed }`, ảnh là `images/gear/<slot>/<rar>.png` (20 file, ô
+chọn hình còn phẩm chất chọn màu), và `rollGear` *rút* chỉ số khỏi một pool nên một món không
+bao giờ có hai dòng trùng nhau. Phẩm chất quyết định số dòng đúng như bảng: 1 / 2 / 3 / 4.
+
+`world.js` là chỗ duy nhất biến một bộ trang bị thành con số của hero:
+
+| chỗ | ăn vào |
+| --- | --- |
+| `syncGear` | `+HP`, `+Mana` → `maxhp`/`maxmp`, và **cộng luôn máu hiện tại** |
+| `hurt` | `+ATK` (cờ `phys`), `+Magic ATK`, `+Crit rate`, `+Crit damage` |
+| `defMul` → `hitHero` + vệt đứng trong vùng | `+DEF` |
+| `hitHero` | `+%Dodge` |
+| `step` | `+Move Speed`, `+HP Regen/5s`, `+Mana Regen/5s` |
+| `weapon.js` (`w.wcd`) | `+Attack Speed` |
+
+Ba dòng rng, không phải hai: `w.rng` (sim, gieo theo seed), `w.crng` (trang trí) và **`w.grng`
+(rơi đồ + bốc chí mạng của trang bị)**. Dòng thứ ba tồn tại vì một món rơi ra không được phép
+đẩy lệch một kết quả đã gieo, mà số hạt bụi một khung sinh ra thì cũng không được phép quyết
+định một cú chí mạng.
+
+Mana là cổng thật, nhưng chỉ ở `cast`: hết mana thì trả `false`, **không trừ gì và không đặt
+hồi chiêu** — một chiêu bị từ chối rồi vẫn phải chờ hồi là mất lượt hai lần cho một lỗi. Đánh
+thường và lướt né không tốn mana, vì cả hai là thứ bấm liên tục và một cú né bị từ chối là
+chết vì một con số không hiện ở đâu cả.
+
+Hai cái thanh vẽ **trong buffer điểm ảnh**, không phải DOM (`drawHeroBars`, hộp `HUD_BOX` xuất
+ra cạnh `MM` để harness loại được khỏi phép kiểm mép màn hình). Góc trên trái, vì minimap giữ
+góc dưới phải và giữ góc trên phải ở chế độ điện thoại. Vẽ **đục**, cùng lý do minimap vẽ đục:
+buffer bên dưới là HDR cộng sáng, nên một cái đuốc đứng sau bảng sẽ xoá trắng đúng lúc đang
+đánh nhau. Thanh máu mang theo con số của nó; thanh mana không — một cái thanh thấy được đầu
+mút là đủ cảnh báo cho một cái giá, và con số thứ hai là thêm một thứ phải đọc trong cùng một
+góc.
+
+Bảng trạng thái (`I`, hoặc nút ▣ ở thanh trên / ở mép trên khi chơi điện thoại) là DOM, ba cột
+đọc thẳng `world.equip` / `world.gs` / `world.bag`. Nó chỉ vẽ lại lúc mở và lúc vừa mặc/tháo,
+nên không phải thứ chạy mỗi khung; chỉ cái chấm đếm món mới là cập nhật trong vòng lặp, và
+cũng chỉ khi con số đổi.
+
+Trong trận có phím `L` để rơi ngay một món theo bảng phẩm chất của boss — cùng lý do như `B`
+gọi boss: tỉ lệ rơi là 15% mỗi mạng, nên nhìn bốn màu khung và bốn số dòng bằng cách đi hạ quái
+là hàng chục mạng cho một món, mà thứ cần nhìn ở đó là cái bảng chứ không phải cái tỉ lệ.
 
 ## Xem hiệu ứng mà không cần browser
 
