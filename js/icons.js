@@ -177,6 +177,9 @@ const WEAPON_THEMES = {
   cung:      ['#79e8f4', '#ecfdff', '#0e2f36'],
   'luoi-hai':['#bdf9ff', '#eaffff', '#123039'],
   gang:      ['#65dcec', '#d9fbff', '#0f2c33'],
+  // Khiên là cái duy nhất ấm: năm cái kia đều xanh lam/lục, nên trong bảng chọn nó không cần
+  // đọc hình mới biết là cái nào -- và sheet của nó vốn vẽ màu kem, tô lạnh lại là nói dối.
+  khien:     ['#ffd483', '#fff4d8', '#3a2a12'],
 };
 function drawWeaponIcon(canvas, wp) {
   const g = canvas.getContext('2d');
@@ -222,6 +225,22 @@ function drawWeaponIcon(canvas, wp) {
       g.beginPath(); g.moveTo(20, 5); g.quadraticCurveTo(8, 2, 3, 13);
       g.quadraticCurveTo(11, 8, 21, 11); g.stroke();
       g.fillStyle = light; g.fillRect(19, 3, 3, 4);
+      break;
+    // Tấm chắn hình giọt nước: bốn cái trên đều là nét dài, nên thứ duy nhất cần khác là một
+    // khối kín. Gân giữa và núm khiên là hai chi tiết giữ cho nó không đọc ra thành cái lá.
+    case 'khien':
+      g.fillStyle = accent;
+      g.beginPath();
+      g.moveTo(16, 2); g.lineTo(27, 8); g.lineTo(27, 18);
+      g.quadraticCurveTo(27, 26, 16, 30);
+      g.quadraticCurveTo(5, 26, 5, 18); g.lineTo(5, 8); g.closePath(); g.fill();
+      g.fillStyle = deep;
+      g.beginPath();
+      g.moveTo(16, 5); g.lineTo(24, 10); g.lineTo(24, 18);
+      g.quadraticCurveTo(24, 24, 16, 27);
+      g.quadraticCurveTo(8, 24, 8, 18); g.lineTo(8, 10); g.closePath(); g.fill();
+      g.fillStyle = light; g.fillRect(15, 7, 2, 18);
+      g.beginPath(); g.arc(16, 16, 3, 0, Math.PI * 2); g.fill();
       break;
     default:                                       // kiem
       g.fillStyle = '#f4f7ff'; g.fillRect(13, 24, 6, 5);

@@ -21,7 +21,13 @@ const H = 180, SCALE = 4, EXPO = 1.3, LEVELS = 16;
 // as many source samples, while ranges, movement and every authored world coordinate stay
 // byte-for-byte identical.  Headless harnesses stay at 1x so their 320x180 golden captures
 // and performance checks keep the same contract.
-const RENDER_SCALE = typeof document !== 'undefined' ? 2 : 1;
+//
+// `FRAME_SHARP` (index.html, cùng chỗ với FRAME_W) là công tắc của người chơi: đặt 0 thì trở về
+// đúng một mẫu cho mỗi điểm ảnh gameplay -- giao diện mềm như bản cũ, nhưng tầng vẽ và tầng
+// tonemap chỉ còn một phần tư số điểm ảnh. Đọc phòng thủ chứ không tin con số truyền vào, vì
+// harness trong node không có nó và phải giữ đúng 1x như mọi ảnh chụp đã kiểm.
+const RENDER_SCALE = typeof document !== 'undefined'
+                  && (typeof FRAME_SHARP !== 'number' || FRAME_SHARP !== 0) ? 2 : 1;
 const RW = W * RENDER_SCALE, RH = H * RENDER_SCALE;
 const NP = RW * RH;
 const buf = new Float32Array(NP * 3);
@@ -205,13 +211,20 @@ const TAU = Math.PI * 2;
 // go through a 1024-entry table with linear interpolation (error ~1e-6, i.e. four orders
 // of magnitude below the 1/15 output step, so the frame is unchanged).
 const POWLUT = new Map();
+// Một ô nhớ tạm cho số mũ vừa hỏi. Trong một lời gọi primitive, `p` là hằng -- nó là tham số
+// `sharp`/`power` của cả nét vẽ -- nên `POWLUT.get(p)` ở dưới lặp lại đúng một kết quả hàng chục
+// nghìn lần một khung. Map.get với khoá số thực là ~15 ns, phép so sánh này là ~0 ns, và bảng trả
+// về vẫn là *cùng một* Float32Array nên từng byte ra khỏi fpow() không đổi.
+let LUTP = -1, LUTT = null;
 function powTable(p) {
+  if (p === LUTP) return LUTT;
   let t = POWLUT.get(p);
   if (!t) {
     t = new Float32Array(1026);
     for (let i = 0; i <= 1025; i++) t[i] = Math.pow(Math.min(i / 1024, 1), p);
     POWLUT.set(p, t);
   }
+  LUTP = p; LUTT = t;
   return t;
 }
 function fpow(v, p) {

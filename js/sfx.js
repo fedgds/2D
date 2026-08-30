@@ -17,6 +17,7 @@ const SFX = (() => {
   }
 
   let ac = null, master = null, busS = null, busM = null, noiseBuf = null;
+  let revIn = null, dlyIn = null, dlyNode = null;
   function boot() {
     if (ac || !AC) return ac;
     try { ac = new AC(); } catch (e) { return null; }
@@ -33,7 +34,37 @@ const SFX = (() => {
     noiseBuf = ac.createBuffer(1, n, ac.sampleRate);
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    // Two send effects, used by the score only: gameplay sounds stay bone dry so a
+    // warning never arrives smeared. A room and a rhythmic delay are the whole
+    // difference between "some oscillators" and something that sounds produced.
+    revIn = ac.createGain();
+    const rLp = ac.createBiquadFilter(), rHp = ac.createBiquadFilter();
+    rLp.type = 'lowpass'; rLp.frequency.value = 3600;
+    rHp.type = 'highpass'; rHp.frequency.value = 300;   // keep the bass out of the tail
+    const rev = ac.createConvolver(); rev.buffer = ir(1.9, 2.6);
+    const rG = ac.createGain(); rG.gain.value = 0.55;
+    revIn.connect(rLp); rLp.connect(rev); rev.connect(rHp); rHp.connect(rG); rG.connect(comp);
+    dlyIn = ac.createGain();
+    const dly = ac.createDelay(1), fb = ac.createGain();
+    const dLp = ac.createBiquadFilter(), dG = ac.createGain();
+    dly.delayTime.value = 0.3;                          // retuned to three 16ths per mode
+    fb.gain.value = 0.33; dLp.type = 'lowpass'; dLp.frequency.value = 2600;
+    dG.gain.value = 0.5;
+    dlyIn.connect(dly); dly.connect(dLp); dLp.connect(fb); fb.connect(dly);
+    dLp.connect(dG); dG.connect(comp);
+    dlyNode = dly;
     return ac;
+  }
+  // Noise with an exponential tail is a convincing enough room for a game this size,
+  // and it costs one buffer instead of an impulse file.
+  function ir(sec, decay) {
+    const n = (ac.sampleRate * sec) | 0, b = ac.createBuffer(2, n, ac.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = b.getChannelData(c);
+      for (let i = 0; i < n; i++)
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay) * (i < 240 ? i / 240 : 1);
+    }
+    return b;
   }
   // Browsers only allow audio after a gesture, so every entry point unlocks first.
   function unlock() {
@@ -45,10 +76,17 @@ const SFX = (() => {
   const at = o => o.t != null ? o.t : now() + (o.at || 0);
   function dest(o) {
     const bus = o.bus || busS;
-    if (o.pan == null || !ac.createStereoPanner) return bus;
-    const p = ac.createStereoPanner();
-    p.pan.value = clamp(o.pan, -1, 1); p.connect(bus);
-    return p;
+    let node = bus;
+    if (o.pan != null && ac.createStereoPanner) {
+      const p = ac.createStereoPanner();
+      p.pan.value = clamp(o.pan, -1, 1); p.connect(bus);
+      node = p;
+    }
+    if (!o.rev && !o.dly) return node;
+    const tap = ac.createGain(); tap.connect(node);
+    if (o.rev && revIn) { const g = ac.createGain(); g.gain.value = o.rev; tap.connect(g); g.connect(revIn); }
+    if (o.dly && dlyIn) { const g = ac.createGain(); g.gain.value = o.dly; tap.connect(g); g.connect(dlyIn); }
+    return tap;
   }
   // One swept oscillator with a percussive envelope -- the pitched half of everything.
   function tone(o) {
@@ -188,7 +226,7 @@ const SFX = (() => {
       noise({ f0: 2600, f1: 200, dur: 0.9, gain: 0.14, q: 1.4, pan: p });
       tone({ f0: 74, f1: 74, dur: 1.2, type: 'sine', gain: 0.16, atk: 0.3, at: 0.5, pan: p });
     },
-    // ---- the five basic attacks. Keyed by weapon id, so SFX.cast(wp.id) works for a
+    // ---- the six basic attacks. Keyed by weapon id, so SFX.cast(wp.id) works for a
     // swing exactly as it does for a cast. These are deliberately drier and shorter than
     // the skills: you hear one every half second, and anything with a tail turns into mud.
     kiem(p) {                                          // four light steel strokes
@@ -220,51 +258,181 @@ const SFX = (() => {
         tone({ f0: 220 - i * 14, f1: 90, dur: 0.05, type: 'square', gain: 0.07, at: i * 0.042, pan: p });
       }
     },
+    // Khiên: tiếng trượt chân trước rồi mới tới tiếng va. Năm cái trên đều bắt đầu bằng cú va,
+    // còn ở đây cú va là *hệ quả* của việc lao tới, nên trật tự phải nghe ra đúng thứ tự đó --
+    // và cú va là thứ nặng nhất trong nhóm này vì nó phải nghe như tấm kim loại chứ không như
+    // cái lưỡi. Cái đuôi ngân 0.34 s là ngoại lệ duy nhất của "đừng để có đuôi": mỗi 0.72 s
+    // mới nghe một lần, nên nó có chỗ để ngân mà không thành bùn.
+    khien(p) {
+      noise({ type: 'bandpass', q: 0.9, f0: 300, f1: 900, dur: 0.2, gain: 0.15, atk: 0.12, pan: p });
+      noise({ type: 'lowpass', f0: 2600, f1: 240, dur: 0.14, gain: 0.3, at: 0.2, pan: p });
+      tone({ f0: 132, f1: 46, dur: 0.34, type: 'triangle', gain: 0.24, at: 0.2, pan: p });
+      tone({ f0: 690, f1: 400, dur: 0.09, type: 'square', gain: 0.08, at: 0.21, pan: p });
+    },
   };
-  // ---- procedural score: a drone plus an eight-step minor pentatonic sequence.
-  // Notes are scheduled ahead of the clock (a setInterval that only ever looks
-  // 0.3 s into the future), which is the only way to get steady timing out of a
-  // timer that the game loop can starve.
-  const SEQ = [0, 7, 3, 10, 12, 7, 15, 10];
-  const ROOT = [0, 0, -5, -5, 3, 3, -2, -2];
-  const hz = s => 55 * Math.pow(2, s / 12);
-  let musMode = 'off', musTimer = null, musStep = 0, musT = 0, drone = null;
-  function startDrone() {
-    if (drone || !ac) return;
-    const g = ac.createGain(), lp = ac.createBiquadFilter();
-    const lfo = ac.createOscillator(), lg = ac.createGain();
+  // ---- procedural score --------------------------------------------------
+  // A written eight-bar loop in A minor, four layers deep: plucked synth bass, a
+  // chord pad, a fixed lead melody and a drum kit. Notes are scheduled ahead of the
+  // clock (a setInterval that only ever looks 0.35 s into the future), which is the
+  // only way to get steady timing out of a timer the game loop can starve.
+  //
+  // Two rules earn their keep here. Nothing sustained sits below 82 Hz -- the older
+  // version droned on a 27.5 Hz sawtooth, and a laptop speaker cannot render that
+  // fundamental at all, so all you ever heard was its harmonics buzzing. And every
+  // pitched voice has a real note attack, so the music reads as music instead of as
+  // a hum you notice but cannot name.
+  const hz = s => 55 * Math.pow(2, s / 12);          // hz(0) = A1, hz(36) = A4
+  // [root, third] per bar; the triad is root + [0, third, 7].
+  const CHORD = [[0, 3], [-4, 4], [3, 4], [-2, 4], [0, 3], [-4, 4], [-2, 4], [-5, 4]];
+  //             Am      F        C       G        Am      F        G       E7 -> back to Am
+  const BASS = [0, 0, 0, 12, 0, 0, 7, 12];           // one per 8th, semitones over the root
+  const KICK = [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0];
+  const SNAR = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0];
+  // The melody, bar by bar, as flat [step, semitone over A4, length in 16ths] triples.
+  // Written out rather than generated: a random walk through a pentatonic scale is why
+  // the last one had no tune to remember.
+  const MEL = [
+    [0, 0, 2, 2, 0, 1, 3, 3, 1, 4, 7, 4, 8, 7, 2, 10, 8, 2, 12, 7, 4],
+    [0, 5, 2, 2, 3, 2, 4, 5, 4, 8, 3, 2, 10, 0, 2, 12, 3, 4],
+    [0, 3, 2, 2, 7, 2, 4, 10, 4, 8, 7, 2, 10, 3, 2, 12, 5, 4],
+    [0, 2, 2, 2, 5, 2, 4, 2, 4, 8, -2, 2, 10, 2, 2, 12, 0, 4],
+    [0, 12, 3, 3, 10, 1, 4, 7, 2, 6, 8, 2, 8, 7, 4, 12, 3, 2, 14, 5, 2],
+    [0, 8, 4, 4, 7, 2, 6, 5, 2, 8, 3, 4, 12, 5, 4],
+    [0, 7, 2, 2, 10, 2, 4, 12, 4, 8, 10, 2, 10, 7, 2, 12, 5, 4],
+    [0, 2, 4, 4, 5, 4, 8, 2, 8],
+  ];
+  const STEP = { play: 0.1014, menu: 0.1563 };       // a 16th at 148 / 96 BPM
+  let musMode = 'off', musTimer = null, musStep = 0, musT = 0, arpN = 0;
+  // Two saws a hair apart under a filter that closes as the note decays. The sweep is
+  // the whole trick: it turns a low sawtooth from a buzz into a plucked bass.
+  // Every voice below sums its oscillators to unity before the envelope, so the gain
+  // argument really is the peak -- otherwise a three-oscillator pad is three times
+  // louder than it reads and the bus compressor ducks the gameplay on every downbeat.
+  function mBass(t, f, dur, g) {
     const a = ac.createOscillator(), b = ac.createOscillator();
-    g.gain.value = 0.0001; g.gain.setTargetAtTime(0.13, now(), 1.4);
-    lp.type = 'lowpass'; lp.frequency.value = 380; lp.Q.value = 3;
-    lfo.frequency.value = 0.055; lg.gain.value = 190;
-    lfo.connect(lg); lg.connect(lp.frequency);
+    const mix = ac.createGain(), lp = ac.createBiquadFilter(), gg = ac.createGain();
     a.type = b.type = 'sawtooth';
-    a.frequency.value = hz(-12); b.frequency.value = hz(-12) * 1.004;
-    a.connect(lp); b.connect(lp); lp.connect(g); g.connect(busM);
-    a.start(); b.start(); lfo.start();
-    drone = { a, b, lfo, g };
+    a.frequency.value = f; b.frequency.value = f; b.detune.value = -9;
+    mix.gain.value = 0.5;
+    lp.type = 'lowpass'; lp.Q.value = 5;
+    lp.frequency.setValueAtTime(Math.min(f * 11, 5000), t);
+    lp.frequency.exponentialRampToValueAtTime(Math.max(f * 2.2, 130), t + dur * 0.9);
+    gg.gain.setValueAtTime(0.0001, t);
+    gg.gain.exponentialRampToValueAtTime(g, t + 0.008);
+    gg.gain.exponentialRampToValueAtTime(g * 0.5, t + dur * 0.6);
+    gg.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    a.connect(mix); b.connect(mix); mix.connect(lp); lp.connect(gg); gg.connect(busM);
+    a.start(t); b.start(t); a.stop(t + dur + 0.02); b.stop(t + dur + 0.02);
   }
-  function stopDrone() {
-    if (!drone) return;
-    const d = drone; drone = null;
-    d.g.gain.setTargetAtTime(0.0001, now(), 0.35);
-    setTimeout(() => { try { d.a.stop(); d.b.stop(); d.lfo.stop(); } catch (e) {} }, 1400);
+  // One chord tone: two detuned saws plus a quiet octave, opening and closing across
+  // the bar. Mostly pushed into the room -- the pad is the layer that makes the other
+  // three sound like they are standing in the same place.
+  function mPad(t, f, dur, g, pan) {
+    const lp = ac.createBiquadFilter(), gg = ac.createGain();
+    lp.type = 'lowpass'; lp.Q.value = 0.6;
+    lp.frequency.setValueAtTime(900, t);
+    lp.frequency.linearRampToValueAtTime(1600, t + dur * 0.45);
+    lp.frequency.linearRampToValueAtTime(1000, t + dur);
+    // [detune in cents, frequency multiple, waveform, level]
+    for (const v of [[-7, 1, 'sawtooth', 0.43], [7, 1, 'sawtooth', 0.43], [0, 2, 'triangle', 0.14]]) {
+      const o = ac.createOscillator(), og = ac.createGain();
+      o.type = v[2]; o.frequency.value = f * v[1]; o.detune.value = v[0];
+      og.gain.value = v[3];
+      o.connect(og); og.connect(lp); o.start(t); o.stop(t + dur + 0.05);
+    }
+    gg.gain.setValueAtTime(0.0001, t);
+    gg.gain.exponentialRampToValueAtTime(g, t + dur * 0.3);
+    gg.gain.exponentialRampToValueAtTime(g * 0.55, t + dur * 0.8);
+    gg.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    lp.connect(gg); gg.connect(dest({ bus: busM, rev: 0.55, pan }));
   }
+  // Lead: triangle for the body, a little square for the edge, and a vibrato that only
+  // opens after the attack, so held notes sing while the short ones stay clean.
+  function mLead(t, f, dur, g) {
+    const lp = ac.createBiquadFilter(), gg = ac.createGain();
+    const lfo = ac.createOscillator(), lg = ac.createGain();
+    lp.type = 'lowpass'; lp.frequency.value = 3400; lp.Q.value = 0.8;
+    lfo.frequency.value = 5.4;
+    lg.gain.setValueAtTime(0, t);
+    lg.gain.linearRampToValueAtTime(7, t + Math.min(0.26, dur * 0.7));
+    lfo.connect(lg);
+    // [waveform, level, detune in cents]
+    for (const v of [['triangle', 0.78, 0], ['square', 0.22, 6]]) {
+      const o = ac.createOscillator(), og = ac.createGain();
+      o.type = v[0]; o.frequency.value = f; o.detune.value = v[2];
+      og.gain.value = v[1]; lg.connect(o.detune);
+      o.connect(og); og.connect(lp); o.start(t); o.stop(t + dur + 0.07);
+    }
+    gg.gain.setValueAtTime(0.0001, t);
+    gg.gain.exponentialRampToValueAtTime(g, t + 0.014);
+    gg.gain.exponentialRampToValueAtTime(g * 0.7, t + dur * 0.7);
+    gg.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.05);
+    lp.connect(gg); gg.connect(dest({ bus: busM, rev: 0.3, dly: 0.22, pan: 0.06 }));
+    lfo.start(t); lfo.stop(t + dur + 0.07);
+  }
+  // Kit. The kick is pitched down an octave in 75 ms, which is the only reason a sine
+  // reads as a drum, and it comes with a noise click so it survives a small speaker.
+  function mKick(t, g) {
+    const o = ac.createOscillator(), gg = ac.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(190, t);
+    o.frequency.exponentialRampToValueAtTime(50, t + 0.075);
+    gg.gain.setValueAtTime(0.0001, t);
+    gg.gain.exponentialRampToValueAtTime(g, t + 0.005);
+    gg.gain.exponentialRampToValueAtTime(0.0001, t + 0.19);
+    o.connect(gg); gg.connect(busM);
+    o.start(t); o.stop(t + 0.21);
+    noise({ t, type: 'highpass', f0: 2400, dur: 0.02, gain: g * 0.16, bus: busM });
+  }
+  function mSnare(t, g) {
+    noise({ t, type: 'bandpass', q: 0.9, f0: 2100, f1: 1100, dur: 0.13, gain: g, bus: busM, rev: 0.3 });
+    tone({ t, f0: 215, f1: 160, dur: 0.07, type: 'triangle', gain: g * 0.5, bus: busM });
+  }
+  function mHat(t, g, open) {
+    noise({ t, type: 'highpass', f0: open ? 6200 : 7600, dur: open ? 0.12 : 0.028,
+            gain: g, bus: busM, pan: 0.18, rev: open ? 0.25 : 0 });
+  }
+  // The arrangement. Sixteen bars long, not eight: the second pass through the chords
+  // adds the layers the first one held back, so a long fight does not loop audibly
+  // every thirteen seconds. `menu` is the same music with the kit and the bass line
+  // taken out -- the same key, so entering a fight is a lift and not a cut.
   function musicTick() {
     if (!ac || musMode === 'off') return;
     if (ac.state !== 'running') { musT = 0; return; }        // suspended: do not pile notes up
-    const dur = musMode === 'play' ? 0.27 : 0.44;
+    const stp = STEP[musMode] || 0.12, play = musMode === 'play', bar = stp * 16;
     if (musT < now()) musT = now() + 0.06;
-    while (musT < now() + 0.3) {
-      const s = musStep & 7, bar = (musStep >> 3) & 7, r = ROOT[bar], t = musT;
-      if (s === 0) tone({ t, f0: hz(r - 12), dur: dur * 6, gain: 0.2, atk: 0.06, bus: busM });
-      if (s === 0 || s === 3 || s === 5 || (musMode === 'play' && s === 6))
-        tone({ t, f0: hz(SEQ[s] + r + 12), dur: dur * 2.2, type: 'triangle', gain: 0.07, atk: 0.02, bus: busM });
-      if (musMode === 'play') {
-        if (s === 0 || s === 4) tone({ t, f0: 115, f1: 45, dur: 0.15, gain: 0.26, bus: busM });
-        if (s & 1) noise({ t, type: 'highpass', f0: 5400, dur: 0.045, gain: 0.03, bus: busM });
+    while (musT < now() + 0.35) {
+      const s = musStep & 15, bi = (musStep >> 4) & 7, cyc = (musStep >> 7) & 1;
+      const root = CHORD[bi][0], third = CHORD[bi][1];
+      const t = musT + ((s & 1) ? stp * 0.07 : 0);          // a hair of swing off the beat
+      if (s === 0) {                                        // one chord per bar, voiced wide
+        const v = play ? 0.05 : 0.085;
+        mPad(t, hz(root + 24), bar * 1.06, v, 0);
+        mPad(t, hz(root + third + 24), bar * 1.06, v * 0.8, -0.35);
+        mPad(t, hz(root + 31), bar * 1.06, v * 0.8, 0.35);
       }
-      musStep++; musT += dur;
+      if (play) {
+        if (!(s & 1)) mBass(t, hz(root + 12 + BASS[s >> 1]), stp * 1.7, 0.14);
+        if (KICK[s]) mKick(t, 0.22);
+        if (SNAR[s]) mSnare(t, 0.08);
+        if ((bi === 3 || bi === 7) && (s === 10 || s === 14)) mSnare(t, 0.065);  // fill into the turn
+        if (!(s & 1)) mHat(t, s % 4 === 0 ? 0.026 : 0.018, cyc === 1 && s === 14);
+        else if (cyc) mHat(t, 0.011);
+      } else if (s === 0 || s === 8) {
+        mBass(t, hz(root + 12), stp * 6, 0.115);
+      }
+      if (play || cyc) {                                    // the tune
+        const mel = MEL[bi];
+        for (let i = 0; i < mel.length; i += 3)
+          if (mel[i] === s) mLead(t, hz(mel[i + 1] + 36), stp * mel[i + 2] * 0.95, play ? 0.085 : 0.075);
+      }
+      // Broken chord: the menu's main voice, and the battle loop's second-pass counter-line.
+      if (play ? (cyc === 1 && (s & 1)) : (s === 0 || s === 3 || s === 6 || s === 8 || s === 11 || s === 14)) {
+        const deg = [0, third, 7, 12, 7, third][arpN++ % 6];
+        tone({ t, f0: hz(root + 24 + deg), dur: stp * 2.4, type: 'triangle', atk: 0.005,
+               gain: play ? 0.022 : 0.055, bus: busM, dly: 0.3, rev: 0.3, pan: -0.22 });
+      }
+      musStep++; musT += stp;
     }
   }
   function music(mode) {
@@ -272,14 +440,14 @@ const SFX = (() => {
     if (mode === musMode) return;
     musMode = mode;
     if (mode === 'off') {
-      stopDrone();
       if (musTimer) { clearInterval(musTimer); musTimer = null; }
-      return;
+      return;                                               // nothing is held: the tail rings out
     }
-    musT = now() + 0.1;
-    startDrone();
-    if (!musTimer) musTimer = setInterval(musicTick, 80);
+    musStep = 0; arpN = 0; musT = now() + 0.12;             // every entrance starts on bar one
+    if (dlyNode) dlyNode.delayTime.setTargetAtTime((STEP[mode] || 0.12) * 3, now(), 0.05);
+    if (!musTimer) musTimer = setInterval(musicTick, 60);
   }
+
 
   return {
     unlock,

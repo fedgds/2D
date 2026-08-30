@@ -1,4 +1,4 @@
-// Kiểm năm cơ chế riêng của năm vũ khí, không cần browser.
+// Kiểm sáu cơ chế riêng của sáu vũ khí, không cần browser.
 //
 // Chạy: node tools/check-weapons.js
 //
@@ -362,7 +362,7 @@ eq('găng tầm ngắn nhất', gang.range <= Math.min(...LAB.WEAPONS.map(x => x
 }
 {
   // Bốn vũ khí kia không cắt được gì -- đây là trục counterplay riêng của găng.
-  for (const id of ['kiem', 'dao', 'luoi-hai']) {
+  for (const id of ['kiem', 'dao', 'luoi-hai', 'khien']) {
     const w = bench(id);
     const f = target(w, 'brute', 20, 0);
     f.frozen = 0;
@@ -453,6 +453,115 @@ eq('đao đỡ đòn', dao.guard < 1, true);
   eq('vung xong thì hết đỡ', LAB.hitHero(w, 100, [1, 1, 1]), 100);
 }
 
+// ---- 6. Khiên: lao lên ------------------------------------------------------------
+console.log('\n-- khiên · lao lên --');
+const khien = WP.khien;
+eq('khiên có cú lao', !!khien.lunge, true);
+eq('khiên đỡ đòn', khien.guard < 1, true);
+eq('khiên hẩy mạnh nhất', khien.push >= Math.max(...LAB.WEAPONS.map(x => x.push)), true);
+eq('nhịp sau hẩy mạnh hơn nhịp trước', khien.pushStep > 0, true);
+// Chân phải đứng lại *trước* khi cạnh khiên tới, bằng không cú đánh xuất phát giữa lúc trượt
+// và cả đòn đọc ra thành húc chứ không thành đánh.
+eq('lao xong mới tới nhịp đầu', khien.lunge.dur < khien.hits[0] / khien.fps, true);
+// Cú lao phải đọc ra là trườn tới, không phải dịch chuyển: nhanh hơn đi bộ nhưng chậm hơn hẳn
+// lướt né, vì nếu bằng lướt né thì đòn đánh thường đã gồm luôn cú né.
+{
+  const spd = khien.lunge.len / khien.lunge.dur;
+  console.log('     tốc lao ' + spd.toFixed(0) + ' px/s · lướt né '
+              + (LAB.DASH_LEN / LAB.DASH_DUR).toFixed(0) + ' px/s');
+  eq('lao nhanh hơn đi bộ', spd > 56, true);
+  eq('lao chậm hơn lướt né', spd < LAB.DASH_LEN / LAB.DASH_DUR, true);
+}
+// `null` cho inp: không có WASD nào bấm, nên mọi chỗ hero dịch được đều là do chính nhát đánh.
+// Chạy dài hơn `lunge.dur` vài khung để cú trượt kết thúc trọn vẹn trong lúc đo.
+function lunged(id, dx, dy, mut) {
+  const w = bench(id);
+  if (mut) mut(w);
+  const x0 = w.hero.x, y0 = w.hero.y;
+  LAB.swing(w, w.hero.x + dx, w.hero.y + dy);
+  for (let i = 0, n = Math.ceil(khien.lunge.dur * 60) + 3; i < n; i++) LAB.step(w, 1 / 60, null);
+  return { w, dx: w.hero.x - x0, dy: w.hero.y - y0 };
+}
+const noLunge = Object.assign({}, khien); delete noLunge.lunge;
+{
+  const R = lunged('khien', 40, 0);
+  console.log('     lao sang phải: ' + R.dx.toFixed(1) + ' / ' + R.dy.toFixed(1) + ' px');
+  near('đi đúng len px theo hướng ngắm', R.dx, khien.lunge.len, 0.5);
+  near('không lệch ngang', R.dy, 0, 1e-6);
+  // Cùng bảng số, cùng input, khác đúng một trường: chứng minh cú đi là của `lunge` chứ không
+  // của riêng con khiên -- vũ khí thứ bảy chỉ cần thêm trường ấy là có cú lao.
+  const N = lunged('khien', 40, 0, w => { w.wp = noLunge; });
+  eq('bỏ trường lunge thì đứng yên', N.dx, 0);
+  const K = lunged('kiem', 40, 0);
+  eq('vũ khí khác không tự đi', K.dx === 0 && K.dy === 0, true);
+  // Trục dọc phải mang squash: thế giới nhìn 3/4, lao lên bắc mà đi đủ 36 px thì hero trượt ra
+  // khỏi chính tấm hiệu ứng của mình.
+  const U = lunged('khien', 0, -60);
+  near('lao lên bắc thì ngắn lại đúng squash', U.dy, -khien.lunge.len * khien.squash, 0.5);
+  near('lao lên bắc không lệch ngang', U.dx, 0, 1e-6);
+  const L = lunged('khien', -40, 0);
+  near('lao sang trái là đi ngược lại', L.dx, -khien.lunge.len, 0.5);
+}
+{
+  // Lao vào tường thì dừng ở tường: `step` kẹp `h.dsh` vào đúng BOUND mà bước đi vẫn dùng, nên
+  // chuyện này không cần mã mới -- nhưng nó là chỗ dễ mất nhất nếu ai đó tự viết lại cú lướt.
+  const w = bench('khien');
+  w.hero.x = LAB.BOUND.x1 - 10;
+  LAB.swing(w, w.hero.x + 40, w.hero.y);
+  for (let i = 0; i < 20; i++) LAB.step(w, 1 / 60, null);
+  near('dừng đúng ở mép sân', w.hero.x, LAB.BOUND.x1, 1e-6);
+}
+{
+  // Cú lao *không* cho bất tử và *không* tiêu hồi chiêu của lướt né. Đây là ranh giới giữ cho
+  // ba slot chiêu còn ý nghĩa: nếu đòn đánh thường đã né được đòn thì chẳng ai cần lướt nữa.
+  const w = bench('khien');
+  w.hero.inv = 0;
+  LAB.swing(w, w.hero.x + 40, w.hero.y);
+  let iv = 0;
+  for (let i = 0; i < 20; i++) { LAB.step(w, 1 / 60, null); iv = Math.max(iv, w.hero.inv); }
+  eq('lao không cho bất tử', iv, 0);
+  eq('lao không tiêu hồi lướt né', w.dcd, 0);
+  const w2 = bench('khien');
+  LAB.dash(w2, 1, 0);
+  eq('còn lướt né mới có bất tử', w2.hero.inv > 0, true);
+}
+{
+  // Tầm hiệu dụng là `len + range` mà không có trường tầm thứ hai: `swingOrigin` đọc chỗ hero
+  // đang đứng ở từng khung, nên cái nón sát thương tự đi theo chân. Con quái đứng ngoài tầm
+  // lúc bấm và trong tầm lúc cạnh khiên tới -- bỏ trường `lunge` là nó không bị gì.
+  const far = khien.range + khien.lunge.len * 0.55;
+  function reach(mut) {
+    const w = bench('khien');
+    if (mut) mut(w);
+    const f = target(w, 'slime', far, 0);
+    f.hp = f.maxhp = 1e6;
+    LAB.swing(w, w.hero.x + far, w.hero.y);
+    for (let i = 0; i < 60; i++) LAB.step(w, 1 / 60, null);
+    return Math.round(1e6 - f.hp);
+  }
+  const withL = reach(null), without = reach(w => { w.wp = noLunge; });
+  console.log('     bia ở ' + far.toFixed(0) + 'px: có lao ' + withL + ' · không lao ' + without);
+  eq('cú lao mang cả hộp sát thương đi theo', withL > 0, true);
+  eq('đứng tại chỗ thì với không tới', without, 0);
+}
+{
+  // Giương khiên: cùng đúng trường `guard` mà đao dùng, nên chỉ cần chứng minh cửa sổ mở đúng
+  // bằng bề dài nhát vung và đỡ tốt hơn đao. God mode phải tắt và bất tử phải bằng 0, bằng
+  // không đòn bị né và phép nhân không bao giờ chạy tới.
+  eq('khiên đỡ tốt hơn đao', khien.guard < dao.guard, true);
+  const w = bench('khien');
+  w.god = false; w.hero.inv = 0;
+  LAB.swing(w, w.hero.x + 40, w.hero.y);
+  LAB.step(w, 1 / 60, null);
+  eq('đang vung', !!w.sw, true);
+  eq('vung thì chịu ít đòn', LAB.hitHero(w, 100, [1, 1, 1]), Math.round(100 * khien.guard));
+  while (w.sw) LAB.step(w, 1 / 60, null);
+  w.hero.inv = 0;
+  eq('vung xong thì hết đỡ', LAB.hitHero(w, 100, [1, 1, 1]), 100);
+  // Và hết vung là hero lấy lại chân: `h.dsh` phải cạn từ lâu trước khi tấm sheet chạy hết.
+  eq('vung xong hero tự đi được', w.hero.dsh <= 0, true);
+}
+
 // ---- bảng chỉ số hiển thị --------------------------------------------------------
 console.log('\n-- chỉ số hiển thị --');
 for (const wp of LAB.WEAPONS) {
@@ -509,6 +618,12 @@ draws('vẽ được cửa sổ chuỗi', w => {
 });
 draws('vẽ được vòng đỡ đòn', w => {
   w.wp = WP.dao;
+  LAB.swing(w, w.hero.x + 40, w.hero.y);
+});
+// Vệt lao chỉ tồn tại khi chỗ đứng lúc bấm khác chỗ đang đứng, nên nó là một nhánh vẽ có điều
+// kiện -- và một nhánh chưa bao giờ chạy là một nhánh chưa được kiểm.
+draws('vẽ được vệt lao', w => {
+  w.wp = WP.khien;
   LAB.swing(w, w.hero.x + 40, w.hero.y);
 });
 

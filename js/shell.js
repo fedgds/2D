@@ -427,8 +427,8 @@ if (typeof document !== 'undefined') {
     mpGrid.appendChild(t.b);
     return t;
   });
-  // Tab cycles arenas, and the digits stay with the weapons: there are five weapons and a
-  // growing number of maps, so the key that has to scale is the one the maps get.
+  // Tab cycles arenas, and the digits stay with the weapons: the weapon list is short enough
+  // that a digit each still fits, so the key that has to scale is the one the maps get.
   function cycleMap(step) {
     const at = MAPS.findIndex(m => m.id === loadout.map);
     setMap(MAPS[(at + step + MAPS.length) % MAPS.length].id);
@@ -505,6 +505,12 @@ if (typeof document !== 'undefined') {
   ART.preload(() => artNote());
 
   // The guide lists the live tables, so a new weapon or skill shows up in it for free.
+  // Hai chỗ đếm vũ khí bằng chữ cũng lấy từ đây, vì một con số viết tay trong HTML là chỗ duy
+  // nhất còn lại có thể nói khác bảng.
+  for (const id of ['wpCount', 'wpGuideHead']) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = el.textContent.replace(/\d+/, WEAPONS.length);
+  }
   const guideWeapons = document.getElementById('guideWeapons');
   WEAPONS.forEach((wp, i) => {
     const row = document.createElement('div');
@@ -567,6 +573,7 @@ if (typeof document !== 'undefined') {
       case 'resume': SFX.ui('click'); setScene('play'); break;
       case 'guide': SFX.ui('click'); setScene('guide'); break;
       case 'mobile': SFX.ui('click'); setMob(!mobOn); break;
+      case 'sharp': SFX.ui('click'); setSharp(!sharpOn); break;
       case 'touch': SFX.ui('click'); setScene('touch'); break;
       case 'treset': SFX.ui('back'); resetTcfg(); break;
       case 'back': SFX.ui('back'); setScene(backTo); break;
@@ -847,12 +854,23 @@ if (typeof document !== 'undefined') {
     for (let n = 0; n < BAR_N; n++) {
       const { weapon, isDash, sk, theme } = slotInfo(n);
       // Ngắm được: mọi thứ có *hướng* để chọn. Lướt né có -- và tầm của nó ngắn hơn hẳn ba skill,
-      // đúng 62 px mà `dash()` thật sự đi. Chỉ đánh thường thì không: nó tự chọn con quái gần nhất
-      // và bấm liên tục, thêm một nhịp chờ nhả tay vào đó là làm chậm đúng nhịp nền của cả trận.
+      // đúng 62 px mà `dash()` thật sự đi.
       //
       // Chạm-rồi-nhả *không kéo* vẫn ra đòn ngay như cũ (xem `hold.drag` trong holdEnd), nên cú né
       // gấp không mất gì: chỉ khi ngón đi quá AIM_DEAD thì đây mới thành một cú ngắm.
-      const aimable = !weapon && (isDash || sk.mode !== 'self');
+      //
+      // Đánh thường thì chỉ hai vũ khí *ném một thứ đi* hoặc *tự mang hero đi*: cung (`shot`) bật ba
+      // mũi bay 210 px xuyên qua cả hàng, khiên (`lunge`) lao hero 36 px vào giữa chỗ nó nhắm. Với
+      // hai cái đó "con gần nhất" của `touchAim()` là một câu trả lời sai: một hàng quái xếp dọc chỉ
+      // ăn đủ ba mũi khi trục bắn nằm trên hàng, và một cú lao là *chỗ mình sẽ đứng* -- lao vào con
+      // gần nhất trong lúc nó đứng giữa vùng nổ là đúng thứ người chơi đang cố thoát ra. Bốn vũ khí
+      // cận chiến kia đứng tại chỗ mà quét một cái nón rộng 1,05-2,25 rad, nên con gần nhất luôn là
+      // câu trả lời đúng và một cử chỉ ngắm thêm vào chỉ là một cử chỉ thừa.
+      //
+      // Đọc *cơ chế* (`shot`/`lunge`), không đọc tên vũ khí: thêm cây cung thứ hai là nó ngắm được
+      // luôn, và không có bảng id nào ở đây để quên cập nhật.
+      const wpAim = weapon && !!(sk.shot || sk.lunge);
+      const aimable = wpAim || (!weapon && (isDash || sk.mode !== 'self'));
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'tb';
@@ -861,7 +879,7 @@ if (typeof document !== 'undefined') {
       b.style.setProperty('--deep', theme[2]);
       b.setAttribute('aria-label',
         (weapon ? 'Đánh thường: ' : isDash ? 'Lướt né: ' : `Skill ${n}: `) + sk.name
-        + (aimable ? ' (giữ để ngắm)' : ''));
+        + (wpAim ? ' (giữ để đánh liên tục, kéo để ngắm hướng)' : aimable ? ' (giữ để ngắm)' : ''));
       const icon = document.createElement('canvas');
       icon.width = 32; icon.height = 32; icon.setAttribute('aria-hidden', 'true');
       if (weapon) drawWeaponIcon(icon, sk); else drawSkillIcon(icon, sk);
@@ -878,24 +896,51 @@ if (typeof document !== 'undefined') {
         // mặc định, còn chỗ ngón cái với tới thật thì mỗi bàn tay một khác -- và dời cả cụm không
         // nói được "lướt né sang hẳn mép trái, ba skill sát nhau lại".
         if (tedit) { editDown(n, ev); return; }
+        // Đánh thường ngắm *trong lúc đang đánh*, không phải ngắm rồi mới đánh: cú chạm ra nhát đầu
+        // ngay tại đây (đúng nguyên văn hành vi cũ, vì holdTrack dưới AIM_DEAD trả về `touchAim()`),
+        // rồi ngón kéo đi là *những nhát sau* đổi hướng theo. Nhả tay chỉ để dừng.
+        //
+        // Làm ngược lại -- nhả tay mới ra đòn như ba skill -- là cắm một nhịp chờ vào đúng nhịp nền
+        // của cả trận: đánh thường là thứ bấm liên tục suốt cả phút, và 0,1 giây chờ nhả nhân với
+        // mấy trăm nhát là một game khác.
+        if (n === 0) {
+          atkHeld = true;
+          if (wpAim) holdStart(n, b, ev);
+          fire(n);
+          return;
+        }
         if (aimable) { holdStart(n, b, ev); return; }
-        if (n === 0) atkHeld = true;
         fire(n);
       });
-      if (aimable) {
+      if (n === 0) {
+        // Giữ nút đánh thường thì frame() tự đánh tiếp mỗi lần hết hồi (xem `atkHeld` dưới):
+        // bấm nhả cho đúng nhịp 0.3 giây là việc của máy, không phải của ngón tay.
+        //
+        // holdEnd(false): nhả tay *tắt* vòng ngắm chứ không tung thêm một nhát nữa -- ngược hẳn với
+        // ba skill, ở đó nhả tay chính là lệnh tung chiêu.
+        //
+        // Chỉ tắt khi lần giữ đang chạy *đúng là* của ngón này: `hold` chỉ có một chỗ, nên chạm vào
+        // một skill trong lúc còn giữ đánh thường là lần giữ đó bị nhường lại cho skill (đánh thường
+        // rơi về ngắm tự động, vẫn đánh tiếp). Không kiểm ngón thì nhấc ngón phải khỏi nút đánh sẽ
+        // xoá luôn vòng ngắm mà ngón kia đang kéo dở.
+        const up = ev => {
+          atkHeld = false;
+          if (hold.wp && ev.pointerId === hold.id) holdEnd(false);
+        };
+        b.addEventListener('pointerup', up);
+        b.addEventListener('pointercancel', up);
+        // pointermove để kéo ngắm; và lúc đó *không* gắn pointerleave: holdStart đã bắt con trỏ về
+        // nút nên biên không còn sinh sự kiện nữa, mà kéo ngón ra khỏi nút để chọn hướng lại là
+        // đúng thao tác đang làm -- huỷ đòn ở đó là huỷ đúng lúc người chơi vừa ngắm xong.
+        if (wpAim) b.addEventListener('pointermove', holdMove);
+        else b.addEventListener('pointerleave', up);
+      } else if (aimable) {
         b.addEventListener('pointermove', holdMove);
         b.addEventListener('pointerup', holdUp);
         // pointercancel là hệ điều hành lấy lại ngón (cuộc gọi tới, cử chỉ hệ thống). Đó *không*
         // phải lệnh tung chiêu, nên nó huỷ chứ không nhả -- mất chiêu vì có người gọi điện là
         // mất một lần hồi chiêu mà người chơi không hề bấm.
         b.addEventListener('pointercancel', () => holdEnd(false));
-      } else if (n === 0) {
-        // Giữ nút đánh thường thì frame() tự đánh tiếp mỗi lần hết hồi (xem `atkHeld` dưới):
-        // bấm nhả cho đúng nhịp 0.3 giây là việc của máy, không phải của ngón tay.
-        const up = () => { atkHeld = false; };
-        b.addEventListener('pointerup', up);
-        b.addEventListener('pointercancel', up);
-        b.addEventListener('pointerleave', up);
       }
       tacts.appendChild(b);
       tbtn.push(b);
@@ -940,7 +985,26 @@ if (typeof document !== 'undefined') {
   // sang phải" là mất một chiêu. Kéo hết AIM_DRAG lần bề rộng nút thì tới tầm xa nhất; lấy theo
   // cỡ nút nên máy màn to hay nhỏ đều cùng một cử chỉ.
   const AIM_DEAD = 12, AIM_DRAG = 2.0, AIM_MAX = 150;
-  const hold = { on: false, n: -1, id: -1, el: null, ox: 0, oy: 0, cx: 0, cy: 0, drag: false };
+  // Tầm vòng ngắm của đánh thường: chỗ đòn *thật sự* tới. Cung lấy `shot.max`, khiên lấy quãng lao
+  // cộng nhát quét ở cuối, thứ gì không có cả hai thì lấy tầm quét.
+  //
+  // Kẹp ở AIM_MAX vì khung hình 320x180: một ellipse 210 x 151 không có *điểm nào* nằm trong khung
+  // (muốn thế phải cos < 0,76 và sin < 0,6 cùng lúc), nên vẽ 210 thật là vẽ ra một vòng không bao
+  // giờ thấy được và đẩy cả ba mũi chỉ hướng ra ngoài màn. Kẹp lại không hứa sai gì cả: chiêu 'dir'
+  // chỉ đọc *góc* từ điểm ngắm, tầm là con số không ai đọc -- đúng lý do ba skill 'dir' cũng dùng
+  // chung một AIM_MAX chứ không mỗi chiêu một tầm.
+  function wpAimR(wp) {
+    return Math.min(AIM_MAX, wp.shot ? wp.shot.max : wp.lunge ? wp.lunge.len + wp.range : wp.range);
+  }
+  const hold = { on: false, n: -1, id: -1, el: null, ox: 0, oy: 0, cx: 0, cy: 0,
+                 drag: false, wp: false };
+  // Bật/tắt viền sáng "đang ngắm" theo cờ `drag`, và chỉ ghi DOM khi cờ *đổi*: holdTrack chạy mỗi
+  // khung, còn class thì chỉ đổi vài lần mỗi lần giữ.
+  function holdDrag(on) {
+    if (hold.drag === on) return;
+    hold.drag = on;
+    if (hold.wp && hold.el) hold.el.classList.toggle('aiming', on);
+  }
   // Thứ render.js đọc để vẽ. `world.aimUI` không tồn tại lúc chạy trong node vm, nên ở đó
   // `drawAimCue` là một lệnh không làm gì -- không có nhánh nào phải thêm cho harness.
   //
@@ -951,16 +1015,25 @@ if (typeof document !== 'undefined') {
                   r: AIM_MAX, ky: GSQ, col: 0 };
   function holdStart(n, el, ev) {
     if (scene !== 'play' || paused) return;
-    const { isDash, gi, sk, theme } = slotInfo(n);
+    const { weapon, isDash, gi, sk, theme } = slotInfo(n);
     // Chiêu đang hồi thì không vào chế độ ngắm: ngắm xong mới biết mình bấm không được là mất
     // đúng cái nhịp vừa dùng để ngắm. Lướt né đếm hồi ở `world.dcd` chứ không trong `world.cds`.
-    if ((isDash ? world.dcd : world.cds[gi]) > 0) { SFX.blocked(); return; }
+    //
+    // Đánh thường thì *không* xét: giữ nút xuyên qua khoảng hồi 0,3 giây chính là cách nó chạy
+    // (frame() tự đánh tiếp mỗi lần `world.wcd` cạn), nên chối ở đây là chối đúng ngón tay đang
+    // giữ đúng -- và kèm một tiếng "bấm không được" cho một cú bấm hoàn toàn hợp lệ.
+    if (!weapon && (isDash ? world.dcd : world.cds[gi]) > 0) { SFX.blocked(); return; }
     if (hold.on) holdEnd(false);
     hold.on = true; hold.n = n; hold.id = ev.pointerId; hold.el = el; hold.drag = false;
+    hold.wp = weapon;
     hold.ox = ev.clientX; hold.oy = ev.clientY;
     hold.cx = ev.clientX; hold.cy = ev.clientY;
     try { el.setPointerCapture(ev.pointerId); } catch (e) { /* không bắt được thì thôi */ }
-    el.classList.add('aiming');
+    // Ba skill với lướt né sáng viền ngay từ cú chạm, vì với chúng chạm *là* đã vào ngắm. Đánh
+    // thường thì cú chạm là một nhát đánh, và thứ phải thấy ở đó là nút lún xuống (`.tb:active`,
+    // mà `.aiming` đứng sau trong CSS nên sẽ đè mất) -- viền để `holdDrag()` bật lúc ngón đã kéo,
+    // tức là đúng lúc nó có một chuyện mới để nói.
+    if (!weapon) el.classList.add('aiming');
     sel = n; paint();
     aimUI.on = true;
     // Lướt né vẽ như chiêu 'point' -- có một tâm ngắm, vì thứ người chơi muốn thấy là *chỗ chân sẽ
@@ -971,10 +1044,18 @@ if (typeof document !== 'undefined') {
     // trên sàn. Hai con số này là lý do vòng của lướt né nhỏ hơn hẳn vòng của ba skill: nó không
     // phải một lựa chọn thẩm mỹ mà là đúng tập những chỗ chân hạ xuống được. Một vòng ngắm hứa xa
     // hơn chỗ thật, trên một chiêu mà cả công dụng là ra khỏi vùng nổ, là một cái bẫy.
-    aimUI.mode = isDash ? 'point' : sk.mode;
-    aimUI.fix = isDash || sk.mode === 'dir';
-    aimUI.r = isDash ? DASH_LEN : AIM_MAX;
-    aimUI.ky = isDash ? 0.75 : GSQ;
+    //
+    // Đánh thường luôn là 'dir' + `fix`: `swing()` chỉ đọc *góc* ra khỏi điểm ngắm, kéo xa hay gần
+    // không đổi gì -- ba mũi vẫn bay hết 210 px, cú lao vẫn đi hết 36 px.
+    //
+    // `ky` của nó lấy đúng `wp.squash`, không lấy GSQ: 0,72 là hệ số mà `swing()` chia vào trục y để
+    // ra `e.ang`, nên vẽ bằng nó thì *hướng ngón kéo bằng đúng hướng đòn sẽ đi*, và dải sáng nằm
+    // đúng trên đường bay của mũi tên / đường lao của khiên. Vẽ bằng GSQ là lệch góc, và lệch nặng
+    // nhất ở các hướng chéo -- đúng chỗ người chơi phải ngắm.
+    aimUI.mode = weapon ? 'dir' : isDash ? 'point' : sk.mode;
+    aimUI.fix = weapon || isDash || sk.mode === 'dir';
+    aimUI.r = weapon ? wpAimR(sk) : isDash ? DASH_LEN : AIM_MAX;
+    aimUI.ky = weapon ? sk.squash : isDash ? 0.75 : GSQ;
     aimUI.col = hexc(theme[0]);
     world.aimUI = aimUI;
     holdTrack(ev.clientX, ev.clientY);
@@ -993,12 +1074,12 @@ if (typeof document !== 'undefined') {
       // rồi kéo về lại đây cũng là quay về đúng cú chạm đó: đổi ý vẫn còn kịp.
       const a = touchAim();
       aimUI.k = 0; aimUI.x = a.x; aimUI.y = a.y;
-      hold.drag = false;
+      holdDrag(false);
       return aimUI;
     }
     // Chiêu 'dir' (và lướt né) chỉ cần *hướng*: kéo dài thêm không có nghĩa gì, nên nó luôn chỉ hết
     // tầm và cái người chơi điều khiển là góc. Chiêu 'point' thì kéo bao xa là nổ bấy xa.
-    hold.drag = true;
+    holdDrag(true);
     const k = aimUI.fix ? 1 : c01((l - AIM_DEAD) / span);
     aimUI.k = k;
     aimUI.x = h.x + dx / l * aimUI.r * k;
@@ -1022,6 +1103,7 @@ if (typeof document !== 'undefined') {
     if (!hold.on) return;
     const n = hold.n, el = hold.el, drag = hold.drag, at = { x: aimUI.x, y: aimUI.y };
     hold.on = false; hold.n = -1; hold.id = -1; hold.el = null; hold.drag = false;
+    hold.wp = false;
     aimUI.on = false;
     if (el) el.classList.remove('aiming');
     // Chạm rồi nhả mà *không kéo* thì không truyền điểm nào: để `fire()` tự lấy như một cú chạm
@@ -1154,6 +1236,23 @@ if (typeof document !== 'undefined') {
     paintMob();
   }
 
+  // Độ nét. Khác mọi công tắc còn lại ở một điểm: nó *không* đổi được giữa phiên. RENDER_SCALE đi
+  // vào cỡ của `buf` và `FLOOR` ngay lúc js/core.js chạy, nên đổi tại chỗ là hai bộ đệm lệch cỡ
+  // nhau và mọi chỉ số điểm ảnh trong game trỏ sai. Vì vậy: ghi localStorage rồi nạp lại trang --
+  // và cũng vì thế nút chỉ có ở menu chính, nơi chưa có ván nào để mất.
+  const btnSharp = document.getElementById('btnSharp');
+  let sharpOn = RENDER_SCALE > 1;
+  function paintSharp() {
+    btnSharp.textContent = 'ĐỘ NÉT: ' + (sharpOn ? 'CAO' : 'THẤP (MÁY YẾU)');
+    btnSharp.setAttribute('aria-pressed', sharpOn ? 'true' : 'false');
+  }
+  function setSharp(on) {
+    sharpOn = on;
+    paintSharp();
+    try { localStorage.setItem('sl.sharp', on ? '1' : '0'); } catch (e) { /* đành chịu */ }
+    location.reload();
+  }
+
   // ev.key is not reliable for digits (an AZERTY layout reports '&' unshifted, and a
   // shifted US layout reports '!'), so the physical key is read first.
   function digitOf(ev, max) {
@@ -1168,7 +1267,7 @@ if (typeof document !== 'undefined') {
   // into the frozen arena behind it.
   function menuKey(ev, k, low) {
     if (scene === 'select') {
-      const d = digitOf(ev, 5);
+      const d = digitOf(ev, WEAPONS.length);
       if (d > 0) { loadout.wp = WEAPONS[d - 1]; SFX.ui('click'); SFX.cast(WEAPONS[d - 1].id, 0); paintPick(); ev.preventDefault(); return; }
       // Tab is taken off the browser here: focus-cycling a grid of 24 buttons is not how
       // anyone reads this panel, and flipping the arena behind it is.
@@ -1318,6 +1417,7 @@ if (typeof document !== 'undefined') {
   }
   buildBar();
   paintMob();
+  paintSharp();
   setMinimapTop(mobOn);
   setScene('menu');
   requestAnimationFrame(frame);

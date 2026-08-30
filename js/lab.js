@@ -19,8 +19,8 @@ const LAB = { W, H, SCALE, SKILLS, buf, newWorld, spawnFoe, unit, cast, step,
               get HERO_GLOW() { return HERO_GLOW; },
               dash, DASH_SK, DASH_DUR, DASH_LEN, DASH_CD, DASH_IV,
               WEAPONS, WEAPON_BY_ID, swing, hitCone, ART, stampFrame,
-              HELD, blitRot, heldPose, drawHeld,
-              // The five weapon mechanics. Each one is either a hit path or a state the hit
+              HELD, blitRot, heldPose, drawHeld, lungeHero,
+              // The six weapon mechanics. Each one is either a hit path or a state the hit
               // path reads, so the harness needs both halves to prove any of them.
               swingHit, swingRiders, weaponStat, fireArrow, ARROW_SK, CUT_SK, cutCast,
               hurt, healHero, pullToward,

@@ -133,7 +133,7 @@
   /* Arenas are auto-fitted rather than pinned to a column count: the folder is meant to
      grow, and a fourth map file should not need a CSS edit to lay out. */
   #mpGrid { grid-template-columns: repeat(auto-fit, minmax(136px, 1fr)) }
-  #wpGrid { grid-template-columns: repeat(5, minmax(0, 1fr)) }
+  #wpGrid { grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)) }
   #skGrid { grid-template-columns: repeat(4, minmax(0, 1fr)) }
   .pick {
     --accent: #8fd6ff;
@@ -377,7 +377,9 @@
 <body>
 <div id="app">
   <div id="topbar">
-    <h1>SKILL LAB — 5 VŨ KHÍ · 16 SKILL · 6 QUÁI CÓ CHIÊU · ARENA PIXEL 2D</h1>
+    <!-- Con số vũ khí do shell.js điền từ chính bảng WEAPONS: cái tiêu đề đếm sai số vũ khí là
+         thứ không ai nhớ sửa khi thêm vũ khí thứ bảy, và nó nằm ngay dòng đầu trang. -->
+    <h1>SKILL LAB — <span id="wpCount">5</span> VŨ KHÍ · 16 SKILL · 6 QUÁI CÓ CHIÊU · ARENA PIXEL 2D</h1>
     <span class="grow"></span>
     <button type="button" class="tbtn" id="btnMenu">☰ MENU (ESC)</button>
     <button type="button" class="tbtn" id="btnGuide">? HƯỚNG DẪN</button>
@@ -394,6 +396,7 @@
         <button type="button" class="mbtn primary" data-act="start">BẮT ĐẦU CHƠI</button>
         <button type="button" class="mbtn" data-act="guide">HƯỚNG DẪN</button>
         <button type="button" class="mbtn" data-act="mobile" id="btnMob" aria-pressed="false">CHẾ ĐỘ ĐIỆN THOẠI: TẮT</button>
+        <button type="button" class="mbtn" data-act="sharp" id="btnSharp" aria-pressed="true">ĐỘ NÉT: CAO</button>
         <button type="button" class="mbtn" data-act="touch">SẮP XẾP PHÍM CẢM ỨNG</button>
         <div class="sblock" id="soundBox"></div>
         <div class="hint">ENTER bắt đầu · H hướng dẫn · M tắt/bật âm</div>
@@ -464,8 +467,14 @@
               là nổ bấy xa — nhả tay mới ra chiêu, nên kéo lại gần vẫn kịp đổi ý.
               <b>Lướt né cũng ngắm được</b>, chỉ là tầm <b>ngắn hơn hẳn</b>: vòng của nó
               đúng bằng 62 px chân hạ xuống, nên tâm ngắm là chỗ mình sẽ đứng. Chạm nhanh
-              thì vẫn lướt theo hướng joystick như cũ. Chiêu đánh quanh mình và đánh
-              thường thì <b>ra ngay</b>, không chờ nhả.<br>
+              thì vẫn lướt theo hướng joystick như cũ. Chiêu đánh quanh mình thì
+              <b>ra ngay</b>, không chờ nhả.<br>
+              <b>Cung và khiên ngắm được cả đánh thường</b>, và nó ngắm <b>trong lúc đang
+              đánh</b>: nhát đầu vẫn ra ngay ở cú chạm, rồi <b>kéo ngón trong khi vẫn giữ</b>
+              là những nhát sau đi theo hướng vừa kéo — ba mũi tên xuyên đúng hàng quái mình
+              chọn, cú lao của khiên hạ chân đúng chỗ mình nhắm. Nhả tay chỉ để dừng, không
+              tung thêm nhát nào. Bốn vũ khí cận chiến còn lại quét một nón rộng ngay tại
+              chỗ, nên chúng vẫn tự nhắm con gần nhất.<br>
               <b>MENU → SẮP XẾP PHÍM CẢM ỨNG</b> để tự kéo joystick và <b>từng nút riêng</b>
               (đánh thường, ba skill, lướt né) tới chỗ vừa tay, phóng to / thu nhỏ cả hai bên.
               Minimap dời lên <b>góc trên phải</b>, và <b>☰ MENU</b> ở giữa mép trên là
@@ -527,7 +536,7 @@
             </p>
           </div>
           <div>
-            <div class="gsec">5 VŨ KHÍ · ĐÁNH THƯỜNG</div>
+            <div class="gsec" id="wpGuideHead">5 VŨ KHÍ · ĐÁNH THƯỜNG</div>
             <div class="gskills" id="guideWeapons" style="grid-template-columns:minmax(0,1fr)"></div>
             <div class="gsec">6 QUÁI VẬT + 3 BOSS · CHIÊU THỨC</div>
             <p class="glist" style="margin:0 0 6px">
@@ -591,6 +600,15 @@
       }
     } catch (e) { /* không đo được thì 320 */ }
     window.FRAME_W = w;
+    // Độ nét, chốt ở đây cùng với bề rộng và vì đúng một lý do: js/core.js lấy nó ra để cấp `buf`,
+    // và js/scene.js cấp `FLOOR` theo cùng con số -- đổi giữa phiên là hai bộ đệm lệch cỡ nhau, nên
+    // công tắc ở menu ghi localStorage rồi nạp lại trang. 2 là một điểm ảnh gameplay ứng với 2x2 mẫu
+    // render (nét, mặc định); 0 quay về đúng một mẫu, tức khung 320x180 như bản cũ -- chữ và tranh
+    // mềm hơn, nhưng cả tầng vẽ lẫn tầng tonemap chỉ còn một phần tư số điểm ảnh, và đó là cái duy
+    // nhất đủ để một máy yếu chạy nổi khung boss tung chiêu.
+    let sharp = 1;
+    try { if (localStorage.getItem('sl.sharp') === '0') sharp = 0; } catch (e) { /* đành chịu */ }
+    window.FRAME_SHARP = sharp;
   })();
 </script>
 <!-- The engine, one file per section of what used to be a single inline script block.

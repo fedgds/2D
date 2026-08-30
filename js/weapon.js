@@ -48,6 +48,13 @@ const HELD = {
   gang: [
     ".###.", "#+++#", "#+++#", "#+++#", ".#-#.", "..=..", "..-..",
   ],
+  // Khiên là tấm chắn, không phải lưỡi: bốn vũ khí trên đọc ra được vì phần sáng của chúng
+  // rộng 1–3 ô, còn cái này là một mảng kín 5 ô có viền sáng và một gân giữa. Nó ngắn hơn hẳn
+  // (11 dòng so với 14–16) mà vẫn không đọc ra thành con dao, vì bề rộng thay cho bề dài.
+  khien: [
+    "..-#-..", ".-###-.", "-#+#+#-", "-#+#+#-", "-#+#+#-", "-#+#+#-",
+    ".-+#+-.", ".-+#+-.", "..-#-..", "...=...", "...-...",
+  ],
 };
 const HELD_HAFT = hexc('#3a3244'), HELD_DARK = hexc('#141a28');
 // Mild squash only: the hero sprite is unsquashed pixel art, so flattening the weapon to
@@ -160,6 +167,34 @@ const WEAPONS = [
     cut: 0.25,
     // Fists barely rotate -- a punch is reach, so `ext` carries the pose instead.
     hold: { art: 'gang', pv: [2, 5], sweep: 0.50, ext: 6.5, rest: -0.30 },
+  },
+  {
+    id: 'khien', name: 'Khiên', label: 'KHIÊN', skill: 'AEGIS CHARGE', art: 'images/skills/khien-frames',
+    desc: 'lao lên · hẩy bật · giương khiên', col: hexc('#ffe3a8'), gain: 2.0,
+    fps: 28, hits: [7, 11], dmg: 20, range: 40, arc: 1.05,
+    size: 88, axis: SPRITE_UP, reach: 13, travel: 4, push: 30, pushStep: 12, cd: 0.72, shake: 1.5,
+    // Bốn vũ khí cận chiến kia đứng tại chỗ mà vung; cái này *đi tới*. Mỗi đòn đẩy hero lướt
+    // lên `len` px trong `dur` giây, và vì `swingOrigin` đọc chỗ hero đang đứng ở từng khung
+    // nên cả tấm hiệu ứng lẫn cái nón sát thương tự đi theo -- tầm hiệu dụng là `len + range`
+    // mà không cần một trường tầm thứ hai. Cú lướt dùng đúng `h.dsh` của `dash.js`: trong lúc
+    // trượt thì WASD bị bỏ qua và điểm đến bị kẹp vào BOUND, nên lao vào tường là dừng ở
+    // tường. Cái nó *không* lấy là bất tử -- `dash()` mới cho `h.inv`. Bằng không thì đòn
+    // đánh thường của khiên đã gồm luôn cú né, và ba slot skill hết phải chọn gì.
+    //
+    // 36 px trong 0.22 s là 164 px/s, gần ba lần tốc đi bộ nhưng chỉ bằng non nửa cú lướt né
+    // (400 px/s): nó phải đọc ra là một cú trườn tới, không phải một cú dịch chuyển. Nhịp đầu
+    // ở khung 7 rơi vào giây 0.25 -- tức là chân vừa đứng lại thì cạnh khiên vừa tới.
+    lunge: { len: 36, dur: 0.22 },
+    // Giương khiên. Cùng một trường `guard` mà đao dùng, nên không có mã mới: `hitHero` và cả
+    // đường máu chạm người đều đọc nó trên nhát đang chạy. Khiên đỡ tốt hơn đao (0.40 so với
+    // 0.60) vì đao còn có xử trảm để bán, còn ở đây chắn đòn *là* mặt hàng -- và vì cú lao ném
+    // hero vào giữa thứ vừa nhắm, nên phần thưởng phải trả đúng ở chỗ nó bắt hero đứng.
+    guard: 0.40,
+    // `push` lớn nhất trong game và nhịp sau hẩy mạnh hơn nhịp trước: đây là chỗ khiên trả giá
+    // cho việc rút ngắn khoảng cách hộ người chơi. Lao vào một đám rồi hẩy bật cả đám ra là
+    // một vòng chơi đầy đủ, và nó cũng có nghĩa là không nối chuỗi được -- thứ vừa đánh không
+    // còn đứng đó nữa.
+    hold: { art: 'khien', pv: [3, 8], sweep: 0.28, ext: 7.0, rest: -0.25 },
   },
 ];
 const WEAPON_BY_ID = {};
@@ -343,6 +378,18 @@ function drawSwing(w, e, p) {
     const k = Math.sin(Math.PI * p);
     arc(x, y, wp.range * 0.5, e.ang, wp.arc * 2, 3.2, wp.lit, 0.85 * k, wp.squash, 1.5, 1.6);
     core(x, y, 3.4, wp.lit, 0.5 * k, 2);
+  }
+  // Vệt lao, cho vũ khí nào tự mang hero đi. `e.ox/e.oy` là chỗ đứng lúc bấm nên chỉ cần nối
+  // nó với chỗ đang đứng là ra đúng khoảng vừa trượt qua -- không phải nhớ thêm gì. Vẽ bằng
+  // màu của chính vũ khí chứ không phải màu thép của `dash.js`: hai thứ này xảy ra cùng lúc
+  // được, và cái người chơi phải đọc ra là cái nào đang gây sát thương.
+  if (wp.lunge) {
+    const lk = 1 - c01((p * wp.dur - wp.lunge.dur) / 0.18);
+    if (lk > 0 && (o.x !== e.ox || o.y !== e.oy)) {
+      dashline(e.ox, e.oy + 3, o.x, o.y + 3, 5, 1.6, wp.col, 0.20 * lk, 0.6);
+      line(e.ox, e.oy, o.x, o.y, 2.8, wp.lit, 0.26 * lk);
+      line(e.ox, e.oy, o.x, o.y, 1.0, wp.col, 0.52 * lk);
+    }
   }
   // Every hit frame gets a one-frame flourish at the tip: the sheets are the same art for
   // all five weapons, and this is what tells you *this* is the beat that lands.
@@ -597,7 +644,29 @@ function weaponStat(wp) {
     return (n > 1 ? n + ' mũi · ' : '') +
       `${wp.shot.near}–${wp.shot.far} theo tầm · xuyên · bay ${wp.shot.max}`;
   }
-  return `${wp.dmg}×${wp.hits.length} nhịp · tầm ${Math.round(wp.range)}`;
+  // Một vũ khí tự mang hero đi thì tầm ghi trên bảng nói thiếu: tầm với được là `range` cộng
+  // cả khoảng vừa lướt qua. Ghi rời hai số chứ không cộng sẵn, vì cú lao là thứ xảy ra dù có
+  // trúng ai hay không -- người chơi cần biết nó *đi* bao xa, không chỉ với tới đâu.
+  return `${wp.dmg}×${wp.hits.length} nhịp · tầm ${Math.round(wp.range)}`
+    + (wp.lunge ? ` · lao ${Math.round(wp.lunge.len)}` : '');
+}
+
+// Push the hero along the swing's own angle. This reuses the dash's three fields rather than
+// adding a second kind of scripted movement: `step` already owns `h.dsh` -- it clamps to
+// BOUND, it ignores WASD while it runs and it holds the walk pose instead of sprinting on the
+// spot -- so a lunge is a dash the weapon asked for. What it deliberately does *not* touch is
+// `h.inv`: the i-frames are what make the dodge a dodge, and a basic attack must not sell them.
+//
+// The y term carries `wp.squash` for the same reason `drawSwing` does: the world is a 3/4 view,
+// so a lunge north has to cover less ground than a lunge east or the hero slides out from under
+// his own arc. Overwriting a live dash is intentional -- the player just asked for this instead.
+function lungeHero(w, ang, wp) {
+  const L = wp.lunge, h = w.hero;
+  const tx = clamp(h.x + Math.cos(ang) * L.len, BOUND.x0, BOUND.x1);
+  const ty = clamp(h.y + Math.sin(ang) * L.len * wp.squash, BOUND.y0, BOUND.y1);
+  h.dsh = L.dur;
+  h.dvx = (tx - h.x) / L.dur;
+  h.dvy = (ty - h.y) / L.dur;
 }
 
 // Fire the basic attack. Same contract as `cast`: returns false when it is on cooldown,
@@ -618,6 +687,10 @@ function swing(w, tx, ty) {
   // *this* swing has to land again to open the next one.
   e.momo = !!(wp.momentum && w.momo > 0);
   if (e.momo) w.momo = 0;
+  // Đẩy chân ngay ở đây, không đợi `drawSwing`: `step` giải chuyện hero đi đâu *trước* khi
+  // chạy các fx, nên đặt cú lướt ở đường vẽ là trễ đúng một khung và nhát đánh sẽ xuất phát
+  // từ chỗ cũ.
+  if (wp.lunge) lungeHero(w, e.ang, wp);
   w.fxs.push(e);
   w.wcd = e.momo ? wp.momentum.cd : wp.cd;
   w.shake = Math.max(w.shake, wp.shake * 0.5);

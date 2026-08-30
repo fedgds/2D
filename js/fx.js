@@ -83,9 +83,28 @@ function beam(x, y, ang, r0, r1, w0, w1, col, a, sharp, fade) {
   const y0 = Math.max(0, Math.floor(ay)), y1 = Math.min(RH - 1, Math.ceil(by));
   const span = Math.max(r1 - r0, 1e-3);
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a;
+  // Cùng lý do như `line`: vùng vẽ là một hình chữ nhật *xoay*, còn hộp bao là hình chữ nhật thẳng
+  // bọc ngoài nó -- chéo 45 độ thì hộp gấp đôi. Hình chữ nhật cũng lồi nên mỗi hàng vẫn là một
+  // khoảng: giao của dải `r0 <= u <= r1` với dải `|v| <= wm`. Bề rộng lấy theo `wm` (rộng nhất) nên
+  // khoảng luôn phủ đủ; hai phép thử `u`/`e` trong lòng vòng lặp không đổi.
+  const ncx = ca < 1e-9 && ca > -1e-9, ncy = sa < 1e-9 && sa > -1e-9;
   for (let py = y0; py <= y1; py++) {
     const dy = py - y;
-    for (let px = x0; px <= x1; px++) {
+    let lo = -1e9, hi = 1e9;
+    if (ncx) { const u = dy * sa; if (u < r0 || u > r1) continue; }
+    else {
+      const q0 = (r0 - dy * sa) / ca, q1 = (r1 - dy * sa) / ca;
+      if (q0 < q1) { lo = q0; hi = q1; } else { lo = q1; hi = q0; }
+    }
+    if (ncy) { const v = dy * ca; if (v > wm || v < -wm) continue; }
+    else {
+      const q0 = (dy * ca - wm) / sa, q1 = (dy * ca + wm) / sa;
+      if (q0 < q1) { if (q0 > lo) lo = q0; if (q1 < hi) hi = q1; }
+      else         { if (q1 > lo) lo = q1; if (q0 < hi) hi = q0; }
+    }
+    if (hi < lo) continue;
+    const xa = Math.max(x0, Math.floor(x + lo)), xb = Math.min(x1, Math.ceil(x + hi));
+    for (let px = xa; px <= xb; px++) {
       const dx = px - x, u = dx * ca + dy * sa;
       if (u < r0 || u > r1) continue;
       const v = -dx * sa + dy * ca, t = (u - r0) / span;
@@ -138,8 +157,9 @@ function ring(x, y, r, thick, col, a, squash, sharp) {
 // Crescent slash: annulus slice fading to nothing at both tips.
 function arc(x, y, r, ang, sweep, thick, col, a, squash, sharp, taper) {
   if (a <= 0) return;
-  x = (x - CAMX) * RENDER_SCALE; y = (y - CAMY) * RENDER_SCALE;
-  r *= RENDER_SCALE; thick *= RENDER_SCALE;
+  const S = RENDER_SCALE;
+  x = (x - CAMX) * S; y = (y - CAMY) * S;
+  r *= S; thick *= S;
   if (squash === undefined) squash = 1;
   if (sharp === undefined) sharp = 1.5;
   if (taper === undefined) taper = 2;
@@ -167,6 +187,62 @@ function arc(x, y, r, ang, sweep, thick, col, a, squash, sharp, taper) {
   const x0 = Math.max(0, Math.floor(ax)), x1 = Math.min(RW - 1, Math.ceil(bx));
   const y0 = Math.max(0, Math.floor(ay)), y1 = Math.min(RH - 1, Math.ceil(by));
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a;
+  // Đã thử thu hẹp nhịp hàng theo *nan* (giao hai nửa mặt phẳng dựng trên hai tia biên) và loại sớm
+  // bằng `|v| >= u*tan(half)` trước atan2. Cả hai đều không được gì: 6,72 -> 6,80 ms cho 60 lời gọi.
+  // Lý do là hộp bao ở trên đã bọc *lát cắt*, nên `Math.max(x0, ...)` / `Math.min(x1, ...)` dưới đây
+  // đã cắt phần lớn cung nằm ngoài nan rồi; phần còn dư không đủ trả cho mấy phép chia mỗi hàng.
+  //
+  // Cái *được* là bớt số điểm ảnh phải tính, chứ không phải bớt vùng quét: cung lớn đi theo lưới
+  // gameplay rồi rải vào cả khối S×S, y như `core` và `puddle`. Đây là chỗ đắt nhất còn lại của một
+  // khung boss tung chiêu -- hơi lạnh của frostking là sáu cung r tới 216, dày 39, alpha 0,06 xếp
+  // lồng nhau, hết 15,4 ms trong một khung 19,3 ms -- và mỗi điểm ảnh trong đó phải trả một atan2
+  // cộng hai fpow. Ngưỡng chọn theo *độ dốc*: `e` đổi 1/th mỗi điểm ảnh, nên nét dày mới đủ mềm để
+  // bốn mẫu trong khối coi như bằng nhau (th 78 px => 0,013 một bậc); mọi lưỡi cắt mảnh và sáng vẫn
+  // đi đường tinh, vì ở đấy chính bốn mẫu ấy là hình dáng.
+  if (S > 1 && th >= 10 && r >= 30) {
+    const hc = (S - 1) * 0.5;
+    const ly0 = Math.max(0, Math.floor((y0 - hc) / S)), ly1 = Math.min(H - 1, Math.ceil((y1 - hc) / S));
+    const lx0 = Math.max(0, Math.floor((x0 - hc) / S)), lx1 = Math.min(W - 1, Math.ceil((x1 - hc) / S));
+    for (let ly = ly0; ly <= ly1; ly++) {
+      const dy = (ly * S + hc - y) / sq, ady = dy < 0 ? -dy : dy;
+      if (ady >= ro) continue;
+      const xo = Math.sqrt(ro * ro - dy * dy);
+      const xi = ady < ri ? Math.sqrt(ri * ri - dy * dy) : -1;
+      let prev = -1e9;
+      for (let sd = 0; sd < 2; sd++) {
+        let lo, hi;
+        if (xi < 0) { if (sd) break; lo = x - xo; hi = x + xo; }
+        else if (sd === 0) { lo = x - xo; hi = x - xi; }
+        else { lo = x + xi; hi = x + xo; }
+        // Hai nhịp của một hàng làm tròn ra ngoài, nên khi `xi` bé hơn một điểm ảnh chúng chồng nhau
+        // -- ở đường tinh đó là cộng hai lần vào cùng một điểm ảnh, ở đây là cộng hai lần vào cả
+        // khối. `prev` chặn đúng chỗ đó: mỗi khối được cộng một lần, không hơn.
+        let la = Math.max(lx0, Math.floor((lo - hc) / S));
+        const lb = Math.min(lx1, Math.ceil((hi - hc) / S));
+        if (la <= prev) la = prev + 1;
+        if (lb > prev) prev = lb;
+        for (let lx = la; lx <= lb; lx++) {
+          const dx = lx * S + hc - x, d = Math.sqrt(dx * dx + dy * dy);
+          const e = 1 - (d > r ? d - r : r - d) / th;
+          if (e <= 0) continue;
+          let da = Math.atan2(dy, dx) - ang;
+          da = ((da + Math.PI) % TAU + TAU) % TAU - Math.PI;
+          if (da < 0) da = -da;
+          if (da >= half) continue;
+          const m = fpow(e, sharp) * fpow(1 - da / half, inv);
+          const v0 = m * c0, v1 = m * c1, v2 = m * c2;
+          for (let sy = 0; sy < S; sy++) {
+            const row = (ly * S + sy) * RW + lx * S;
+            for (let sx = 0; sx < S; sx++) {
+              const i3 = (row + sx) * 3;
+              buf[i3] += v0; buf[i3 + 1] += v1; buf[i3 + 2] += v2;
+            }
+          }
+        }
+      }
+    }
+    return;
+  }
   for (let py = y0; py <= y1; py++) {
     const dy = (py - y) / sq, ady = Math.abs(dy);
     if (ady >= ro) continue;
@@ -209,8 +285,47 @@ function line(x0_, y0_, x1_, y1_, thick, col, a, sharp, fadeEnd) {
   const y0 = Math.max(0, Math.floor(Math.min(y0_, y1_) - th));
   const y1 = Math.min(RH - 1, Math.ceil(Math.max(y0_, y1_) + th));
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a;
+  // Nhịp hàng khít theo *hình viên thuốc* quanh nét, không phải theo hộp bao. Một nét chéo dài
+  // trải hết hình chữ nhật nó băng qua, nên nét telegraph 200 px thử ~30 lần số điểm ảnh nó thật
+  // sự tô -- mà một khung boss tung chiêu đặt xuống 250-360 nét như thế.
+  //
+  // Viên thuốc là tập lồi, nên mỗi hàng cắt ra đúng *một* khoảng: dải giữa hai mép nét (điều kiện
+  // khoảng cách vuông góc) giao với dải chiếu (0 <= t <= 1), hợp với hai mũ tròn ở đầu nét mà hàng
+  // đó băng qua. Làm tròn ra ngoài nên không điểm ảnh nào hộp cũ tô mà lọt ra khỏi khoảng; phép
+  // thử khoảng cách bên trong không đổi một dòng, nên từng byte ra vẫn thế.
+  const L = Math.sqrt(ln2), ux = px_ / L, uy = py_ / L;
+  const vert = ux < 1e-9 && ux > -1e-9, horz = uy < 1e-9 && uy > -1e-9;
   for (let py = y0; py <= y1; py++) {
-    for (let px = x0; px <= x1; px++) {
+    let lo = 1e9, hi = -1e9;
+    for (let k = 0; k < 2; k++) {                       // hai mũ tròn ở hai đầu
+      const ex = k ? x1_ : x0_, dy = py - (k ? y1_ : y0_), q = th * th - dy * dy;
+      if (q <= 0) continue;
+      const h = Math.sqrt(q);
+      if (ex - h < lo) lo = ex - h;
+      if (ex + h > hi) hi = ex + h;
+    }
+    const dyr = py - y0_;
+    let blo = -1e9, bhi = 1e9;                          // thân nét, đo theo x - x0_
+    if (horz) { if ((ux * dyr < 0 ? -ux * dyr : ux * dyr) > th) bhi = -1e9; }
+    else {
+      const c = ux * dyr / uy, r = th / uy;
+      blo = r > 0 ? c - r : c + r; bhi = r > 0 ? c + r : c - r;
+    }
+    if (bhi >= blo) {
+      if (vert) { const t = uy * dyr; if (t < 0 || t > L) bhi = -1e9; }
+      else {
+        const p0 = -uy * dyr / ux, p1 = (L - uy * dyr) / ux;
+        if (p0 < p1) { if (p0 > blo) blo = p0; if (p1 < bhi) bhi = p1; }
+        else         { if (p1 > blo) blo = p1; if (p0 < bhi) bhi = p0; }
+      }
+    }
+    if (bhi >= blo) {
+      if (x0_ + blo < lo) lo = x0_ + blo;
+      if (x0_ + bhi > hi) hi = x0_ + bhi;
+    }
+    if (hi < lo) continue;
+    const xa = Math.max(x0, Math.floor(lo)), xb = Math.min(x1, Math.ceil(hi));
+    for (let px = xa; px <= xb; px++) {
       let t = ((px - x0_) * px_ + (py - y0_) * py_) / ln2;
       t = t < 0 ? 0 : (t > 1 ? 1 : t);
       const ex = px - x0_ - t * px_, ey = py - y0_ - t * py_;
@@ -357,8 +472,9 @@ function column(x, ytop, ybot, wtop, wbot, col, hot, a) {
 // Irregular ground splat -- radius wobbled by two harmonics so no circle shows.
 function puddle(x, y, rw, rh, col, a, seed, lobes, power) {
   if (a <= 0) return;
-  x = (x - CAMX) * RENDER_SCALE; y = (y - CAMY) * RENDER_SCALE;
-  rw *= RENDER_SCALE; rh *= RENDER_SCALE;
+  const S = RENDER_SCALE;
+  x = (x - CAMX) * S; y = (y - CAMY) * S;
+  rw *= S; rh *= S;
   if (lobes === undefined) lobes = 5;
   if (power === undefined) power = 1.1;
   const rng = mulberry32(seed), ph1 = rng.range(0, TAU), ph2 = rng.range(0, TAU);
@@ -367,6 +483,40 @@ function puddle(x, y, rw, rh, col, a, seed, lobes, power) {
   const y0 = Math.max(0, Math.floor(y - eh)), y1 = Math.min(RH - 1, Math.ceil(y + eh));
   const iw = 1 / Math.max(rw, 1e-3), ih = 1 / Math.max(rh, 1e-3);
   const c0 = col[0] * a, c1 = col[1] * a, c2 = col[2] * a;
+  // Vũng lớn đi theo lưới gameplay rồi rải vào cả khối S×S, y như `core`. Ở đây đáng hơn hẳn: mỗi
+  // điểm ảnh trong vũng phải trả một atan2 *và* hai sin để lấy độ méo của vành, nên đây là
+  // primitive đắt nhất trong một khung boss tung chiêu (~0,4 ms cho một lời gọi). Vành vũng là một
+  // dốc mềm `fpow(1 - d, 1.1)` nên bốn mẫu trong một khối gần như bằng nhau; ngưỡng 24 px giữ
+  // đường tinh cho các vũng nhỏ, nơi chính bốn mẫu ấy là hình dáng.
+  if (S > 1 && rw >= 24 && rh >= 10) {
+    const hc = (S - 1) * 0.5;
+    const ly0 = Math.max(0, Math.floor((y - eh - hc) / S));
+    const ly1 = Math.min(H - 1, Math.ceil((y + eh - hc) / S));
+    for (let ly = ly0; ly <= ly1; ly++) {
+      const dy = (ly * S + hc - y) * ih;
+      if (Math.abs(dy) >= 1.27) continue;
+      const hw = Math.sqrt(1.6129 - dy * dy) * rw;
+      const lxa = Math.max(0, Math.floor((x - hw - hc) / S));
+      const lxb = Math.min(W - 1, Math.ceil((x + hw - hc) / S));
+      for (let lx = lxa; lx <= lxb; lx++) {
+        const dx = (lx * S + hc - x) * iw, q = dx * dx + dy * dy;
+        if (q >= 1.6129) continue;
+        const ta = Math.atan2(dy, dx);
+        const wob = 1 + 0.17 * Math.sin(lobes * ta + ph1) + 0.10 * Math.sin((lobes + 3) * ta + ph2);
+        const d = Math.sqrt(q) / wob;
+        if (d >= 1) continue;
+        const m = fpow(1 - d, power), v0 = m * c0, v1 = m * c1, v2 = m * c2;
+        for (let sy = 0; sy < S; sy++) {
+          const row = (ly * S + sy) * RW + lx * S;
+          for (let sx = 0; sx < S; sx++) {
+            const i3 = (row + sx) * 3;
+            buf[i3] += v0; buf[i3 + 1] += v1; buf[i3 + 2] += v2;
+          }
+        }
+      }
+    }
+    return;
+  }
   for (let py = y0; py <= y1; py++) {
     const dy = (py - y) * ih;
     // The wobble can only swell the radius to 1.27, so anything past that is out before the
@@ -375,11 +525,11 @@ function puddle(x, y, rw, rh, col, a, seed, lobes, power) {
     const hw = Math.sqrt(1.6129 - dy * dy) * rw;
     const xa = Math.max(x0, Math.floor(x - hw)), xb = Math.min(x1, Math.ceil(x + hw));
     for (let px = xa; px <= xb; px++) {
-      const dx = (px - x) * iw;
-      if (dx * dx + dy * dy >= 1.6129) continue;
+      const dx = (px - x) * iw, q = dx * dx + dy * dy;
+      if (q >= 1.6129) continue;
       const th = Math.atan2(dy, dx);
       const wob = 1 + 0.17 * Math.sin(lobes * th + ph1) + 0.10 * Math.sin((lobes + 3) * th + ph2);
-      const d = Math.sqrt(dx * dx + dy * dy) / wob;
+      const d = Math.sqrt(q) / wob;
       if (d >= 1) continue;
       const m = fpow(1 - d, power), i3 = (py * RW + px) * 3;
       buf[i3] += m * c0; buf[i3 + 1] += m * c1; buf[i3 + 2] += m * c2;

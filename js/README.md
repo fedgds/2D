@@ -19,7 +19,7 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `arena.js` | đọc registry `map/`, `applyMap`, rải prop, hạt môi trường |
 | `anim.js` | sinh mọi frame animation lúc nạp từ một pose authored |
 | `boss-img.js` | `ANIM_IMG`/`foeImgFrame`: bốn bộ ảnh → khung vẽ được, và hộp `bh` |
-| `weapon.js` | 5 vũ khí: sheet 16 khung (`ART`), `drawSwing`, `drawHeld`, `swing` |
+| `weapon.js` | 6 vũ khí: sheet 16 khung (`ART`), `drawSwing`, `drawHeld`, `swing`, `lungeHero` |
 | `sfx.js` | `SFX` — mọi tiếng đều tổng hợp bằng WebAudio lúc chạy |
 | `world.js` | hero, quái, damage, `newWorld`, `step`, các hàm trúng đòn |
 | `render.js` | thứ tự vẽ một khung, thanh HP quái, vòng ngắm cảm ứng (`drawAimCue`), minimap (`setMinimapTop` cho chế độ điện thoại) |
@@ -47,6 +47,14 @@ browser vẽ VFX và art nhập ở `RW×RH = 2W×2H`: một điểm gameplay c�
 frame vũ khí không còn bị thu 300 px xuống 72–100 px trước khi phóng lên, còn sàn/sprite vẽ tay
 vẫn giữ đúng cỡ pixel authored. Harness node không có `document` nên `RENDER_SCALE = 1` và ảnh
 kiểm 320×180 cũ không đổi.
+
+Bốn subpixel ấy là bốn lần số điểm ảnh cho cả tầng vẽ và tầng tonemap, nên máy yếu có công tắc
+riêng: nút **ĐỘ NÉT** ở menu chính ghi `localStorage['sl.sharp']`, script inline trong
+`index.html` đọc ra `window.FRAME_SHARP` **trước** `js/core.js`, và `RENDER_SCALE` lấy theo đó —
+`0` là quay về đúng 320×180 một mẫu mỗi điểm ảnh, tức giao diện mềm như bản cũ. Nó không đổi được
+giữa phiên (`buf` ở `core.js` và `FLOOR` ở `scene.js` cấp theo con số này ngay lúc nạp), nên
+`setSharp` ghi xong là `location.reload()`, và nút chỉ có ở menu chính — chỗ chưa có ván nào để
+mất.
 
 Bản trước chốt bộ đệm ở `320 * round(w / 320)` rồi để CSS kéo nó vào cái hộp đang có. Trên
 Windows ở mức phóng 125% (`devicePixelRatio = 1.25`) hộp 1221 px CSS là 1526,25 điểm ảnh thật
@@ -101,6 +109,7 @@ duy nhất không phải bỏ một thứ gì.
 | ai làm gì | ở đâu |
 | --- | --- |
 | đo máy, đặt `window.FRAME_W` | script inline trong `index.html`, **trước** `js/core.js` |
+| đọc `sl.sharp`, đặt `window.FRAME_SHARP` | cùng script inline đó |
 | kiểm lại rồi chốt `W` | `core.js` dòng đầu |
 | lượng hoá bộ đệm theo `gcd(W, H)` | `FGCD/FQW/FQH` trong `shell.js` |
 
@@ -170,18 +179,50 @@ Những chỗ đã phải sửa vì *không có chuột*, và tại sao không c
   chứ không kẹp tầm, nên ngắm con quái ở cuối map là cho nổ một chiêu ngoài màn hình. Khoảng cách
   đo với `dy / 0.75` đúng như mọi phép đo tầm khác, nên "gần nhất" ở đây và "trúng" ở `hitCone` là
   cùng một hình học.
-- **Giữ để ngắm** (`holdStart`/`holdTrack`/`holdEnd`) cho ba skill có mục tiêu **và cho lướt né**.
-  Chạm rồi nhả ngay là tung nhanh vào chỗ `touchAim()` chọn; giữ rồi kéo quá `AIM_DEAD = 12` px thì
+- **Giữ để ngắm** (`holdStart`/`holdTrack`/`holdEnd`) cho ba skill có mục tiêu, **cho lướt né**, và
+  cho **đánh thường của cung với khiên**. Chạm rồi nhả ngay là tung nhanh vào chỗ `touchAim()` chọn;
+  giữ rồi kéo quá `AIM_DEAD = 12` px thì
   tự ngắm, kéo hết `AIM_DRAG` lần bề rộng nút là tới hết tầm. Ba con số tả *thứ đang ngắm* thay cho
   ba nhánh `if` rải trong hàm vẽ: `aimUI.r` (tầm), `aimUI.ky` (hệ số nén trục y), `aimUI.fix`
   ("luôn hết tầm", cho chiêu `dir` và cho lướt né — kéo dài thêm không có nghĩa gì khi cái chọn được
   chỉ là góc). Bốn chuyện ở đây không đổi được: `pointercancel` **huỷ** chứ không tung (mất chiêu vì
   có người gọi điện là mất một lần hồi chiêu mà người chơi không hề bấm); chiêu đang hồi thì không
   vào chế độ ngắm (ngắm xong mới biết bấm không được là mất đúng cái nhịp vừa dùng để ngắm — lướt né
-  đếm hồi ở `world.dcd`, không trong `world.cds`); đánh thường **không** ngắm, vì nó tự chọn con gần
-  nhất và bấm liên tục, thêm một nhịp chờ nhả tay là làm chậm đúng nhịp nền của cả trận; và điểm
+  đếm hồi ở `world.dcd`, không trong `world.cds`); đánh thường là ngoại lệ của đúng hai điều đó, vì
+  nó ngắm *trong lúc đang đánh* (gạch đầu dòng ngay dưới); và điểm
   ngắm tính lại **mỗi khung** từ chỗ ngón đang đặt (`aimWorld()` gọi `holdTrack`), vì người chơi vẫn
   đẩy joystick trong lúc ngắm nên một điểm chốt cứng lúc `pointermove` sẽ trôi lại phía sau người.
+- **Đánh thường của cung và khiên ngắm được, và nó ngắm *trong lúc đang đánh* chứ không ngắm rồi mới
+  đánh.** Cú chạm ra nhát đầu **ngay** (`atkHeld = true; holdStart(); fire(0)`), rồi ngón kéo đi là
+  *những nhát sau* đổi hướng theo, và nhả tay chỉ để **dừng** — `pointerup` gọi `holdEnd(false)`,
+  ngược hẳn với ba skill nơi nhả tay *là* lệnh tung chiêu. Không có nhánh nào phải thêm cho phần lặp:
+  `fire(0)` của `frame()` đi qua `aimWorld()` → `holdTrack`, mà `holdTrack` dưới ngưỡng `AIM_DEAD`
+  trả về đúng `touchAim()` — nên nhát đầu giống nguyên văn bản trước, và mọi nhát sau tự đi theo ngón.
+  Đổi lại thành "nhả tay mới ra đòn" là cắm một nhịp chờ vào **nhịp nền** của cả trận: đánh thường
+  bấm liên tục suốt cả phút, 0,1 giây chờ nhả nhân với mấy trăm nhát là một game khác. Bốn hệ quả:
+  `holdStart` **không** xét `world.wcd` (giữ nút xuyên qua khoảng hồi 0,3 giây chính là cách nó chạy,
+  chối ở đây là một tiếng "bấm không được" cho một cú bấm hợp lệ); viền `.aiming` bật ở `holdDrag()`
+  lúc ngón đã kéo, không bật lúc chạm (cú chạm là một nhát đánh, và thứ phải thấy ở đó là nút lún
+  xuống — `.tb:active`, mà `.aiming` đứng sau trong CSS nên sẽ đè mất); nút này **không** gắn
+  `pointerleave` (con trỏ đã bị `setPointerCapture` bắt về nút, mà kéo ngón ra khỏi nút *là* thao tác
+  ngắm — huỷ đòn ở đó là huỷ đúng lúc vừa ngắm xong); và `pointerup` chỉ tắt vòng ngắm khi lần giữ
+  đang chạy đúng là của ngón đó (`hold` chỉ có một chỗ, nên chạm vào một skill giữa lúc còn giữ đánh
+  thường là nhường lần giữ lại cho skill — đánh thường rơi về ngắm tự động và vẫn đánh tiếp).
+  Chọn vũ khí theo **cơ chế**, không theo tên: `wpAim = weapon && !!(sk.shot || sk.lunge)`. Cung
+  (`shot`) bắn ba mũi xuyên 210 px, khiên (`lunge`) lao hero 36 px vào chỗ nó nhắm — với hai cái đó
+  "con gần nhất" là câu trả lời *sai*: một hàng quái xếp dọc chỉ ăn đủ ba mũi khi trục bắn nằm trên
+  hàng, và một cú lao là *chỗ mình sẽ đứng*, nên lao vào con gần nhất trong lúc nó đứng giữa vùng nổ
+  là đúng thứ người chơi đang cố thoát ra. Bốn vũ khí cận chiến kia đứng tại chỗ quét một cái nón
+  1,05–2,25 rad, ở đó con gần nhất luôn đúng và một cử chỉ ngắm thêm chỉ là một cử chỉ thừa. Đọc
+  `shot`/`lunge` nên cây cung thứ hai ngắm được ngay, không có bảng id nào để quên cập nhật.
+  Hai con số của vòng: `ky = wp.squash = 0,72` — **không** `GSQ` — vì 0,72 là đúng hệ số `swing()`
+  chia vào trục y để ra `e.ang`, nên hướng ngón kéo *bằng đúng* hướng đòn sẽ đi và dải sáng nằm đúng
+  trên đường bay của mũi tên / đường lao của khiên (vẽ bằng `GSQ` là lệch góc, nặng nhất ở các hướng
+  chéo — đúng chỗ phải ngắm); `r = wpAimR(wp)` là chỗ đòn thật tới (`shot.max`, hoặc `lunge.len +
+  range` = 76 của khiên) **kẹp ở `AIM_MAX`**, vì một ellipse 210 × 151 không có điểm nào nằm trong
+  khung 320×180 (phải `cos < 0,76` và `sin < 0,6` cùng lúc), tức là vẽ 210 thật là vẽ một vòng không
+  bao giờ thấy được và đẩy cả ba mũi chỉ hướng ra ngoài màn. Kẹp không hứa sai gì: chế độ `dir` chỉ
+  đọc *góc*, đúng lý do ba skill `dir` cũng dùng chung một `AIM_MAX`.
 - **Lướt né ngắm được, và tầm của nó là `DASH_LEN = 62` px *thật*.** Đây là chỗ duy nhất trong cả
   phần ngắm có một con số không phải phát minh của shell: `AIM_MAX = 150` là hạn do shell tự đặt vì
   `cast()` không kẹp tầm, còn 62 px thì `dash()` đi đúng bấy nhiêu, không hơn. Nên vòng của nó nhỏ
@@ -195,7 +236,8 @@ Những chỗ đã phải sửa vì *không có chuột*, và tại sao không c
   và `holdEnd` gọi `fire(n, drag ? at : null)`. Với ba skill hai đường cho ra cùng một điểm nên
   không thấy gì; với lướt né đó là cả sự khác biệt: ngắm tự động của nó là **hướng joystick đang
   đẩy**, còn `aimUI` lúc chưa kéo đang trỏ vào con quái gần nhất — tức là né *vào* mặt nó. Kéo ra
-  rồi kéo về trong ngưỡng cũng quay lại đúng cú chạm đó: đổi ý vẫn còn kịp.
+  rồi kéo về trong ngưỡng cũng quay lại đúng cú chạm đó: đổi ý vẫn còn kịp. Đánh thường không đi
+  qua đường này chút nào: nó đã đánh từ lúc chạm, nên nhả tay của nó là `holdEnd(false)`.
 - **Vòng ngắm nằm ở `render.js`, không ở DOM.** `world.aimUI` là thứ shell ghi và `drawAimCue(w)`
   đọc; node vm không có nó nên hàm đó là lệnh không làm gì, không phải thêm nhánh nào cho harness.
   Nó vẽ bằng đúng những nét mà cảnh báo của quái đang dùng (ellipse nén `GSQ` trên sàn, mũi nhọn
@@ -321,11 +363,11 @@ bằng `node:vm`, nên nó bắt luôn lỗi **thứ tự file** chứ không ch
 chỗ là `ReferenceError` ngay lúc nạp. Phần shell browser nằm sau
 `if (typeof document !== 'undefined')` trong `shell.js` nên node bỏ qua sạch.
 
-`check-weapons.js` kiểm năm cơ chế làm nên bản sắc của năm vũ khí — chuỗi nhịp của kiếm, đạn
+`check-weapons.js` kiểm sáu cơ chế làm nên bản sắc của sáu vũ khí — chuỗi nhịp của kiếm, đạn
 bay xuyên của cung, gom bầy hút máu của lưỡi hái, cắt phép của găng, xử trảm và cắm chân của
-đao. Nó so hai trường hợp với nhau (có chuỗi / không chuỗi, máu đầy / máu cạn, nhịp cuối /
-nhịp đầu) chứ không so lại con số trong bảng, nên tinh chỉnh số liệu thì vẫn xanh, làm hỏng
-cơ chế thì đỏ.
+đao, cú lao của khiên. Nó so hai trường hợp với nhau (có chuỗi / không chuỗi, máu đầy / máu
+cạn, nhịp cuối / nhịp đầu, có `lunge` / bỏ `lunge`) chứ không so lại con số trong bảng, nên
+tinh chỉnh số liệu thì vẫn xanh, làm hỏng cơ chế thì đỏ.
 
 `check-boss.js` cũng vậy, nhưng cho boss, và nó kiểm *lời hứa* chứ không kiểm bảng: vùng đã tô
 là vùng gây damage và ngược lại (hỏi chính `heroIn`, hàm mà `stepTel` dùng để trừ máu), vùng đó
