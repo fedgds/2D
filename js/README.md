@@ -57,20 +57,24 @@ Ba chỗ dễ làm hỏng lại bất biến đó:
 1. **`border` trên `#screen`.** Với `* { box-sizing: border-box }` một viền 1 px ăn 2 px ra khỏi
    đúng cái hộp vừa tính. Đường viền khung giờ là `outline` trên `#stage` — vẽ ngoài hộp, không
    tính vào layout.
-2. **Làm tròn bề rộng và chiều cao riêng nhau.** Cỡ vật lý là `u * 16 × u * 9`, một số nguyên
-   lần 16:9, nên `bw/320` và `bh/180` bằng nhau *đúng bằng nhau* và điểm ảnh game vuông. Lấy
-   `round()` cho từng chiều thì hai tỉ lệ lệch nhau chút một và mọi vòng tròn hơi méo.
+2. **Làm tròn bề rộng và chiều cao riêng nhau.** Cỡ vật lý là `u * FQW × u * FQH` với
+   `FQW/FQH = (W, H) / gcd(W, H)` — bậc nhảy nhỏ nhất còn giữ đúng tỉ lệ khung (với 320×180 ra
+   đúng `u*16 × u*9` như bản trước) — nên `bw/W` và `bh/H` bằng nhau *đúng bằng nhau* và điểm ảnh
+   game vuông. Lấy `round()` cho từng chiều thì hai tỉ lệ lệch nhau chút một và mọi vòng tròn hơi
+   méo.
 3. **Vị trí, không chỉ kích cỡ.** `#stage` do flexbox căn giữa; chỗ trống chia ra số lẻ là mép
    rơi vào *giữa* một điểm ảnh vật lý và cả canvas bị trộn lại lần nữa. `snapStage()` đo rồi đẩy
    về lưới bằng một `translate` nhỏ hơn 1 px CSS. Nó chạy hai lần mỗi lượt layout: lúc nạp trang
-   hotbar còn chưa có ô nào nên `#app` còn cao lên nữa sau đó.
+   hotbar còn chưa có ô nào nên `#app` còn cao lên nữa sau đó. Ngoại lệ duy nhất là `body.tedit`
+   (bảng sắp xếp phím): ở đó cú đẩy bị bỏ hẳn, vì một `transform` bất kỳ biến `#stage` thành
+   stacking context và nhốt `z-index` của `#overlay` lại bên trong — xem bullet về bảng đó ở dưới.
 
 Kiểm nhanh trong console — cả bốn dòng phải đúng:
 
 ```js
 (() => { const c = screen, r = c.getBoundingClientRect(), d = devicePixelRatio; return {
   'bộ đệm == hộp': r.width * d === c.width && r.height * d === c.height,
-  'ô vuông': c.width / 320 === c.height / 180,
+  'ô vuông': c.width / W === c.height / H,
   'gốc trên lưới': Number.isInteger(Math.round(r.left * d * 64) / 64),
   'nearest': c.getContext('2d').getImageData(0, 0, c.width, 8).data.every(v => v % 17 === 0) }; })()
 ```
@@ -83,7 +87,38 @@ Một chuyện khác hay bị lẫn với mờ: art boss gốc cao ~1536 px còn
 không sửa được bằng đường vẽ — muốn boss nhiều nét hơn thì nâng `BODY_H`, và nhớ là hitbox với
 thanh máu đi theo.
 
-## Chế độ điện thoại — một lớp CSS, không phải một bản game thứ hai
+## Bề rộng khung chạy theo máy — `H = 180` là bất biến, `W` thì không
+
+`H = 180` là con số mà **mọi** tầm chiêu, cỡ sprite và bố cục HUD đo theo; nó không đổi. `W` thì
+chỉ là *mặc định* 320. Một máy màn 20:9 quay ngang mà vẽ khung 16:9 thì mất hai dải đen chiếm
+~18% bề rộng, và chỉ có ba cách lấp: cắt bớt khung (mất minimap góc trên phải với HUD trên đầu),
+kéo dẹt (giết đúng cái bất biến điểm ảnh vuông ở trên), hoặc **vẽ rộng ra**. Cách thứ ba là cách
+duy nhất không phải bỏ một thứ gì.
+
+| ai làm gì | ở đâu |
+| --- | --- |
+| đo máy, đặt `window.FRAME_W` | script inline trong `index.html`, **trước** `js/core.js` |
+| kiểm lại rồi chốt `W` | `core.js` dòng đầu |
+| lượng hoá bộ đệm theo `gcd(W, H)` | `FGCD/FQW/FQH` trong `shell.js` |
+
+Bốn chuyện ở đây không đổi được:
+
+- **Phải chốt trước `core.js`.** File đó cấp `buf`, `FLOOR`, `FLOOR_RGBA` ngay lúc chạy theo
+  `NP = W * H`. Một con số quyết định muộn hơn một dòng là một bộ đệm sai cỡ vĩnh viễn.
+- **Đo `window.screen`, không đo viewport.** Viewport co lại theo thanh địa chỉ rồi giãn ra khi
+  vào fullscreen, mà bộ đệm chỉ cấp được một lần; `screen` thì đứng yên cả phiên. Hệ quả phải
+  biết: máy càng dài thì thấy *nhiều sân hơn* một chút so với bản chơi bằng chuột.
+- **Bội của 20, kẹp trong [320, 480].** Bội của 20 giữ `gcd(W, 180) >= 20`, tức bậc nhảy của bộ
+  đệm vẫn là 9 điểm ảnh vật lý theo chiều cao như thời 16:9 chẵn (mất nhiều nhất ~1% bề rộng so
+  với lấp kín tuyệt đối). Máy 2000×920 của người báo lỗi ra `W = 380`: hai dải đen từ ~9% mỗi bên
+  còn ~1,4% — đo trong browser ở viewport 760×350 thì đúng 1,87% mỗi bên, so với 9,47% nếu giữ
+  320. `core.js` **không tin** con số truyền vào, nó kiểm lại cả ba điều kiện.
+- **Chỉ máy *chỉ có* cảm ứng mới tính.** Desktop giữ đúng 320×180 nên mọi ảnh chụp ở `tools/` và
+  mọi phép cân bằng của bản chuột không đổi một byte. Harness node cũng vậy: nó nối đúng những thẻ
+  `<script>` này rồi chạy trong `node:vm` **không có `window`**, nên câu đầu của script inline là
+  một cửa `typeof window === 'undefined'` → thoát, và `typeof FRAME_W` ở `core.js` ra `undefined`
+  → 320.
+
 
 MENU → **CHẾ ĐỘ ĐIỆN THOẠI** bật `body.mob`, và đó là *toàn bộ* công tắc: không có trang riêng,
 không có đường vào sim riêng. Lựa chọn nhớ ở `localStorage['sl.mob']`; lần đầu mở mà máy chỉ có
@@ -101,8 +136,8 @@ Ba lời hứa của phần này, và mỗi cái là một lý do để *không*
    là danh sách mặt, `paint()` và `paintCds()` tính một lần rồi ghi ra tất cả. Thứ mỗi ô đang
    mang thì suy ra từ `loadout` qua `slotInfo(n)`, không ai tự nhớ.
 3. **Lưới điểm ảnh vẫn nguyên bất biến ở trên.** `layout()` chỉ đổi *hộp nào* được lấp: mobile
-   là khung 16:9 lớn nhất nằm trong cả viewport (bỏ topbar với hotbar), rồi vẫn đúng phép tính
-   `u*16 × u*9` theo điểm ảnh vật lý và vẫn `snapStage()`.
+   là khung lớn nhất đúng tỉ lệ `W:H` nằm trong cả viewport (bỏ topbar với hotbar), rồi vẫn đúng
+   phép tính `u*FQW × u*FQH` theo điểm ảnh vật lý và vẫn `snapStage()`.
 
 Những chỗ đã phải sửa vì *không có chuột*, và tại sao không có cách nào rẻ hơn:
 
@@ -123,7 +158,9 @@ Những chỗ đã phải sửa vì *không có chuột*, và tại sao không c
   hàng nào — nên đổi bố cục là đổi bốn dòng CSS, và đổi cỡ cả cụm là đổi `--tu`. Ngón cái quay
   quanh một khớp ở gốc bàn tay: chỗ nó với tới thoải mái là một vòng cung, không phải một bảng
   hai hàng. Ba skill sát nhau trên cung trong là *cố ý* (ngón đảo giữa ba nút kề nhanh hơn nhiều
-  so với ba nút rời rạc); lướt né tách lên cung ngoài để không bấm lẫn lúc đang cuống.
+  so với ba nút rời rạc); lướt né tách lên cung ngoài để không bấm lẫn lúc đang cuống. Cung này là
+  chỗ đứng của những nút **chưa ai chạm vào**: kéo một nút đi là nó rời cung (xem `tcfg.b[n]` dưới
+  đây), bốn nút còn lại không nhích một px.
 - **Ngắm.** `aimWorld()` rẽ sang `touchAim()`: con còn sống gần nhất trong `AIM_R = 170`, rồi
   hướng joystick, rồi hướng đang nhìn. Chặn bán kính là bắt buộc — `cast()` chỉ kẹp theo mép sân
   chứ không kẹp tầm, nên ngắm con quái ở cuối map là cho nổ một chiêu ngoài màn hình. Khoảng cách
@@ -166,22 +203,31 @@ Những chỗ đã phải sửa vì *không có chuột*, và tại sao không c
   đo bằng cách diff điểm ảnh hai khung đóng băng, ra 301,8 × 150,5 với 125,8 × 93,8 px cả vòng).
   Nó nằm trên hiệu ứng của chính người chơi nhưng **dưới** `w.tels`: thứ mình đang chủ động điều
   khiển không được che thứ đang sắp đánh mình.
-- **Bảng xếp lại phím (`scene === 'touch'`, `body.tedit`) kéo *chính hai cái nút thật*.** Không có
-  bản thu nhỏ để xem trước, vì một khung xem trước là cơ hội để "chỗ mình thấy" và "chỗ mình bấm"
-  lệch nhau, và cái lệch đó chỉ lộ ra khi đang đánh boss. `touchLayer` vẫn hiện trong scene này dù
-  không chơi, các nút đổi sang viền nét đứt để nói "đang xếp chứ không đang bấm", và `editDown` ghi
-  lại *độ lệch* giữa ngón với tâm nút nên không cái gì nhảy một đoạn lúc mới chạm.
+- **Bảng xếp lại phím (`scene === 'touch'`, `body.tedit`) kéo *chính những cái nút thật*.** Không
+  có bản thu nhỏ để xem trước, vì một khung xem trước là cơ hội để "chỗ mình thấy" và "chỗ mình
+  bấm" lệch nhau, và cái lệch đó chỉ lộ ra khi đang đánh boss. `touchLayer` vẫn hiện trong scene
+  này dù không chơi, các nút đổi sang viền nét đứt để nói "đang xếp chứ không đang bấm", và
+  `editDown` ghi lại *độ lệch* giữa ngón với tâm nút nên không cái gì nhảy một đoạn lúc mới chạm.
+- **Kéo được *từng nút một*, không phải cả cụm.** `tdrag.what` là `'stick'` hoặc **số ô** `0..4`,
+  và `tcfg.b[n]` là chỗ đặt riêng của ô đó. Một cờ "đang kéo cụm" không tả nổi câu mà người chơi
+  muốn nói: tay trái thì nút lướt né phải sang bên trái, ngón cái ngắn thì ba skill phải sát nhau
+  hơn — dời cả cụm không nói được câu nào trong hai câu đó. `tbtn[]` do `buildTouch()` nạp cùng lúc
+  với `slotFaces`, nên đổi vũ khí / skill giữa trận không xoá chỗ đặt: dựng lại nút xong là gọi
+  luôn `actsPlace()`.
 - **Vị trí lưu thành phân số viewport, không phải pixel**, ở `localStorage['sl.touch']` (`tcfg`):
   máy quay ngang, mở bàn phím, hay đổi hẳn máy thì `0,82 × chiều rộng` vẫn là chỗ cũ còn `640px`
-  thì ra ngoài màn hình. `null` nghĩa là "chưa đặt": lúc đó `actsHome()` gọi `removeProperty` trên
-  `--ax/--ay` và CSS quay về công thức mặc định của nó, chứ không có ai đi tính lại mặc định bằng
-  JS — hai chỗ tính cùng một vị trí là hai chỗ để lệch nhau. `resetTcfg()` chỉ là gán lại
-  `TCFG_DEF` rồi `layout()`.
-- **Cụm nút bị kẹp để luôn bấm tới được.** Neo là một điểm 0×0 (`#tacts`), và nút xa nhất nằm cách
-  nó `3,45 --tu`, nên `actsHome()` giữ tâm cụm cách mép trong ít nhất `3,45 --tu` *khi màn hình còn
-  đủ rộng cho con số đó* — không đủ thì nhường về `0,66 --tu`, đủ để nút đánh thường không rơi nửa
-  ra ngoài. Đây là chỗ `clamp(v, a, b)` của repo cắn: nó **trả về `a` khi `a > b`**, nên mỗi cận
-  phải bọc thêm `Math.min`/`Math.max`, bằng không trên màn nhỏ cụm nút bị đẩy thẳng ra giữa sân.
+  thì ra ngoài màn hình. `null` nghĩa là "chưa đặt": lúc đó `actsPlace()` gọi `removeProperty` trên
+  `left/top/right/bottom/translate` của đúng nút đó và **CSS** đưa nó về nan quạt, chứ không có ai
+  đi tính lại mặc định bằng JS — hai chỗ tính cùng một vị trí là hai chỗ để lệch nhau. Nút đã kéo
+  thì nhận `left/top` px đo *từ chính cái neo 0×0 `#tacts`* cộng `translate: -50% -50%`, cùng quy
+  ước "toạ độ là tâm" với `#tbase`. `resetTcfg()` gán lại từ `tcfgDef()` — một **factory**, không
+  phải một hằng số dùng chung: `Object.assign` chỉ chép tham chiếu của mảng `b`, nên một hằng số
+  sẽ bị lần kéo đầu tiên sau khi đặt lại ghi thẳng vào, và từ đó không còn mặc định nào để về.
+- **Mỗi nút tự kẹp lấy mình, bằng nửa bề rộng của chính nó.** `actsPlace()` kẹp tâm trong
+  `[m, vw - m]` với `m = offsetWidth / 2`, nên nút to (đánh thường, `1,32 --tu`) được chừa nhiều
+  hơn nút nhỏ. Đây là chỗ `clamp(v, a, b)` của repo cắn: nó **trả về `a` khi `a > b`**, nên mỗi
+  cận phải bọc thêm `Math.min`/`Math.max`, bằng không trên màn hẹp hơn một nút thì nút bị đẩy
+  thẳng ra giữa sân.
 - **Hai thanh cỡ là *hệ số nhân*, đặt sau phép kẹp của `layout()`.** `--tu` và `--js` vẫn kẹp theo
   cạnh ngắn của viewport trước (44–96 px và 96–210 px), rồi mới nhân `tcfg.as`/`tcfg.js` trong
   khoảng 0,7–1,6. Kẹp lần thứ hai *sau* khi nhân nghe an toàn hơn nhưng là phủ quyết lựa chọn của
@@ -191,6 +237,17 @@ Những chỗ đã phải sửa vì *không có chuột*, và tại sao không c
   "XONG" của bảng; để nguyên thì cú bấm ra khỏi bảng lại thành một cú kéo bệ, và không còn đường
   nào ra. Sự kiện của bệ vẫn **nổi lên** `#tstick` dù cha đang `pointer-events: none`, nên chỗ xử
   lý kéo không phải nhân thêm một bản.
+- **Lúc sắp xếp, bảng phải thắng mọi cú chạm — và cái giá là `snapStage()`.** `#touch` ở `z 30` vẽ
+  trên `#overlay` ở `z 10`, nên một nút kéo tới trùm lên "XONG" sẽ ăn hết cú chạm của nó, mà trên
+  điện thoại không có phím ESC nào để ra. `body.tedit #overlay` vì thế lên `z 60` (và bỏ nền, bỏ
+  `backdrop-filter`, `pointer-events: none` — chỉ `#pnTouch` nhận chạm, để cả năm nút vẫn kéo được
+  và người chơi thấy đúng cái sàn thật ở dưới nút). Nhưng `z-index` đó *chỉ có tác dụng* khi
+  `#stage` không phải stacking context, mà `snapStage()` đặt `transform` lên chính `#stage` — nên
+  trong `body.tedit` nó bỏ cú đẩy, và `setScene()` gọi lại `snapStage()` ngay sau khi đổi class để
+  cú đẩy quay về lúc thoát. Khung có thể lệch dưới 1 px CSS trong lúc đang kéo nút: đúng bằng nét
+  mờ của cả bản trước khi có `snapStage()`, và đổi lấy việc không bao giờ tự khoá mình trong bảng.
+  Kiểm bằng `document.elementFromPoint` ở tâm "XONG" sau khi kéo một nút phủ lên nó — phải ra
+  `.mbtn`, không ra `.tb`.
 - **Minimap.** Góc dưới phải là chỗ đặt ngón cái, nên `setMinimapTop(true)` dời nó lên góc trên
   phải. `MM` (hộp mà harness loại khỏi phép kiểm "mép màn hình phải là sàn") đi theo cùng hàm đó:
   một hằng số ở đây và một chỗ khác vẽ là hai nguồn sự thật cho một con số.
@@ -208,7 +265,7 @@ Những chỗ đã phải sửa vì *không có chuột*, và tại sao không c
 - **Fullscreen và khoá hướng xin trong `setMob()`**, không phải lúc nạp trang: cả hai đòi một cử
   chỉ của người dùng. Cả hai đều có thể bị từ chối (iPhone không có Fullscreen API), và đó không
   phải lỗi — chế độ này vẫn chơi được, chỉ là còn thanh địa chỉ. Cầm dọc thì `#rotate` (một
-  `@media (orientation: portrait)`) nói một câu thay vì vẽ một khung 16:9 cao bằng đốt ngón tay.
+  `@media (orientation: portrait)`) nói một câu thay vì vẽ một khung ngang cao bằng đốt ngón tay.
 
 `touch-action` là thứ dễ làm hỏng nhất: `none` trên `body` sẽ giết luôn việc cuộn bảng hướng dẫn.
 Nó nằm ở `#touch` với `body.mob #screen`, còn `body.mob .panel` được `pan-y` — bảng hướng dẫn là

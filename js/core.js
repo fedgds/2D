@@ -6,7 +6,15 @@
 // SCALE là *cỡ tham chiếu* của khung 320x180 khi phóng lên (4x = 1280x720), dùng cho ảnh chụp
 // ở tools/ và cho việc suy luận. Nó **không** còn là tỉ lệ mà browser dùng: shell.js chốt bộ
 // đệm canvas theo số điểm ảnh vật lý của cửa sổ, nên tỉ lệ thật là số lẻ (4,75 chẳng hạn).
-const W = 320, H = 180, SCALE = 4, EXPO = 1.3, LEVELS = 16;
+//
+// Chiều cao 180 là bất biến của cả game -- mọi con số tầm, cỡ sprite và bố cục HUD đo theo nó.
+// Bề rộng thì 320 chỉ là *mặc định*: trên điện thoại màn 20:9, index.html đặt `FRAME_W` trước
+// khi file này chạy để khung rộng đúng bằng máy thay vì để lại hai dải đen. Kiểm lại ngay ở đây
+// chứ không tin con số truyền vào: một W lẻ hay quá lớn là một bộ đệm cấp sai cỡ vĩnh viễn, và
+// node (harness) không có FRAME_W nên vẫn là đúng 320 như mọi ảnh chụp đã kiểm.
+const W = typeof FRAME_W === 'number' && FRAME_W >= 320 && FRAME_W <= 480 && FRAME_W % 20 === 0
+        ? FRAME_W : 320;
+const H = 180, SCALE = 4, EXPO = 1.3, LEVELS = 16;
 const NP = W * H;
 const buf = new Float32Array(NP * 3);
 

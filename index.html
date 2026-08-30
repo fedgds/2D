@@ -282,11 +282,12 @@
      rồi nhân với bán kính cung, nên chỉ cần đổi --tu là cả cụm tự giãn theo, không có toạ độ nào
      phải sửa tay. Neo là *tâm* nút đánh thường, mặc định cách hai mép đúng 1,05 --tu: nút to nhất
      còn thừa 0,39 --tu tới mép máy, đủ để bờ màn hình cong không ăn mất một phần nút. Người chơi
-     tự kéo cụm đi chỗ khác thì shell ghi --ax/--ay (px tính từ mép phải/dưới), nên chỗ đặt là
-     *một* con số ở một chỗ, còn hình dạng cung vẫn nằm nguyên trong CSS. */
+     kéo một nút đi chỗ khác thì shell ghi left/top (px, tính từ chính cái neo 0x0 này) lên riêng
+     nút đó, nên cung ở đây vẫn là chỗ đứng của *những nút chưa ai chạm vào* -- xoá inline style là
+     nó về cung, không cần lưu lại toạ độ mặc định ở đâu cả. */
   #tacts {
     position: absolute;
-    right: var(--ax, calc(var(--tu) * 1.05)); bottom: var(--ay, calc(var(--tu) * 1.05));
+    right: calc(var(--tu) * 1.05); bottom: calc(var(--tu) * 1.05);
     width: 0; height: 0;
     --r1: calc(var(--tu) * 1.78);   /* ba skill */
     --r2: calc(var(--tu) * 2.95);   /* lướt né, nối tiếp cung lên trên */
@@ -344,6 +345,19 @@
      pointer-events: none, nên chỗ xử lý kéo không phải nhân thêm một bản. */
   body.tedit #tstick { pointer-events: none }
   body.tedit #tbase { pointer-events: auto; cursor: grab }
+  /* Lúc sắp xếp, lớp phủ bỏ hết phần *phủ*: không nền, không blur, và không nhận cú chạm nào. Ba
+     lý do, cùng một dòng: (1) người chơi đang chọn chỗ đặt nút cho một trận đánh thật, nên thứ
+     nằm dưới nút phải là cái sàn thật với minimap thật chứ không phải một màn đen mờ; (2) #touch ở
+     z 30 vẽ *trên* lớp phủ z 10, nên một nút bị kéo tới nằm chồng "XONG" sẽ ăn hết cú chạm và
+     trên điện thoại không còn phím ESC nào để ra -- đẩy lên z 60 là bảng luôn thắng (kèm một điều
+     kiện nữa ở JS: snapStage() thôi đẩy #stage lúc này, vì một transform trên #stage sẽ nhốt
+     z-index của lớp phủ lại bên trong nó); (3) một lớp trong suốt nằm cao thì *phải* để cú chạm đi
+     xuyên qua, bằng không nó chặn cả năm nút -- nên chỉ chừa lại đúng cái bảng. Nút nào bị kéo vào
+     sau bảng thì lấy lại bằng ĐẶT LẠI MẶC ĐỊNH. */
+  body.tedit #overlay {
+    background: none; backdrop-filter: none; z-index: 60; pointer-events: none;
+  }
+  body.tedit #pnTouch { pointer-events: auto }
   #tpause {
     position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
     padding: 5px 11px; border: 1px solid #2b2f45; border-radius: 3px; background: #0a0c14cc;
@@ -417,9 +431,10 @@
         <div class="brand">SẮP XẾP PHÍM</div>
         <div class="tagline">KÉO ĐỂ ĐẶT · TRƯỢT ĐỂ ĐỔI CỠ</div>
         <div id="touchBox"></div>
-        <p class="pnote">Kéo thẳng <b>joystick</b> hoặc <b>cụm nút</b> trên màn hình tới chỗ vừa
-          tay. Chỗ đặt lưu theo <b>tỉ lệ</b> màn hình, nên quay máy hay đổi máy vẫn đúng chỗ đó.
-          Joystick chỉ đi trong vùng nhận ngón ở nửa dưới bên trái.</p>
+        <p class="pnote">Kéo thẳng trên màn hình: <b>joystick</b>, và <b>từng nút một</b> — đánh
+          thường, ba skill, lướt né đều đặt riêng được. Chỗ đặt lưu theo <b>tỉ lệ</b> màn hình, nên
+          quay máy hay đổi máy vẫn đúng chỗ đó. Joystick chỉ đi trong vùng nhận ngón ở nửa dưới
+          bên trái; nút nào chưa kéo thì vẫn nằm trên nan quạt mặc định.</p>
         <button type="button" class="mbtn" data-act="treset">ĐẶT LẠI MẶC ĐỊNH</button>
         <button type="button" class="mbtn primary" data-act="back">XONG (ESC)</button>
       </div>
@@ -451,8 +466,8 @@
               đúng bằng 62 px chân hạ xuống, nên tâm ngắm là chỗ mình sẽ đứng. Chạm nhanh
               thì vẫn lướt theo hướng joystick như cũ. Chiêu đánh quanh mình và đánh
               thường thì <b>ra ngay</b>, không chờ nhả.<br>
-              <b>MENU → SẮP XẾP PHÍM CẢM ỨNG</b> để tự kéo joystick với cụm nút tới chỗ
-              vừa tay và phóng to / thu nhỏ cả hai.
+              <b>MENU → SẮP XẾP PHÍM CẢM ỨNG</b> để tự kéo joystick và <b>từng nút riêng</b>
+              (đánh thường, ba skill, lướt né) tới chỗ vừa tay, phóng to / thu nhỏ cả hai bên.
               Minimap dời lên <b>góc trên phải</b>, và <b>☰ MENU</b> ở giữa mép trên là
               chỗ tạm dừng. Máy chỉ có cảm ứng thì chế độ này tự bật ngay lần đầu mở.
             </p>
@@ -552,6 +567,32 @@
 <script src="map/cave.js"></script>
 <script src="map/lava.js"></script>
 <script src="map/ice.js"></script>
+<!-- Bề rộng khung phải chốt *trước* js/core.js: file đó cấp `buf`/`FLOOR` ngay lúc chạy, nên một
+     con số quyết định muộn hơn là một bộ đệm sai cỡ. Khung cao 180 px là bất biến; chỉ bề *rộng*
+     chạy theo tỉ lệ máy, vì màn 20:9 mà vẽ 16:9 thì mất hai dải đen chiếm 18% bề rộng -- và cách
+     duy nhất lấy lại chúng mà không cắt HUD với minimap, cũng không kéo dẹt điểm ảnh, là *vẽ rộng
+     ra*. Đo bằng `window.screen` chứ không phải viewport: viewport còn co lại theo thanh địa chỉ
+     rồi giãn ra khi vào fullscreen, mà bộ đệm thì chỉ cấp được một lần. Bội của 20 để `gcd(W, 180)`
+     vẫn >= 20, tức bậc nhảy của canvas vẫn là 9 điểm ảnh vật lý như thời 16:9 chẵn. Chỉ máy *chỉ
+     có* cảm ứng mới tính -- desktop giữ đúng 320x180 như cũ, đây không phải chỗ để đổi cân bằng của
+     bản chơi bằng chuột. -->
+<script>
+  (function () {
+    // Harness ở tools/ nối đúng những thẻ script này rồi chạy trong node, nên câu đầu tiên là một
+    // cửa: không có `window` thì không có máy nào để đo, và khung giữ đúng 320x180 như mọi ảnh chụp.
+    if (typeof window === 'undefined') return;
+    let w = 320;
+    try {
+      if (matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches) {
+        const s = window.screen || {};
+        const lo = Math.min(s.width || 0, s.height || 0);
+        const hi = Math.max(s.width || 0, s.height || 0);
+        if (lo > 0 && hi > 0) w = Math.min(480, Math.max(320, Math.floor(180 * (hi / lo) / 20) * 20));
+      }
+    } catch (e) { /* không đo được thì 320 */ }
+    window.FRAME_W = w;
+  })();
+</script>
 <!-- The engine, one file per section of what used to be a single inline script block.
      Unlike the arenas above, these are *ordered*: they are classic scripts sharing one
      global lexical scope, so every declaration is still visible everywhere and a file may

@@ -11,6 +11,11 @@ if (typeof document !== 'undefined') {
   off.width = W; off.height = H;
   const octx = off.getContext('2d');
   const img = octx.createImageData(W, H);
+  // Bậc nhảy nhỏ nhất của bộ đệm canvas mà vẫn giữ **đúng** tỉ lệ W/H, nên điểm ảnh game luôn
+  // vuông: (W/g, H/g) với g = gcd(W, H). Tính một lần ở đây vì W chốt lúc nạp trang (xem FRAME_W
+  // trong index.html) và layout() chạy lại mỗi lần đổi cỡ cửa sổ.
+  const FGCD = (function (a, b) { while (b) { const t = a % b; a = b; b = t; } return a; })(W, H);
+  const FQW = W / FGCD, FQH = H / FGCD;
 
   let world = newWorld(20260827);
   let paused = false, stepOnce = false, slow = false;
@@ -47,6 +52,15 @@ if (typeof document !== 'undefined') {
   // Fullscreen với khoá hướng màn hình thì không làm ở đây được -- cả hai đòi một cử chỉ của
   // người dùng, nên chúng nằm trong setMob() phía dưới.
   const touchLayer = document.getElementById('touch');
+  // Bốn phần tử của lớp cảm ứng lấy ngay ở đây, không phải ở dưới cạnh chỗ dùng: `layout()` chạy
+  // lượt đầu *trên* cả phần cảm ứng trong file này, và nó gọi tới `actsPlace()` -- một `const` khai
+  // ở dưới thì lúc đó còn trong vùng chưa khởi tạo, tức một ReferenceError chỉ nổ trên máy nào vào
+  // trận đủ nhanh. Cùng lý do với `tbtn`: mảng năm cái nút, do `buildTouch()` lấp.
+  const tacts = document.getElementById('tacts');
+  const tstick = document.getElementById('tstick');
+  const tbase = document.getElementById('tbase');
+  const tknob = document.getElementById('tknob');
+  const tbtn = [];
   let mobOn = false;
   try {
     const saved = localStorage.getItem('sl.mob');
@@ -65,9 +79,15 @@ if (typeof document !== 'undefined') {
   // Vị trí lưu theo **tỉ lệ viewport**, không phải px: quay máy, thanh địa chỉ trượt đi, hay mở
   // trên máy khác đều là đổi cỡ viewport, và một toạ độ px lưu từ máy cũ sẽ đặt joystick ra ngoài
   // màn hình. `null` là "chưa đặt, lấy chỗ mặc định" -- khác hẳn một toạ độ 0.
-  const TCFG_DEF = { jx: null, jy: null, js: 1, ax: null, ay: null, as: 1 };
+  //
+  // `b` là chỗ đặt của **từng nút một** (đánh thường, ba skill, lướt né), không phải của cả cụm:
+  // nan quạt trong CSS là một phỏng đoán tốt về chỗ ngón cái với tới, nhưng nó vẫn chỉ là phỏng
+  // đoán -- người cầm máy hai tay muốn lướt né sang tận mép trái, người ngón ngắn muốn ba skill
+  // sát nhau hơn, và dời cả cụm thì không nói được câu nào trong hai câu đó. Ô nào còn `null` thì
+  // vẫn nằm nguyên trên cung: mặc định là *một* nguồn sự thật ở CSS, không phải năm toạ độ chép ra.
+  const tcfgDef = () => ({ jx: null, jy: null, js: 1, as: 1, b: [null, null, null, null, null] });
   const TSCALE_LO = 0.7, TSCALE_HI = 1.6;
-  const tcfg = Object.assign({}, TCFG_DEF);
+  const tcfg = tcfgDef();
   try {
     const raw = JSON.parse(localStorage.getItem('sl.touch') || 'null');
     const num = v => typeof v === 'number' && isFinite(v);
@@ -76,9 +96,13 @@ if (typeof document !== 'undefined') {
       // (và bản trước của chính game này ghi vào), và một `js: 40` ở đó là cái bệ to bằng màn hình.
       // Toạ độ đi theo *cặp*: một nửa hợp lệ thì cũng không thành chỗ đứng nào.
       if (num(raw.jx) && num(raw.jy)) { tcfg.jx = c01(raw.jx); tcfg.jy = c01(raw.jy); }
-      if (num(raw.ax) && num(raw.ay)) { tcfg.ax = c01(raw.ax); tcfg.ay = c01(raw.ay); }
       if (num(raw.js)) tcfg.js = clamp(raw.js, TSCALE_LO, TSCALE_HI);
       if (num(raw.as)) tcfg.as = clamp(raw.as, TSCALE_LO, TSCALE_HI);
+      if (Array.isArray(raw.b))
+        for (let n = 0; n < 5; n++) {
+          const p = raw.b[n];
+          if (p && num(p.x) && num(p.y)) tcfg.b[n] = { x: c01(p.x), y: c01(p.y) };
+        }
     }
   } catch (e) { /* không đọc được thì dùng mặc định */ }
   function saveTcfg() {
@@ -102,13 +126,15 @@ if (typeof document !== 'undefined') {
       const maxW = vw - 16;
       if (w > maxW) { w = maxW; h = w * (H / W); }
     }
-    w = Math.max(320, w); h = Math.max(180, h);
-    // Cỡ tính theo điểm ảnh vật lý, và là số nguyên lần 16x9 để điểm ảnh game *vuông*: lấy
+    w = Math.max(W, w); h = Math.max(H, h);
+    // Cỡ tính theo điểm ảnh vật lý, và là số nguyên lần tỉ lệ khung để điểm ảnh game *vuông*: lấy
     // round() riêng cho bề rộng và chiều cao thì hai tỉ lệ lệch nhau chút một, và cả khung bị
     // kéo dẹt đi một phần nghìn -- không thấy ngay, nhưng vòng tròn nào cũng thành hơi méo.
-    // Bậc nhảy là 16 điểm ảnh vật lý, tức mất nhiều nhất ~1% bề rộng so với việc lấp kín.
-    const u = Math.max(20, Math.floor(Math.min(w * dpr / 16, h * dpr / 9)));
-    const bw = u * 16, bh = u * 9;
+    // Bậc nhảy nhỏ nhất giữ đúng W/H là (W/g, H/g) với g = gcd(W, H): với 320x180 ra đúng (16, 9)
+    // như bản trước, và vì W luôn là bội của 20 thì g >= 20, nên bậc theo chiều cao vẫn là 9 điểm
+    // ảnh vật lý dù khung có rộng ra -- mất nhiều nhất ~1% bề rộng so với việc lấp kín.
+    const u = Math.max(FGCD, Math.floor(Math.min(w * dpr / FQW, h * dpr / FQH)));
+    const bw = u * FQW, bh = u * FQH;
     if (screen.width !== bw) screen.width = bw;
     if (screen.height !== bh) screen.height = bh;
     // Cỡ CSS suy ra *từ* cỡ vật lý, không phải ngược lại. Số có thể lẻ (1520/1.25 = 1216, còn
@@ -136,12 +162,12 @@ if (typeof document !== 'undefined') {
     // nhân là phủ quyết đúng cái họ vừa chọn.
     rootStyle.setProperty('--tu', Math.round(clamp(tmin * 0.145, 44, 96) * tcfg.as) + 'px');
     rootStyle.setProperty('--js', Math.round(clamp(tmin * 0.34, 96, 210) * tcfg.js) + 'px');
-    actsHome();
+    actsPlace();
     snapStage();
     // Chiều cao của #app còn đổi *sau* lượt này: lúc nạp trang thì hotbar chưa có ô nào (cao
     // 0), và chiều cao topbar còn phụ thuộc font đã tải xong hay chưa. Cả hai đều đẩy #stage
     // lên xuống nửa điểm ảnh, nên đo lại một lần nữa khi khung đã dựng xong.
-    requestAnimationFrame(() => { snapStage(); stickHome(); });
+    requestAnimationFrame(() => { snapStage(); stickHome(); actsPlace(); });
   }
   // Cỡ đúng rồi vẫn chưa đủ: #stage do flexbox căn giữa, và nếu chỗ trống hai bên (hay trên
   // dưới) chia ra số lẻ thì mép của nó rơi vào *giữa* một điểm ảnh vật lý -- cả canvas bị dịch
@@ -151,6 +177,15 @@ if (typeof document !== 'undefined') {
   function snapStage() {
     const dpr = window.devicePixelRatio || 1;
     stage.style.transform = 'none';
+    // Lúc sắp xếp phím thì *không* đẩy. Một `transform` bất kỳ trên #stage biến nó thành stacking
+    // context, và z-index của #overlay bị nhốt lại bên trong: bảng SẮP XẾP PHÍM không cách nào lên
+    // trên lớp #touch (z 30), nên một nút kéo trùm lên "XONG" là ăn hết cú chạm của nó và người chơi
+    // trên điện thoại không còn phím ESC nào để ra. Bỏ cú đẩy đi thì #stage trở lại z-index: auto và
+    // bảng thắng. Giá phải trả là khung có thể lệch dưới 1 px CSS suốt lúc đang kéo -- một nét mờ
+    // đúng bằng nét mờ của cả bản trước khi có hàm này, và thoát ra là snapStage() chạy lại ngay.
+    // Đọc cái *class* chứ không phải biến `tedit`: layout() gọi hàm này ngay từ lượt dựng khung, mà
+    // `let tedit` còn nằm hơn 800 dòng dưới đây, tức là còn trong TDZ.
+    if (document.body.classList.contains('tedit')) return;
     const r = stage.getBoundingClientRect();
     const dx = (Math.round(r.left * dpr) - r.left * dpr) / dpr;
     const dy = (Math.round(r.top * dpr) - r.top * dpr) / dpr;
@@ -314,12 +349,15 @@ if (typeof document !== 'undefined') {
     // hướng sau khi mở menu.
     tedit = s === 'touch';
     document.body.classList.toggle('tedit', tedit);
+    // Đẩy lưới điểm ảnh bật/tắt theo đúng cái class vừa đổi: xem snapStage() -- lúc sắp xếp phím
+    // #stage không được là stacking context, bằng không cái bảng không lên nổi trên lớp #touch.
+    snapStage();
     touchLayer.hidden = !((mobOn && playing) || tedit);
     stickEnd();
     holdEnd(false);
     editUp();
     atkHeld = false;
-    if ((mobOn && playing) || tedit) stickHome();
+    if ((mobOn && playing) || tedit) { stickHome(); actsPlace(); }
     if (!playing) keys.clear();
     SFX.music(playing ? 'play' : 'menu');
     const first = panels[s] && panels[s].querySelector('.mbtn:not([disabled])');
@@ -690,11 +728,8 @@ if (typeof document !== 'undefined') {
   // Không có đường đi riêng nào vào sim: joystick chỉ ghi vào `stick` mà frame() cộng thẳng vào
   // `inp.dx/dy` như WASD, và năm cái nút gọi đúng `fire()` mà chuột với bàn phím gọi. Nhờ vậy
   // một chiêu bấm bằng ngón tay và cùng chiêu đó bấm bằng số 1 là *đúng* một thứ -- không có
-  // nhánh "bản mobile" nào để hai bên trôi ra khỏi nhau.
-  const tacts = document.getElementById('tacts');
-  const tstick = document.getElementById('tstick');
-  const tbase = document.getElementById('tbase');
-  const tknob = document.getElementById('tknob');
+  // nhánh "bản mobile" nào để hai bên trôi ra khỏi nhau. Bốn phần tử của lớp này lấy ở đầu file,
+  // cạnh `touchLayer` -- xem lý do TDZ ở đó.
   // dx/dy đã chuẩn hoá về vector đơn vị. `step()` tự chuẩn hoá lần nữa nên nghiêng ít hay nhiều
   // không đổi tốc độ chạy, và đó là cố ý: nửa tốc độ trên màn cảm ứng chỉ là nửa tốc độ *sai*
   // với mọi con số né đòn mà cả game được cân theo.
@@ -726,30 +761,35 @@ if (typeof document !== 'undefined') {
     tbase.style.left = stick.hx + 'px'; tbase.style.top = stick.hy + 'px';
     if (!stick.on) placeKnob(stick.hx, stick.hy);
   }
-  // Cụm nút phải: CSS đã giữ chỗ mặc định trong `var(--ax, ...)`, nên "chưa đặt" là *xoá* biến đi
-  // chứ không phải ghi lại đúng con số mặc định vào đó -- hai chỗ cùng giữ một con số là hai chỗ để
-  // chúng lệch nhau, và bản trước của minimap đã trả giá đúng chuyện này.
+  // Cụm nút phải: ô nào người chơi *chưa* dời thì xoá sạch style inline và để CSS đặt nó trên cung
+  // -- "chưa đặt" là xoá đi, không phải ghi lại đúng con số mặc định vào đó, vì hai chỗ cùng giữ một
+  // con số là hai chỗ để chúng lệch nhau (bản trước của minimap đã trả giá đúng chuyện này).
   //
-  // Kẹp theo bán kính cung: nút xa tâm nhất (lướt né) ở 2,95 --tu cộng nửa nút, nên neo phải cách
-  // mép trên-trái chừng đó thì cả cung mới còn trên màn hình. Nếu cung to hơn nửa màn hình thì
-  // không có chỗ nào thoả -- lúc đó nhường cho giữa màn hình thay vì để clamp() lật ngược.
-  // Khai bằng `function` chứ không phải một const mũi tên: `layout()` chạy ngay ở lượt đầu, *trên*
-  // chỗ này trong file, và một const ở đây thì lúc đó còn chưa khởi tạo.
-  function tuPx() {
-    return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tu')) || 56;
-  }
-  function actsHome() {
-    if (tcfg.ax === null) {
-      rootStyle.removeProperty('--ax'); rootStyle.removeProperty('--ay'); return;
-    }
+  // Ô đã dời thì đổi từ tỉ lệ viewport về px của #tacts. Neo đó là một hộp 0x0 bám góc dưới phải,
+  // nên left/top của nó *là* tâm cung, và một phép trừ ở đây là đủ -- không phải bốc nút ra khỏi
+  // cụm để đặt theo viewport. Kẹp theo *nửa nút của chính nó*: một nút nằm nửa ngoài màn hình vẫn
+  // trông như bấm được, và đó là kiểu hỏng tệ nhất -- nó chỉ lộ ra lúc cần bấm thật.
+  function actsPlace() {
+    if (touchLayer.hidden) return;              // lớp đang ẩn: cỡ đo ra 0, đặt lại lúc hiện
     const doc = document.documentElement, vw = doc.clientWidth, vh = doc.clientHeight;
-    const tu = tuPx(), far = tu * 3.45, near = tu * 0.66;
-    const cx = clamp(tcfg.ax * vw, Math.min(far, vw * 0.5), Math.max(near, vw - near));
-    const cy = clamp(tcfg.ay * vh, Math.min(far, vh * 0.5), Math.max(near, vh - near));
-    // Neo khai bằng right/bottom, nên đổi toạ độ một lần ở đây thay vì đổi cả CSS: cụm này bám góc
-    // dưới phải, và bám bằng right/bottom là nó không nhảy khi thanh địa chỉ của điện thoại trượt.
-    rootStyle.setProperty('--ax', Math.round(vw - cx) + 'px');
-    rootStyle.setProperty('--ay', Math.round(vh - cy) + 'px');
+    const r = tacts.getBoundingClientRect();
+    for (let n = 0; n < tbtn.length; n++) {
+      const el = tbtn[n], p = tcfg.b[n], st = el.style;
+      if (!p) {
+        st.removeProperty('left'); st.removeProperty('top');
+        st.removeProperty('right'); st.removeProperty('bottom'); st.removeProperty('translate');
+        continue;
+      }
+      const m = el.offsetWidth * 0.5;
+      const cx = clamp(p.x * vw, m, Math.max(m, vw - m));
+      const cy = clamp(p.y * vh, m, Math.max(m, vh - m));
+      st.right = 'auto'; st.bottom = 'auto';
+      st.left = Math.round(cx - r.left) + 'px';
+      st.top = Math.round(cy - r.top) + 'px';
+      // Ghi đè `translate` của cung: nút này không còn ở trên cung nữa, và -50% là để left/top vừa
+      // ghi ở trên là *tâm* nút -- cùng một quy ước với cái bệ, nên một chỗ đặt đọc được ở cả hai.
+      st.translate = '-50% -50%';
+    }
   }
   // Hướng đi là vector từ *tâm bệ* tới ngón, núm kẹp ở vành. Bản trước cho bệ chạy theo ngón khi
   // trượt quá vành, và hậu quả đúng như một cần điều khiển không có chỗ cố định: kéo được đi khắp
@@ -799,6 +839,7 @@ if (typeof document !== 'undefined') {
   const T_LABEL = ['ĐÁNH', '1', '2', '3', 'NÉ'];
   function buildTouch() {
     tacts.textContent = '';
+    tbtn.length = 0;
     // Chỗ đứng của từng nút do CSS quyết -- `.tb[data-slot=N]` khai một vector đơn vị và một bán
     // kính cung. Nên ở đây không còn hàng nào để dựng, và thứ tự trong DOM chỉ còn là thứ tự đọc
     // của trình đọc màn hình. Hai hàng ngang của bản trước buộc ngón cái đi thẳng, còn khớp ở gốc
@@ -833,9 +874,10 @@ if (typeof document !== 'undefined') {
       // thống cảnh báo trên sàn đang dạy người chơi đọc.
       b.addEventListener('pointerdown', ev => {
         ev.preventDefault();
-        // Đang sắp xếp thì chạm vào nút nào cũng là dời *cả cụm*: neo là điểm chung của cung, nên
-        // kéo nút nào cũng ra cùng một kết quả, và người chơi không phải tìm đúng một chỗ để bấm.
-        if (tedit) { editDown('acts', ev); return; }
+        // Đang sắp xếp thì chạm vào nút nào là kéo *đúng nút đó*: cung trong CSS chỉ là chỗ đứng
+        // mặc định, còn chỗ ngón cái với tới thật thì mỗi bàn tay một khác -- và dời cả cụm không
+        // nói được "lướt né sang hẳn mép trái, ba skill sát nhau lại".
+        if (tedit) { editDown(n, ev); return; }
         if (aimable) { holdStart(n, b, ev); return; }
         if (n === 0) atkHeld = true;
         fire(n);
@@ -856,8 +898,12 @@ if (typeof document !== 'undefined') {
         b.addEventListener('pointerleave', up);
       }
       tacts.appendChild(b);
+      tbtn.push(b);
       slotFaces[n].push({ cell: b, mask, value: val });
     }
+    // Nút vừa dựng lại thì chỗ đặt riêng của từng ô cũng phải đặt lại: buildTouch() chạy mỗi lần
+    // đổi vũ khí / skill, và không gọi ở đây thì cụm nhảy về cung mặc định sau mỗi lần đổi loadout.
+    actsPlace();
   }
   document.getElementById('tpause').addEventListener('pointerdown', ev => {
     ev.preventDefault(); toggleMenu();
@@ -990,20 +1036,23 @@ if (typeof document !== 'undefined') {
   // Một bản mô phỏng thu nhỏ trong bảng menu là chỗ để "chỗ thấy được" và "chỗ bấm thật" trôi ra
   // khỏi nhau -- mà sai lệch đó chỉ lộ ra lúc đang bị ba con vây, đúng lúc không sửa được.
   let tedit = false;
-  const tdrag = { on: false, id: -1, what: '' , ox: 0, oy: 0 };
+  // `what` là 'stick' hoặc **số ô** (0..4): mỗi nút là một chỗ đặt riêng, nên thứ đang kéo phải nói
+  // được nó là nút nào. Một cờ boolean "đang kéo cụm" của bản trước không tả được chuyện đó.
+  const tdrag = { on: false, id: -1, what: '', ox: 0, oy: 0 };
   function editDown(what, ev) {
     ev.preventDefault();
     if (tdrag.on) return;
     // Ghi lại khoảng lệch giữa ngón và tâm hiện tại, chứ không bắt tâm nhảy vào dưới ngón: nhảy là
     // nút giật một đoạn ngay khi mới chạm, và người chơi mất luôn chỗ tham chiếu để biết mình đang
-    // dịch bao nhiêu. Neo của cụm nút là một hộp 0x0, nên left/top của nó *là* cái tâm cung.
+    // dịch bao nhiêu. Tâm đo từ *phần tử thật* (kể cả nút còn đang nằm trên cung do CSS đặt), nên
+    // không có phép tính hình học nào ở đây phải khớp lại với cung trong CSS.
     let cx, cy;
     if (what === 'stick') {
       const r = tstick.getBoundingClientRect();
       cx = r.left + stick.hx; cy = r.top + stick.hy;
     } else {
-      const r = tacts.getBoundingClientRect();
-      cx = r.left; cy = r.top;
+      const r = tbtn[what].getBoundingClientRect();
+      cx = r.left + r.width * 0.5; cy = r.top + r.height * 0.5;
     }
     tdrag.on = true; tdrag.id = ev.pointerId; tdrag.what = what;
     tdrag.ox = ev.clientX - cx; tdrag.oy = ev.clientY - cy;
@@ -1011,12 +1060,12 @@ if (typeof document !== 'undefined') {
   }
   function editMove(ev) {
     const doc = document.documentElement;
-    // Lưu theo tỉ lệ viewport ngay tại đây, không lưu px rồi đổi lúc ghi: `stickHome`/`actsHome` đọc
+    // Lưu theo tỉ lệ viewport ngay tại đây, không lưu px rồi đổi lúc ghi: `stickHome`/`actsPlace` đọc
     // đúng cái tỉ lệ này, nên vừa kéo đã thấy đúng thứ mà lần vào trận sau sẽ dựng lại.
     const fx = c01((ev.clientX - tdrag.ox) / doc.clientWidth);
     const fy = c01((ev.clientY - tdrag.oy) / doc.clientHeight);
     if (tdrag.what === 'stick') { tcfg.jx = fx; tcfg.jy = fy; stickHome(); }
-    else { tcfg.ax = fx; tcfg.ay = fy; actsHome(); }
+    else { tcfg.b[tdrag.what] = { x: fx, y: fy }; actsPlace(); }
   }
   // Nghe ở window, không bắt pointer: ngón kéo cái bệ ra khỏi vùng nhận của nó là chuyện *bình
   // thường* ở đây (đích đến có thể nằm ngoài), và một cú kéo mất dấu giữa đường là một nút rơi lại
@@ -1061,7 +1110,10 @@ if (typeof document !== 'undefined') {
   scaleRow('JOYSTICK', () => tcfg.js, v => { tcfg.js = v; });
   scaleRow('NÚT CHIÊU', () => tcfg.as, v => { tcfg.as = v; });
   function resetTcfg() {
-    Object.assign(tcfg, TCFG_DEF);
+    // Gán lại từ *một object mới*: `TCFG_DEF` cũ là một hằng số dùng chung, và `b` trong đó là một
+    // mảng -- Object.assign chỉ chép tham chiếu, nên lần kéo nút đầu tiên sau khi đặt lại sẽ ghi
+    // thẳng vào chính cái "mặc định" và từ đó không còn mặc định nào để về.
+    Object.assign(tcfg, tcfgDef());
     for (const show of tRows) show();
     layout(); saveTcfg();
   }
@@ -1098,7 +1150,7 @@ if (typeof document !== 'undefined') {
         Promise.resolve(document.exitFullscreen()).catch(() => {});
     }
     layout();
-    if ((on && scene === 'play') || tedit) stickHome();
+    if ((on && scene === 'play') || tedit) { stickHome(); actsPlace(); }
     paintMob();
   }
 
