@@ -562,6 +562,80 @@ const noLunge = Object.assign({}, khien); delete noLunge.lunge;
   eq('vung xong hero tự đi được', w.hero.dsh <= 0, true);
 }
 
+// ---- 7. Ngắm lại nhát đang chạy ---------------------------------------------------
+// Đánh thường trên điện thoại nổ ngay ở cú chạm, nên cử chỉ kéo ngắm chỉ có nghĩa nếu nó sửa
+// được *chính nhát vừa bấm*. Hai vũ khí này còn kịp: cung bật dây ở nhịp 8, khiên còn đang lao.
+console.log('\n-- ngắm lại nhát đang chạy --');
+{
+  // Bấm sang phải rồi ngắm lại sang trái *trước* nhịp bật dây: cả ba mũi phải bay sang trái. Bia
+  // đặt hai bên, cùng khoảng cách, nên chỉ có góc quyết định con nào ăn đòn.
+  function volley(reAt) {
+    const w = bench('cung');
+    const R = target(w, 'slime', 90, 0), L = target(w, 'slime', -90, 0);
+    R.hp = R.maxhp = 1e6; L.hp = L.maxhp = 1e6;
+    LAB.swing(w, w.hero.x + 60, w.hero.y);
+    for (let i = 0; i < 120; i++) {
+      if (reAt !== null && Math.abs(i / 60 - reAt) < 1 / 120) LAB.reswing(w, w.hero.x - 60, w.hero.y);
+      LAB.step(w, 1 / 60, null);
+    }
+    return { r: Math.round(1e6 - R.hp), l: Math.round(1e6 - L.hp) };
+  }
+  const beat = cung.hits[0] / cung.fps;
+  const plain = volley(null), turned = volley(beat * 0.5), late = volley(beat + 0.1);
+  console.log('     nhịp bật dây ở ' + beat.toFixed(2) + 's · không ngắm lại: '
+              + plain.r + '/' + plain.l + ' · ngắm lại sớm: ' + turned.r + '/' + turned.l
+              + ' · ngắm lại muộn: ' + late.r + '/' + late.l);
+  eq('không ngắm lại thì bay theo cú bấm', plain.r > 0 && plain.l === 0, true);
+  eq('ngắm lại trước khi bật dây thì cả loạt đổi hướng', turned.l > 0 && turned.r === 0, true);
+  near('đổi hướng không đổi sức', turned.l, plain.r, 1);
+  eq('mũi đã rời dây thì không đổi được nữa', late.r > 0 && late.l === 0, true);
+}
+{
+  // Bẻ cú lao giữa đường: quãng đi vẫn đúng `len` (chỉ đổi hướng, không đổi tốc), và đường đi là
+  // một nét gấp -- nửa đầu sang phải, nửa sau lên bắc.
+  const w = bench('khien');
+  const x0 = w.hero.x, y0 = w.hero.y;
+  LAB.swing(w, w.hero.x + 40, w.hero.y);
+  const half = Math.round(khien.lunge.dur * 30);
+  for (let i = 0; i < half; i++) LAB.step(w, 1 / 60, null);
+  const midx = w.hero.x - x0;
+  LAB.reswing(w, w.hero.x, w.hero.y - 60);
+  for (let i = 0; i < 40; i++) LAB.step(w, 1 / 60, null);
+  // Quãng *đi* chứ không phải khoảng dời chỗ: đường đi là một nét gấp, nên hai cạnh phải cộng lại
+  // đúng `len` (trục dọc quy về hệ đã nén, đúng như mọi phép đo tầm khác).
+  const legN = (y0 - w.hero.y) / khien.squash, gone = midx + legN;
+  console.log('     bẻ ở giữa: đi ' + midx.toFixed(1) + 'px sang phải rồi '
+              + legN.toFixed(1) + 'px lên bắc · tổng quãng ' + gone.toFixed(1) + 'px');
+  eq('nửa đầu vẫn đi theo cú bấm', midx > 8, true);
+  eq('bẻ rồi thì đi lên bắc', legN > 8, true);
+  near('bẻ xong không đi ngang thêm nữa', w.hero.x - x0, midx, 1e-6);
+  near('bẻ hướng không cho đi thêm quãng', gone, khien.lunge.len, 1.5);
+}
+{
+  // Không bẻ được một cú lướt né: `dash()` cho 0,30 s bất tử cho một cú trượt 0,155 s, và
+  // "không lái được" là cả điều khoản của nó. Bằng không đòn đánh thường của khiên đã thành
+  // một cú né có lái.
+  const w = bench('khien');
+  LAB.dash(w, 1, 0);
+  const vx = w.hero.dvx, vy = w.hero.dvy;
+  LAB.reswing(w, w.hero.x, w.hero.y - 60);
+  eq('lướt né vẫn giữ nguyên hướng', w.hero.dvx === vx && w.hero.dvy === vy, true);
+}
+{
+  // Bốn vũ khí cận chiến kia không đi qua đường này: chúng đứng tại chỗ quét một cái nón, và cho
+  // quét lại góc giữa một chuỗi 4 nhịp là cho cái nón đi vòng quanh hero.
+  for (const id of ['kiem', 'dao', 'luoi-hai', 'gang']) {
+    const w = bench(id);
+    LAB.swing(w, w.hero.x + 40, w.hero.y);
+    LAB.step(w, 1 / 60, null);
+    const a0 = w.sw ? w.sw.ang : 0;
+    eq(id + ': ngắm lại không ăn', LAB.reswing(w, w.hero.x, w.hero.y - 60), false);
+    eq(id + ': góc không đổi', w.sw ? w.sw.ang : 0, a0);
+  }
+  // Và không có nhát nào đang chạy thì cũng không có gì để ngắm lại.
+  eq('không đang vung thì không ăn', LAB.reswing(bench('cung'), 0, 0), false);
+}
+
 // ---- bảng chỉ số hiển thị --------------------------------------------------------
 console.log('\n-- chỉ số hiển thị --');
 for (const wp of LAB.WEAPONS) {

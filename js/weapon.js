@@ -698,3 +698,43 @@ function swing(w, tx, ty) {
   SFX.cast(wp.id, clamp((h.x - w.cam.x - W * 0.5) / (W * 0.5), -1, 1));
   return true;
 }
+
+// Ngắm lại nhát *đang chạy*. Chỉ ngón tay gọi tới đây (xem `hold.drag` trong shell.js): đánh
+// thường trên điện thoại nổ ngay ở cú chạm chứ không chờ nhả, nên không có hàm này thì cử chỉ
+// kéo ngắm chỉ ăn từ nhát *sau*, còn nhát vừa bấm vẫn bay vào con quái mà `touchAim()` chọn --
+// đúng thứ người chơi đọc ra là "kéo ngắm không bằng con quái ở gần".
+//
+// Sửa được là vì hai vũ khí này không giải xong ở khung bấm: cung bật dây ở nhịp 8, tức 0,29 s
+// sau cú bấm, và khiên lao 0,22 s rồi mới hẩy ở nhịp 7 (0,25 s). Trong quãng đó mũi tên còn
+// chưa rời dây, nên đây không phải sửa lại quá khứ.
+//
+// Bốn vũ khí kia không đi qua đây: chúng đứng tại chỗ quét một cái nón, con gần nhất luôn là câu
+// trả lời đúng, và cho quét lại góc giữa một chuỗi 4 nhịp là cho cái nón đi vòng quanh hero.
+function reswing(w, tx, ty) {
+  // Nhát đang chạy chọn *giống* `step`: entry cuối có `.wp`. Hồi 0,7 s dài hơn 0,57 s của tấm
+  // hiệu ứng nên bình thường chỉ có một, và mũi tên đang bay không có `.wp` (nó ở trong `data`).
+  let e = null;
+  for (const x of w.fxs) if (x.wp) e = x;
+  if (!e || (!e.wp.shot && !e.wp.lunge)) return false;
+  const wp = e.wp, h = w.hero;
+  e.x = clamp(tx, BOUND.x0 - 18, BOUND.x1 + 18);
+  e.y = clamp(ty, BOUND.y0 - 16, BOUND.y1 + 10);
+  // Góc đo từ chỗ hero đang đứng *ở khung này*, không từ `e.ox/e.oy` như `swing()`: lúc bấm hai
+  // chỗ đó là một, nhưng sau đó hero đã đi (khiên vừa lao 30 px), và điểm ngắm thì `holdTrack`
+  // cũng tính lại từ chỗ mới -- đo từ chỗ cũ là góc lệch đi đúng quãng vừa trượt. `e.ox/e.oy` giữ
+  // nguyên vì nó là *chỗ xuất phát*: vệt lao vẽ từ đó.
+  e.ang = Math.atan2((e.y - h.y) / wp.squash, e.x - h.x);
+  h.flip = e.x < h.x;
+  // Cú lao đã xuất phát thì bẻ *phần còn lại*, giữ nguyên tốc: quãng vẫn đúng `len`, chỉ đường đi
+  // thành một nét gấp. Không cần kẹp BOUND ở đây vì `step` kẹp lại từng khung.
+  //
+  // `h.inv` là để không bẻ một cú lướt né: `dash()` cho 0,30 s bất tử cho một cú trượt 0,155 s,
+  // nên inv > 0 giữa lúc đang trượt nghĩa là cú trượt này là của lướt né chứ không phải của khiên
+  // -- và "không lái được" là cả điều khoản của lướt né.
+  if (wp.lunge && h.dsh > 0 && h.inv <= 0) {
+    const sp = wp.lunge.len / wp.lunge.dur;
+    h.dvx = Math.cos(e.ang) * sp;
+    h.dvy = Math.sin(e.ang) * sp * wp.squash;
+  }
+  return true;
+}

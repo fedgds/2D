@@ -1363,6 +1363,14 @@ if (typeof document !== 'undefined') {
       dy: (keys.has('s') ? 1 : 0) - (keys.has('w') ? 1 : 0) + stick.dy,
       ax: aw.x, ay: aw.y,
     };
+    // Ngắm *trong lúc nhát đánh đang chạy*: cú chạm ra đòn ngay, nhưng cung mới bật dây ở 0,29 s
+    // và khiên còn đang lao, nên ngón kéo phải sửa được chính nhát đó. Không có dòng này thì nhát
+    // đầu của mỗi lần bấm luôn bay vào con quái gần nhất của `touchAim()`, và một cú bấm-kéo-nhả
+    // ngắn hơn một nhịp hồi (0,7 s) *chỉ có* nhát đó -- tức là cả cử chỉ ngắm không ăn gì.
+    //
+    // Chỉ khi ngón đã kéo thật: chưa kéo thì `aw` chính là ngắm tự động, và ngắm lại mỗi khung
+    // theo nó là cho mũi tên bám theo con quái đang chạy -- một cây cung tự dò, không ai bấm ra.
+    if (hold.on && hold.wp && hold.drag && scene === 'play' && !paused) reswing(world, aw.x, aw.y);
     // Giữ nút đánh thường thì đánh tiếp ngay khi hết hồi. `swing` tự chối lúc còn hồi, nhưng
     // gọi nó mỗi khung vẫn sai: mỗi lần chối là một tiếng "blocked" -- nên chỉ gọi khi `wcd`
     // đã cạn. Đúng thứ mà trên desktop người chơi làm bằng cách bấm chuột liên tục.

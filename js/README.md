@@ -19,7 +19,7 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `arena.js` | đọc registry `map/`, `applyMap`, rải prop, hạt môi trường |
 | `anim.js` | sinh mọi frame animation lúc nạp từ một pose authored |
 | `boss-img.js` | `ANIM_IMG`/`foeImgFrame`: bốn bộ ảnh → khung vẽ được, và hộp `bh` |
-| `weapon.js` | 6 vũ khí: sheet 16 khung (`ART`), `drawSwing`, `drawHeld`, `swing`, `lungeHero` |
+| `weapon.js` | 6 vũ khí: sheet 16 khung (`ART`), `drawSwing`, `drawHeld`, `swing`, `reswing`, `lungeHero` |
 | `sfx.js` | `SFX` — mọi tiếng đều tổng hợp bằng WebAudio lúc chạy |
 | `world.js` | hero, quái, damage, `newWorld`, `step`, các hàm trúng đòn |
 | `render.js` | thứ tự vẽ một khung, thanh HP quái, vòng ngắm cảm ứng (`drawAimCue`), minimap (`setMinimapTop` cho chế độ điện thoại) |
@@ -193,11 +193,12 @@ Những chỗ đã phải sửa vì *không có chuột*, và tại sao không c
   ngắm tính lại **mỗi khung** từ chỗ ngón đang đặt (`aimWorld()` gọi `holdTrack`), vì người chơi vẫn
   đẩy joystick trong lúc ngắm nên một điểm chốt cứng lúc `pointermove` sẽ trôi lại phía sau người.
 - **Đánh thường của cung và khiên ngắm được, và nó ngắm *trong lúc đang đánh* chứ không ngắm rồi mới
-  đánh.** Cú chạm ra nhát đầu **ngay** (`atkHeld = true; holdStart(); fire(0)`), rồi ngón kéo đi là
-  *những nhát sau* đổi hướng theo, và nhả tay chỉ để **dừng** — `pointerup` gọi `holdEnd(false)`,
+  đánh.** Cú chạm ra nhát đầu **ngay** (`atkHeld = true; holdStart(); fire(0)`), rồi ngón kéo đi vừa
+  sửa **chính nhát đang chạy** (`reswing()`, gạch đầu dòng dưới) vừa lái *những nhát sau*, và nhả tay
+  chỉ để **dừng** — `pointerup` gọi `holdEnd(false)`,
   ngược hẳn với ba skill nơi nhả tay *là* lệnh tung chiêu. Không có nhánh nào phải thêm cho phần lặp:
   `fire(0)` của `frame()` đi qua `aimWorld()` → `holdTrack`, mà `holdTrack` dưới ngưỡng `AIM_DEAD`
-  trả về đúng `touchAim()` — nên nhát đầu giống nguyên văn bản trước, và mọi nhát sau tự đi theo ngón.
+  trả về đúng `touchAim()` — nên một cú chạm không kéo giống nguyên văn bản trước.
   Đổi lại thành "nhả tay mới ra đòn" là cắm một nhịp chờ vào **nhịp nền** của cả trận: đánh thường
   bấm liên tục suốt cả phút, 0,1 giây chờ nhả nhân với mấy trăm nhát là một game khác. Bốn hệ quả:
   `holdStart` **không** xét `world.wcd` (giữ nút xuyên qua khoảng hồi 0,3 giây chính là cách nó chạy,
@@ -223,6 +224,25 @@ Những chỗ đã phải sửa vì *không có chuột*, và tại sao không c
   khung 320×180 (phải `cos < 0,76` và `sin < 0,6` cùng lúc), tức là vẽ 210 thật là vẽ một vòng không
   bao giờ thấy được và đẩy cả ba mũi chỉ hướng ra ngoài màn. Kẹp không hứa sai gì: chế độ `dir` chỉ
   đọc *góc*, đúng lý do ba skill `dir` cũng dùng chung một `AIM_MAX`.
+- **`reswing(w, tx, ty)`: ngón kéo sửa được *nhát đang chạy*, không chỉ nhát sau.** Đây là nửa còn
+  lại của "ngắm trong lúc đang đánh", và không có nó thì cả cử chỉ ngắm gần như không ăn: nhát đầu
+  của mỗi lần bấm luôn bay vào con quái gần nhất của `touchAim()`, mà một cú bấm–kéo–nhả ngắn hơn một
+  nhịp hồi (cung 0,70 s) *chỉ có đúng nhát đó*. Người chơi đọc ra là "kéo ngắm không bằng con quái ở
+  gần", và họ đọc đúng. Sửa được là vì hai vũ khí này **không giải xong ở khung bấm**: cung bật dây ở
+  nhịp 8 tức 0,29 s sau cú bấm (`hits: [8]`, `fps: 28`) nên mũi tên còn chưa rời dây, và khiên còn
+  đang lao (0,22 s) trước nhịp hẩy ở 0,25 s. `frame()` gọi nó mỗi khung khi
+  `hold.on && hold.wp && hold.drag`, ngay trước dòng `fire(0)` của phần lặp. Bốn quyết định trong đó:
+  chỉ khi ngón **đã kéo thật** (chưa kéo thì `aw` chính là ngắm tự động, ngắm lại mỗi khung theo nó là
+  cho mũi tên bám theo con quái đang chạy — một cây cung tự dò, không ai bấm ra thứ đó); chỉ vũ khí có
+  `shot`/`lunge` (bốn vũ khí cận chiến đứng tại chỗ quét một cái nón, cho quét lại góc giữa một chuỗi
+  4 nhịp là cho cái nón đi vòng quanh hero); góc đo từ chỗ hero đang đứng **ở khung này** chứ không từ
+  `e.ox/e.oy` như `swing()` (lúc bấm hai chỗ đó là một, nhưng khiên vừa lao 30 px và `holdTrack` cũng
+  tính điểm ngắm lại từ chỗ mới — đo từ chỗ cũ là lệch đi đúng quãng vừa trượt; `e.ox/e.oy` giữ nguyên
+  vì nó là chỗ *xuất phát*, vệt lao vẽ từ đó); và cú lao đã chạy thì bẻ **phần còn lại** với nguyên
+  tốc, nên quãng đi vẫn đúng `len = 36` px, chỉ đường đi thành một nét gấp (harness: 19,1 px sang phải
+  + 16,9 px lên bắc = 36,0). `h.inv <= 0` là để **không** bẻ một cú lướt né: `dash()` cho 0,30 s bất tử
+  cho một cú trượt 0,155 s, nên `inv > 0` giữa lúc đang trượt nghĩa là cú trượt đó là của lướt né —
+  và "không lái được" là cả điều khoản của lướt né.
 - **Lướt né ngắm được, và tầm của nó là `DASH_LEN = 62` px *thật*.** Đây là chỗ duy nhất trong cả
   phần ngắm có một con số không phải phát minh của shell: `AIM_MAX = 150` là hạn do shell tự đặt vì
   `cast()` không kẹp tầm, còn 62 px thì `dash()` đi đúng bấy nhiêu, không hơn. Nên vòng của nó nhỏ
@@ -365,8 +385,10 @@ chỗ là `ReferenceError` ngay lúc nạp. Phần shell browser nằm sau
 
 `check-weapons.js` kiểm sáu cơ chế làm nên bản sắc của sáu vũ khí — chuỗi nhịp của kiếm, đạn
 bay xuyên của cung, gom bầy hút máu của lưỡi hái, cắt phép của găng, xử trảm và cắm chân của
-đao, cú lao của khiên. Nó so hai trường hợp với nhau (có chuỗi / không chuỗi, máu đầy / máu
-cạn, nhịp cuối / nhịp đầu, có `lunge` / bỏ `lunge`) chứ không so lại con số trong bảng, nên
+đao, cú lao của khiên — cộng `reswing()`, cái ngón tay dùng để sửa nhát đang chạy. Nó so hai
+trường hợp với nhau (có chuỗi / không chuỗi, máu đầy / máu
+cạn, nhịp cuối / nhịp đầu, có `lunge` / bỏ `lunge`, ngắm lại trước / sau nhịp bật dây) chứ không
+so lại con số trong bảng, nên
 tinh chỉnh số liệu thì vẫn xanh, làm hỏng cơ chế thì đỏ.
 
 `check-boss.js` cũng vậy, nhưng cho boss, và nó kiểm *lời hứa* chứ không kiểm bảng: vùng đã tô
