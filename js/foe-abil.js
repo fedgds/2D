@@ -118,8 +118,8 @@ function hitHero(w, amount, col) {
   const h = w.hero;
   if (h.inv > 0) {
     w.dodges++;
-    w.nums.push({ s: 'NÉ', x: Math.round(h.x - textW('NÉ') / 2),
-                  y: Math.round(h.y - h.h - 6), col: C.pale, t: 0, life: 0.7 });
+    w.nums.push({ s: 'NÉ', cx: h.x, y: Math.round(h.y - h.h - 6),
+                  col: C.pale, t: 0, life: 0.7 });
     SFX.dodge();
     return 0;
   }
@@ -128,8 +128,8 @@ function hitHero(w, amount, col) {
   // roll is on `grng` and skipped outright at 0%, so a bare run neither rolls nor drifts.
   if (w.gs.dodge > 0 && w.grng() * 100 < w.gs.dodge) {
     w.dodges++;
-    w.nums.push({ s: 'NÉ', x: Math.round(h.x - textW('NÉ') / 2),
-                  y: Math.round(h.y - h.h - 6), col: C.pale, t: 0, life: 0.7 });
+    w.nums.push({ s: 'NÉ', cx: h.x, y: Math.round(h.y - h.h - 6),
+                  col: C.pale, t: 0, life: 0.7 });
     SFX.dodge();
     return 0;
   }
@@ -145,7 +145,7 @@ function hitHero(w, amount, col) {
   amount = Math.round(amount);
   h.hp = Math.max(0, h.hp - amount); w.taken += amount;
   const s = String(amount);
-  w.nums.push({ s, x: Math.round(h.x - textW(s) / 2), y: Math.round(h.y - h.h - 6),
+  w.nums.push({ s, cx: h.x, y: Math.round(h.y - h.h - 6),
                 col: col || WARN, t: 0, life: 0.9 });
   return amount;
 }

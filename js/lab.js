@@ -23,7 +23,7 @@ const LAB = { W, H, SCALE, SKILLS, buf, newWorld, spawnFoe, unit, cast, step,
               // The six weapon mechanics. Each one is either a hit path or a state the hit
               // path reads, so the harness needs both halves to prove any of them.
               swingHit, swingRiders, weaponStat, fireArrow, ARROW_SK, CUT_SK, cutCast,
-              hurt, healHero, pullToward,
+              hurt, healHero, pullToward, hitCircle, hitLine,
               KIND, FOE_ABIL, GSQ, HERO_R, pickKind, tryCast, startCast, stepTel,
               heroIn, hitHero, SPAWN_W, REL_HOLD,
               // Bosses. `BOSS_SHAPE` is exported because the two things worth asserting about
@@ -40,6 +40,13 @@ const LAB = { W, H, SCALE, SKILLS, buf, newWorld, spawnFoe, unit, cast, step,
               BAG_MAX, GEAR_DROP, GEAR_BOSS_BOOST,
               gearIcon, gearName, statText, gearScore, rollGear, rollRarity, rollDrop, gearSum,
               syncGear, equipGear, unequipGear, trashGear, dropLoot, defMul,
+              // Khoảng ngẫu nhiên của sát thương, và con số chí mạng. `DMG_VARY` ra đây vì hai
+              // harness pin số cứng phải *tắt* được nó (`w.vary = 0`) mới đo được cái chúng đo,
+              // nên "mức mặc định là bao nhiêu" là một câu cần kiểm chứ không phải một con số ẩn.
+              DMG_VARY, CRIT_C, CRIT_KEY, textScaled, textWScaled, text3x5, textW, GLYPHS,
+              // Hình nhân vật. `dollPixels` là toàn bộ phần tính toán -- `drawDoll` chỉ đổ nó lên
+              // canvas -- nên harness kiểm được "mặc vào thì ngoại hình đổi" mà không cần DOM.
+              DOLL_W, DOLL_H, DOLL_DX, DOLL_DY, DOLL_ORDER, DOLL_ART, dollRamp, dollPixels,
               HERO_HP, HERO_MP, MP_REGEN, HUD_BOX, drawHeroBars,
               cam: () => ({ x: CAMX, y: CAMY }) };
 if (typeof globalThis !== 'undefined') globalThis.LAB = LAB;

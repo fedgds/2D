@@ -145,6 +145,9 @@ function newWorld(seed, loadout) {
     // either -- the number of dust motes a frame happened to spawn must not decide what a
     // kill hands out. It is still seeded from the run seed, so a run's drops are its own.
     grng: mulberry32((s ^ 0x1f83d9) >>> 0),
+    // Bề rộng khoảng ngẫu nhiên của sát thương, xem `hurt`. Là một trường của trận chứ không
+    // phải một hằng đọc trực tiếp, để hai harness pin số cứng đặt được về 0.
+    vary: DMG_VARY,
     shake: 0, spawnT: 0,
     hero: { x: WW * 0.5, y: WH * 0.5, w: 11, h: 14, vx: 0, vy: 0, flash: 0, flip: false,
             hp: HERO_HP, maxhp: HERO_HP, mp: HERO_MP, maxmp: HERO_MP,
@@ -197,13 +200,34 @@ function spawnFoe(w, near) {
 //
 // Gear scales the hero's output *here* rather than at the twenty-odd call sites: `phys`
 // marks the two weapon paths, which take +ATK, and everything else -- all sixteen skills
-// and every tick of every field -- takes +Magic ATK. Both factors are exactly 1 with
-// nothing equipped, so the numbers tools/check-weapons.js pins do not move.
+// and every tick of every field -- takes +Magic ATK. Cả hai là số phẳng cộng thẳng vào cú
+// đánh, nên "+18 ATK" nghĩa đúng là cú đó đau thêm 18. Ở mức 0 thì cộng 0, nên những con số
+// tools/check-weapons.js chốt cứng không xê dịch.
+//
+// Hệ quả phải biết: cộng phẳng *mỗi cú* nên một chiêu đánh bốn nhịp ăn bốn lần. `ember_field`
+// (4 nhịp) và `gang` (5 hit một chiêu) hưởng lợi gấp mấy lần `judgment_beam` (một cú 430) hay
+// `khien` (2 hit). Đó là cách đọc thẳng của "cộng theo số"; lo/hi trong js/gear.js được hạ
+// xuống cho vừa cỡ đòn thật vì thế.
+//
+// Sát thương không phải một con số cố định: mỗi cú quay trong khoảng ±`w.vary` quanh giá trị
+// trong bảng, nên một chiêu thả vào một đám cho ra bốn con số khác nhau chứ không phải một
+// con số nhân bốn. Quay trên `w.rng` -- dòng của sim, không phải dòng trang trí -- vì sát
+// thương quyết định ai chết, và một trận phải dựng lại được từ seed của nó.
+const DMG_VARY = 0.15;
+// Màu của con số chí mạng. Cố định, không theo màu chiêu: "đây là chí mạng" phải đọc được mà
+// không cần biết chiêu nào vừa đánh, nên lõi luôn là trắng-vàng nóng và viền luôn là đỏ sẫm.
+// Màu của chiêu vẫn còn, ở quầng sáng phía sau (xem drawCritNum trong js/render.js).
+const CRIT_C = hexc('#fff3bd');
+const CRIT_KEY = hexc('#8e1f05');
 function hurt(w, f, amount, col, crit, kx, ky, phys) {
   if (f.dying) return;
   const gs = w.gs;
+  if (gs) amount += phys ? gs.atk : gs.mag;
+  // Khoảng ngẫu nhiên áp lên tổng, *sau* khi cộng trang bị: +30 ATK phẳng dao động cùng cú
+  // đánh nó thuộc về, chứ không thành một cục cứng gắn thêm ở cuối. Trước hệ số chí mạng, để
+  // một cú chí mạng vẫn đúng là cú thường nhân lên.
+  if (w.vary > 0) amount *= w.rng.range(1 - w.vary, 1 + w.vary);
   if (gs) {
-    amount *= 1 + (phys ? gs.atk : gs.mag) / 100;
     // A weapon's `crit` is the finisher beat -- decided by the swing, not rolled -- and it
     // prints the `!`. Gear crit rate is the separate thing: a chance on any hit at all. The
     // roll is on `grng` so the sim stream never sees it, and it is skipped outright at 0%,
@@ -213,11 +237,17 @@ function hurt(w, f, amount, col, crit, kx, ky, phys) {
   }
   amount = Math.round(amount);
   f.hp -= amount;
-  f.flash = Math.min(0.55, f.flash + 0.45);
+  f.flash = Math.min(0.55, f.flash + (crit ? 0.55 : 0.45));
   if (kx || ky) { f.vx += (kx || 0) / f.mass; f.vy += (ky || 0) / f.mass; }
+  // Một cú chí mạng còn giật màn hình một nhịp ngắn. Đủ để tay cảm thấy, không đủ để một chuỗi
+  // đánh thường thành rung liên tục -- `Math.max` nên nó không cộng dồn với cái đang có.
+  if (crit) w.shake = Math.max(w.shake, 2.4);
+  // `cx` là *tâm* con số, không phải biên trái: con số chí mạng đổi cỡ theo từng khung (nó nảy
+  // vào), nên biên trái chỉ tính được lúc vẽ. Cả năm chỗ đẩy vào `w.nums` đều dùng tâm.
   const s = String(amount) + (crit ? '!' : '');
-  w.nums.push({ s, x: Math.round(f.x - textW(s) / 2), y: Math.round(f.y - f.h - 5),
-                col: col || hexc('#ffd98a'), t: 0, life: crit ? 1.0 : 0.8 });
+  w.nums.push({ s, cx: f.x, y: Math.round(f.y - f.h - 5), crit: crit || false,
+                col: crit ? CRIT_C : (col || hexc('#ffd98a')), glow: col || CRIT_C,
+                t: 0, life: crit ? 1.15 : 0.8 });
   w.dmg += amount;
   // Sound is placed here rather than at the call sites so every one of the 16 skills,
   // and every tick of a damage-over-time field, is heard the same way.
@@ -238,7 +268,7 @@ function healHero(w, amount) {
   if (amount <= 0) return 0;
   h.hp += amount; w.heals += amount;
   const s = String(amount);
-  w.nums.push({ s, x: Math.round(h.x - textW(s) / 2), y: Math.round(h.y - h.h - 6),
+  w.nums.push({ s, cx: h.x, y: Math.round(h.y - h.h - 6),
                 col: HEAL_C, t: 0, life: 0.8 });
   return amount;
 }
@@ -441,7 +471,9 @@ function step(w, dt, inp) {
   }
   for (let i = w.nums.length - 1; i >= 0; i--) {
     const n = w.nums[i];
-    n.t += dt; n.y -= dt * 13;
+    // Chí mạng bay lên nhanh hơn: nó to gấp đôi, nên nếu trôi cùng tốc độ thì nó nằm đè lên
+    // những con số thường bật ra sau nó.
+    n.t += dt; n.y -= dt * (n.crit ? 18 : 13);
     if (n.t >= n.life) w.nums.splice(i, 1);
   }
   for (let i = w.puffs.length - 1; i >= 0; i--) {

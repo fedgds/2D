@@ -71,6 +71,26 @@ function drawFoe(f) {
   }
 }
 
+// Con số chí mạng. Một con số 3x5 màu vàng nhạt giữa một trận có sáu quả cầu sáng là một con
+// số không ai đọc, và chí mạng là con số duy nhất người chơi *cần* thấy ngay -- nên nó được ba
+// thứ mà con số thường không có: gấp đôi cỡ, một viền đỏ sẫm để nó không tan vào nền sáng, và
+// một quầng cộng sáng phía sau mang màu của chính chiêu vừa đánh (chữ thì luôn trắng-vàng, xem
+// CRIT_C trong js/world.js -- danh tính của chiêu nằm ở quầng, không ở chữ).
+//
+// Cú nảy: vào ở 2.84 rồi rơi về 2.0 trong 0.16s. Cỡ đứng yên ngay từ khung đầu thì con số chỉ
+// là to; nó phải *đập* một nhịp mới thành một cú chí mạng.
+const CRIT_SC = 2.0, CRIT_POP = 0.16;
+function drawCritNum(n, a) {
+  const pop = n.t < CRIT_POP ? 1 + 0.42 * (1 - n.t / CRIT_POP) : 1;
+  const sc = CRIT_SC * pop;
+  const wid = textWScaled(n.s, sc), hgt = Math.round(5 * sc);
+  // Neo ở *đáy*: con số phình lên trên chứ không nở ra hai phía, nên nó không bao giờ trùm
+  // xuống cái đầu của con vừa ăn đòn.
+  const y = Math.round(n.y) + 5 - hgt;
+  core(n.cx, y + hgt * 0.5, wid * 0.42 * pop, n.glow, 0.42 * a * (pop - 0.55), 1.7);
+  textScaled(n.s, Math.round(n.cx - wid / 2), y, n.col, a, sc, CRIT_KEY);
+}
+
 function renderWorld(w, out) {
   setCam(w.cam.x, w.cam.y);           // integer camera + floor window for this frame
   buf.set(FLOOR);
@@ -114,7 +134,8 @@ function renderWorld(w, out) {
   for (const e of w.tels) drawTellMid(w, e);
   for (const n of w.nums) {
     const k = n.t / n.life, a = k < 0.6 ? 1 : c01((1 - k) / 0.4);
-    text3x5(n.s, Math.round(n.x), Math.round(n.y), n.col, a);
+    if (n.crit) { drawCritNum(n, a); continue; }
+    text3x5(n.s, Math.round(n.cx - textW(n.s) / 2), Math.round(n.y), n.col, a);
   }
   const hf = heroFrame(h);
   drawHeld(w, true);
@@ -137,40 +158,161 @@ function renderWorld(w, out) {
 // player looks *away* to read. Top-left is what is free -- the minimap owns bottom-right, and
 // top-right on a phone (see `setMinimapTop`).
 //
-// Drawn opaque for the same reason the minimap is: the buffer underneath is additive HDR, so
-// a brazier standing behind the panel would otherwise wash the bars out exactly when a fight
-// is worth reading them during. HP carries its number (the 3x5 font has digits), mana does
-// not -- a mana bar you can see the end of is all the warning a cost needs, and the second
-// number would be two more things to read in the same corner.
-const MANA_C = hexc('#3f8fe0'), MANA_H = hexc('#9fd8ff');
-const HUD_BAR_W = 56;
+// Two separately framed capsules rather than one painted panel: the row between them and the
+// four clipped corners of each frame are never written, so the world shows through around the
+// bars and each one keeps its own silhouette. The capsule *interiors* are still opaque, for the
+// reason the minimap is: the buffer underneath is additive HDR, so a brazier standing behind a
+// see-through trough would wash the bars out exactly when a fight is worth reading them during.
+// Both bars carry their number, centred in the track. Mana used to go without one, on the
+// grounds that a bar you can see the end of is all the warning a cost needs -- but a caster
+// deciding between two skills is comparing its number against their costs, and reading that
+// off a bar length is doing arithmetic on a picture. They share a 3x4 digit set of their own
+// (`HUD_DIG`) rather than the 3x5 damage font, so neither number crowds the bar it sits on.
+//
+// Every colour here goes through asOutput() rather than hexc(): these are UI, not light, so what
+// is authored is what has to land on the screen, and hexc() would hand the tonemap a finished
+// colour to darken again. They are written in doubled-nibble hex on top of that, because
+// resolve() quantises each channel to 16 levels (steps of 17) -- so #667788 survives the round
+// trip exactly and the frame stays the shade it was drawn as instead of dithering into one.
+const HUD_BAR_W = 60;
+// Frame: dark steel, lit from the top-left. A keyline outside so the capsule holds its edge
+// against any floor, one bevel ring inside it (highlight along the top and left, shadow along
+// the bottom and right, a mid tone on the two corners where those meet), and a two-pixel glint
+// where that light would actually catch.
+const FR_INK = asOutput('#000011'), FR_HI = asOutput('#667788'),
+      FR_MID = asOutput('#334455'), FR_LO = asOutput('#112233'),
+      FR_GLINT = asOutput('#aabbcc');
+// Troughs are darker than the bevel's own shadow, which is what makes the empty part of a bar
+// read as a recess rather than as more frame. Each is tinted toward its own bar so a drained bar
+// still says which bar it is; `_D` is the inner shadow the recess casts along its top edge.
+const TR_HP = asOutput('#221111'), TR_HP_D = asOutput('#110000'),
+      TR_MP = asOutput('#111133'), TR_MP_D = asOutput('#000022');
+const HUD_INK = asOutput('#000000'), HUD_LIT = asOutput('#ffffff');
+// The wash used for the two partial-alpha highlights. It is *not* HUD_LIT: asOutput('#ffffff')
+// is buffer 4.08, which is what a glyph needs to resolve to pure white and roughly thirty times
+// what a 12% wash over a red fill should be adding -- blending toward it turned the low-HP
+// pulse pink. Buffer 1.0 is a lift, not a repaint.
+const HUD_WASH = [1, 1, 1];
+// Three stops per bar, interpolated across the track. Per row of fill: the top row is the gloss
+// the light leaves on the lip, the row under it carries that away, and the bottom rows are the
+// shadow the bevel drops inside the trough -- which is what gives a 4px-tall bar any roundness.
+const HP_STOPS = ['#991122', '#dd4411', '#ffbb33'];
+const MP_STOPS = ['#2244aa', '#3388dd', '#66ddff'];
+// Mana is a row shorter than HP: both have to be tall enough to hold a centred 3x4 digit with
+// its keyline (six rows), and past that the thicker bar is the one worth glancing at first.
+const HP_LIT = [0.50, 0.22, 0.06, 0, -0.09, -0.20, -0.34];
+const MP_LIT = [0.48, 0.18, 0.04, -0.06, -0.18, -0.30];
+// One baked colour per (row, column) of a fill, mixed in display space and only then pushed
+// through asOutput() -- mixing the *buffer* values instead bends the gradient, because that
+// inverse is not linear. Baked at load: the bars redraw every frame and must not allocate.
+function bakeFill(stops, lit, wid) {
+  const cs = stops.map(hexc);
+  return lit.map(k => {
+    const row = [];
+    for (let x = 0; x < wid; x++) {
+      const f = x / (wid - 1) * (cs.length - 1);
+      const i = Math.min(cs.length - 2, Math.floor(f)), t = f - i;
+      const c = cs[i].map((v, j) => v + (cs[i + 1][j] - v) * t);
+      row.push(asOutput(k >= 0 ? c.map(v => v + (1 - v) * k) : c.map(v => v * (1 + k))));
+    }
+    return row;
+  });
+}
+const HP_FILL = bakeFill(HP_STOPS, HP_LIT, HUD_BAR_W);
+const MP_FILL = bakeFill(MP_STOPS, MP_LIT, HUD_BAR_W);
+// A capsule is its fill plus a keyline and a bevel ring on each side.
+const HP_CAP_H = HP_LIT.length + 4, MP_CAP_H = MP_LIT.length + 4;
 // The whole painted rectangle, exported next to `MM` and for the same reason: a harness that
 // checks what is on the screen edge has to be able to exclude it by asking rather than by
-// carrying a second copy of these numbers.
-const HUD_BOX = { x: 3, y: 3, w: HUD_BAR_W + 4, h: 16 };
-function hudBar(x, y, wid, hgt, k, col, hi) {
-  const n = Math.round(c01(k) * wid);
-  for (let yy = 0; yy < hgt; yy++)
-    for (let xx = 0; xx < wid; xx++)
-      setPixS(x + xx, y + yy, xx < n ? (yy === 0 ? hi : col) : BAR_BG, 1);
+// carrying a second copy of these numbers. HP capsule on rows 2..12, mana on 14..23, and the
+// DOM HUD underneath is placed off this box (see #hud in index.html) -- growing it moves that.
+const HUD_BOX = { x: 2, y: 2, w: HUD_BAR_W + 4, h: HP_CAP_H + 1 + MP_CAP_H };
+// x,y,wid,hgt are the *outer* rectangle: keyline, bevel ring, then trough.
+function hudFrame(x, y, wid, hgt, tr, trd) {
+  const x1 = x + wid - 1, y1 = y + hgt - 1;
+  // The four corners are left unwritten -- a clipped corner is how pixel art says "rounded",
+  // and it lets the floor round the capsule off instead of a black notch doing it.
+  for (let xx = x + 1; xx < x1; xx++) { setPixS(xx, y, FR_INK, 1); setPixS(xx, y1, FR_INK, 1); }
+  for (let yy = y + 1; yy < y1; yy++) { setPixS(x, yy, FR_INK, 1); setPixS(x1, yy, FR_INK, 1); }
+  // Shadow side first, lit side over it, so the only pixels left to patch are the two corners
+  // where a highlight meets a shadow and neither answer is the right one.
+  for (let xx = x + 1; xx < x1; xx++) setPixS(xx, y1 - 1, FR_LO, 1);
+  for (let yy = y + 1; yy < y1; yy++) setPixS(x1 - 1, yy, FR_LO, 1);
+  for (let xx = x + 1; xx < x1 - 1; xx++) setPixS(xx, y + 1, FR_HI, 1);
+  for (let yy = y + 1; yy < y1 - 1; yy++) setPixS(x + 1, yy, FR_HI, 1);
+  setPixS(x1 - 1, y + 1, FR_MID, 1); setPixS(x + 1, y1 - 1, FR_MID, 1);
+  setPixS(x + 1, y + 1, FR_GLINT, 1); setPixS(x + 2, y + 1, FR_GLINT, 1);
+  for (let yy = y + 2; yy <= y1 - 2; yy++)
+    for (let xx = x + 2; xx <= x1 - 2; xx++) setPixS(xx, yy, yy === y + 2 ? trd : tr, 1);
+}
+// The gradient belongs to the track, not to the filled part: what is left of a bar is always the
+// shades it was drawn with, so a nearly-empty HP bar is deep red on its own and nothing has to
+// switch colour to make that true.
+function hudFill(x, y, k, ramp) {
+  const n = Math.round(c01(k) * HUD_BAR_W);
+  for (let yy = 0; yy < ramp.length; yy++) {
+    const row = ramp[yy];
+    for (let xx = 0; xx < n; xx++) setPixS(x + xx, y + yy, row[xx], 1);
+  }
+  // The column the value ends on is the one the eye tracks, so it gets a highlight of its own.
+  if (n > 0 && n < HUD_BAR_W)
+    for (let yy = 0; yy < ramp.length; yy++) setPixS(x + n - 1, y + yy, HUD_WASH, 0.28);
+  return n;
+}
+// A 3x4 digit set of the HUD's own. The 3x5 damage font is a row taller, and five rows plus the
+// keyline around them filled a seven-row bar edge to edge -- the number stopped being a label on
+// the bar and became the bar. Four rows leaves the gradient visible past it, and the same shapes
+// as GLYPHS wherever a row could be dropped without making two digits agree.
+const HUD_DIG_H = 4;
+const HUD_DIG = {
+  '0': ["###", "#.#", "#.#", "###"], '1': [".#.", "##.", ".#.", "###"],
+  '2': ["###", ".##", "#..", "###"], '3': ["###", ".##", "..#", "###"],
+  '4': ["#.#", "###", "..#", "..#"], '5': ["###", "#..", "..#", "###"],
+  '6': ["###", "#..", "###", "###"], '7': ["###", "..#", ".#.", ".#."],
+  '8': ["###", "#.#", "###", "###"], '9': ["###", "#.#", "###", "..#"],
+};
+// Digits with a black keyline on all eight sides: text3x5's single drop shadow is enough over a
+// dark floor, but white strokes on bright orange dissolve unless something closed runs around
+// them. Two passes rather than one, so no glyph's keyline can land on the next glyph's white.
+//
+// `x0, fy` is the fill's own origin and the number centres itself in it -- both numbers then sit
+// on the same axis and read as a pair rather than as two labels that happen to be near each
+// other, and neither one moves as its digit count changes. Screen space, so no CAMX/CAMY.
+const OUT8 = [-1, -1, 0, -1, 1, -1, -1, 0, 1, 0, -1, 1, 0, 1, 1, 1];
+function hudNum(s, x0, fy, rows) {
+  // The 3x4 glyphs advance by 4 like the 3x5 ones (3 wide, 1 of spacing), so textW still fits.
+  const x = x0 + ((HUD_BAR_W - textW(s)) >> 1), y = fy + ((rows - HUD_DIG_H) >> 1);
+  for (let pass = 0; pass < 2; pass++) {
+    let cx = x;
+    for (const ch of s) {
+      const g = HUD_DIG[ch];
+      if (g) for (let row = 0; row < HUD_DIG_H; row++) for (let cc = 0; cc < 3; cc++) {
+        if (g[row][cc] !== '#') continue;
+        if (pass) setPixS(cx + cc, y + row, HUD_LIT, 1);
+        else for (let i = 0; i < 16; i += 2)
+          setPixS(cx + cc + OUT8[i], y + row + OUT8[i + 1], HUD_INK, 1);
+      }
+      cx += 4;
+    }
+  }
 }
 function drawHeroBars(w) {
   const h = w.hero, b = HUD_BOX;
-  for (let y = 0; y < b.h; y++)
-    for (let x = 0; x < b.w; x++) setPixS(b.x + x, b.y + y, MM_BG, 1);
-  for (let x = -1; x <= b.w; x++) {
-    setPixS(b.x + x, b.y - 1, MM_ED, 1); setPixS(b.x + x, b.y + b.h, MM_ED, 1);
+  const x0 = b.x + 2, hy = b.y + 2, my = b.y + HP_CAP_H + 3;
+  hudFrame(b.x, b.y, b.w, HP_CAP_H, TR_HP, TR_HP_D);
+  hudFrame(b.x, b.y + HP_CAP_H + 1, b.w, MP_CAP_H, TR_MP, TR_MP_D);
+  const n = hudFill(x0, hy, h.hp / h.maxhp, HP_FILL);
+  hudFill(x0, my, h.mp / Math.max(h.maxmp, 1), MP_FILL);
+  // Low HP still has to shout, and a pulse is what is left to do it with: the old colour switch
+  // has nothing to say now that the gradient's own low end is already that red.
+  if (h.hp <= h.maxhp * 0.35 && n > 0) {
+    const a = 0.13 + 0.13 * Math.sin(w.t * 9);   // never negative: setPixS drops a <= 0, and a
+                                                 // pulse that skips frames reads as a glitch
+    for (let yy = 0; yy < HP_LIT.length; yy++)
+      for (let xx = 0; xx < n; xx++) setPixS(x0 + xx, hy + yy, HUD_WASH, a);
   }
-  for (let y = 0; y < b.h; y++) {
-    setPixS(b.x - 1, b.y + y, MM_ED, 1); setPixS(b.x + b.w, b.y + y, MM_ED, 1);
-  }
-  const x0 = b.x + 2, y0 = b.y + 2;
-  const low = h.hp <= h.maxhp * 0.35;
-  hudBar(x0, y0, HUD_BAR_W, 7, h.hp / h.maxhp, low ? BAR_LO : BAR_HI, MM_HERO);
-  hudBar(x0, y0 + 9, HUD_BAR_W, 4, h.mp / Math.max(h.maxmp, 1), MANA_C, MANA_H);
-  // text3x5 is world space, like every other primitive; CAMX/CAMY put it back on the screen.
-  const s = String(Math.max(0, Math.round(h.hp)));
-  text3x5(s, x0 + HUD_BAR_W - textW(s) - 1 + CAMX, y0 + 1 + CAMY, MM_HERO, 0.95);
+  hudNum(String(Math.max(0, Math.round(h.hp))), x0, hy, HP_LIT.length);
+  hudNum(String(Math.max(0, Math.round(h.mp))), x0, my, MP_LIT.length);
 }
 
 // The two weapon states that are decisions rather than events. Both are worn by the hero and

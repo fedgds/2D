@@ -54,6 +54,7 @@ function bench(seed) {
   w.foes.length = 0; w.tels.length = 0;
   w.spawnT = 1e9; w.kills = 0; w.boss = null; w.bossN = 0;
   w.god = false;                        // damage phải thật, vì có mục đo damage
+  w.vary = 0;                           // sát thương không dao động: xem bench() ở check-weapons
   w.hero.x = Math.round(LAB.WW * 0.5); w.hero.y = Math.round(LAB.WH * 0.5);
   LAB.snapCam(w);
   return w;

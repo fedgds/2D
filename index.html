@@ -50,9 +50,10 @@
   #screen { width: 100%; height: 100%; border: 0 }
   #hud {
     /* Dời xuống dưới hai thanh máu/mana: chúng được vẽ *trong* pixel buffer ở góc trên trái,
-       chiếm 20 dòng đầu của 180 (xem HUD_BOX trong js/render.js), nên `top` phải tính theo
-       chiều cao stage chứ không phải một số px cố định -- stage co giãn theo cửa sổ. */
-    position: absolute; left: 8px; top: calc(var(--sh) * 0.125);
+       chiếm 24 dòng đầu của 180 (xem HUD_BOX trong js/render.js -- nó là *cả* hình chữ nhật
+       được tô, kể cả viền), nên `top` phải tính theo chiều cao stage chứ không phải một số px
+       cố định -- stage co giãn theo cửa sổ. 0.14 * 180 = 25,2, vừa đủ hở. */
+    position: absolute; left: 8px; top: calc(var(--sh) * 0.14);
     font-size: max(9px, calc(var(--sw) / 116));
     color: #9fb0cc; text-shadow: 0 1px 0 #000; pointer-events: none; white-space: pre;
     /* #stage zeroes line-height to kill the inline gap under the canvas, and this element
@@ -241,7 +242,14 @@
      để đổi". Phẩm chất là màu, và màu đó do JS truyền vào qua --rar/--rdim (lấy từ bảng
      GEAR_RARITY trong js/gear.js) chứ không viết lại ở đây: bốn màu ở hai nơi là hai nguồn
      sự thật cho một thứ. */
-  .stcols { display: grid; grid-template-columns: 1.05fr .85fr 1.1fr; gap: 4px 16px; align-items: start }
+  .stcols { display: grid; grid-template-columns: auto 1.05fr .85fr 1.1fr; gap: 4px 14px; align-items: start }
+  /* Hình nhân vật. Cỡ do JS đặt (13x17 điểm ảnh nhân một số nguyên), nên ở đây chỉ có cái khung
+     và nền -- một chiều rộng CSS sẽ kéo giãn canvas và làm nhoè đúng thứ duy nhất cần nét. */
+  .dollbox {
+    display: flex; justify-content: center; padding: 8px 10px;
+    border: 1px solid #24263a; background: linear-gradient(180deg, #10131f, #06070e);
+  }
+  .dollbox canvas { image-rendering: pixelated; display: block }
   .gslots { display: grid; gap: 4px }
   .gitem {
     --rar: #3faa55; --rdim: #16301d;
@@ -513,10 +521,17 @@
       <!-- Trạng thái nhân vật: mở giữa trận (I), nên nó cũng là một chỗ *ghé qua* -- ESC trả về
            đúng nơi vừa mở nó, hệt hướng dẫn. Ảnh trang bị là <img> thật lấy từ images/gear, không
            phải canvas vẽ tay: hai mươi file PNG là art có sẵn, và scale bằng image-rendering:
-           pixelated giữ nguyên từng điểm ảnh. -->
+           pixelated giữ nguyên từng điểm ảnh.
+           Cột đầu là hình nhân vật (js/doll.js) -- một <canvas>, vì nó *không* có file ảnh: nó
+           dựng từ đúng sprite HERO của trận cộng lớp phủ của năm ô đang mặc, nên mặc vào là thấy
+           đổi ngay chứ không cần một bộ hai mươi ảnh nhân vật thứ hai. -->
       <div class="panel wide" id="pnStat" hidden>
         <div class="gtitle">TRẠNG THÁI NHÂN VẬT</div>
         <div class="stcols">
+          <div>
+            <div class="gsec">NGOẠI HÌNH</div>
+            <div class="dollbox"><canvas id="stDoll" aria-label="Hình nhân vật với trang bị đang mặc"></canvas></div>
+          </div>
           <div>
             <div class="gsec">TRANG BỊ</div>
             <div class="gslots" id="stEquip" role="group" aria-label="Trang bị đang mặc"></div>
@@ -770,6 +785,7 @@
 <script src="js/weapon.js"></script>
 <script src="js/sfx.js"></script>
 <script src="js/gear.js"></script>
+<script src="js/doll.js"></script>
 <script src="js/world.js"></script>
 <script src="js/render.js"></script>
 <script src="js/skills.js"></script>
@@ -779,6 +795,7 @@
 <script src="js/boss-abil.js"></script>
 <script src="js/lab.js"></script>
 <script src="js/icons.js"></script>
+<script src="js/gpu.js"></script>
 <script src="js/shell.js"></script>
 </body>
 </html>

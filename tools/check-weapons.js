@@ -49,6 +49,10 @@ function bench(wpId) {
   const w = LAB.newWorld(1234, { map: LAB.MAPS[0].id, wp: wpId, slots: [0, 1, 2] });
   w.foes.length = 0;
   w.spawnT = 1e9;
+  // Tắt khoảng ngẫu nhiên của sát thương (xem DMG_VARY trong js/world.js). Cả file này chốt
+  // cứng vài chục con số dmg với sai số ±1, nên một cú đánh dao động ±15% thì mọi phép đo ở
+  // đây mất nghĩa. Bề rộng của khoảng đó được kiểm riêng trong tools/check-gear.js.
+  w.vary = 0;
   w.hero.x = LAB.WW * 0.5; w.hero.y = LAB.WH * 0.5;
   LAB.snapCam(w);
   return w;

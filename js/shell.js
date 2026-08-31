@@ -5,12 +5,23 @@
 // ===========================================================================
 if (typeof document !== 'undefined') {
   const screen = document.getElementById('screen');
-  const ctx = screen.getContext('2d');
-  ctx.imageSmoothingEnabled = false;
-  const off = document.createElement('canvas');
-  off.width = RW; off.height = RH;
-  const octx = off.getContext('2d');
-  const img = octx.createImageData(RW, RH);
+  // Đường hiện khung, chốt *trước* lời gọi getContext đầu tiên: một canvas chỉ cấp được một loại
+  // context, xin loại thứ hai trả về null. Có GPU thì shader trong js/gpu.js làm cả tonemap lẫn
+  // phóng to, nên `resolve()`, `putImageData` và `drawImage` đều không chạy nữa; không có thì
+  // rơi nguyên về đường 2D cũ. `sl.gpu = 0` trong localStorage buộc về đường CPU -- đó là cách
+  // so hai đường với nhau, và cách duy nhất còn chơi được nếu shader hỏng trên một máy nào.
+  let wantGpu = true;
+  try { if (localStorage.getItem('sl.gpu') === '0') wantGpu = false; } catch (e) { /* đành chịu */ }
+  const gpu = wantGpu && gpuMake ? gpuMake(screen, RW, RH, EXPO, LEVELS - 1) : null;
+  let ctx = null, off = null, octx = null, img = null;
+  if (!gpu) {
+    ctx = screen.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    off = document.createElement('canvas');
+    off.width = RW; off.height = RH;
+    octx = off.getContext('2d');
+    img = octx.createImageData(RW, RH);
+  }
   // Bậc nhảy nhỏ nhất của bộ đệm canvas mà vẫn giữ **đúng** tỉ lệ W/H, nên điểm ảnh game luôn
   // vuông: (W/g, H/g) với g = gcd(W, H). Tính một lần ở đây vì W chốt lúc nạp trang (xem FRAME_W
   // trong index.html) và layout() chạy lại mỗi lần đổi cỡ cửa sổ.
@@ -19,7 +30,7 @@ if (typeof document !== 'undefined') {
 
   let world = newWorld(20260827);
   let paused = false, stepOnce = false, slow = false;
-  let last = performance.now(), fps = 60, ms = 0;
+  let last = performance.now(), fps = 60, ms = 0, pms = 0;
   const keys = new Set();
   const bar = document.getElementById('bar');
   const hud = document.getElementById('hud');
@@ -408,6 +419,7 @@ if (typeof document !== 'undefined') {
   const stBag = document.getElementById('stBag');
   const stBagHead = document.getElementById('stBagHead');
   const stDet = document.getElementById('stDet');
+  const stDoll = document.getElementById('stDoll');
   // Ô hành trang đang chọn, theo *chỉ số* trong `world.bag`: mặc một món làm mảng ngắn đi, nên
   // giữ tham chiếu tới object là giữ một thứ đã rời khỏi túi.
   let bagSel = -1, badgeWas = -1;
@@ -465,8 +477,8 @@ if (typeof document !== 'undefined') {
       statRow('Máu', Math.round(h.hp) + ' / ' + h.maxhp, g.hp > 0),
       statRow('Mana', Math.round(h.mp) + ' / ' + h.maxmp, g.mp > 0),
       statRow('Vũ khí', world.wp.name),
-      statRow('Sát thương vũ khí', '+' + g.atk + '%', g.atk > 0),
-      statRow('Sát thương phép', '+' + g.mag + '%', g.mag > 0),
+      statRow('Sát thương vũ khí', '+' + g.atk + ' mỗi hit', g.atk > 0),
+      statRow('Sát thương phép', '+' + g.mag + ' mỗi hit', g.mag > 0),
       statRow('Giáp (DEF)', g.def + ' · giảm ' + Math.round((1 - 100 / (100 + g.def)) * 100) + '%', g.def > 0),
       statRow('Chí mạng', g.crit + '% · +' + g.critd + '% sát thương', g.crit > 0),
       statRow('Tốc đánh', '+' + g.aspd + '%', g.aspd > 0),
@@ -539,7 +551,10 @@ if (typeof document !== 'undefined') {
     row.append(on, off);
     stDet.append(hd, rr, ul, cmp, row);
   }
-  function paintStat() { paintEquip(); paintStats(); paintBag(); paintDetail(); }
+  // Hình nhân vật. Vẽ lại cùng lúc với ba cột kia, nên mọi đường vào bảng -- mở bảng, mặc,
+  // tháo, bỏ -- đều đi qua một chỗ và không có nhánh nào quên cập nhật ngoại hình.
+  function paintDoll() { if (stDoll) drawDoll(stDoll, world.equip, 7); }
+  function paintStat() { paintDoll(); paintEquip(); paintStats(); paintBag(); paintDetail(); }
   function toggleStat() {
     if (scene === 'stat') { SFX.ui('back'); setScene(backTo); }
     else if (scene === 'play' || scene === 'pause') { SFX.ui('click'); setScene('stat'); }
@@ -1569,22 +1584,30 @@ if (typeof document !== 'undefined') {
       world.aim.x = aw.x; world.aim.y = aw.y;
     }
     const t0 = performance.now();
-    renderWorld(world, img.data);
+    // Đường GPU dừng ở `buf`: tonemap là việc của shader. Đường CPU vẫn giải tới từng byte RGBA.
+    renderWorld(world, gpu ? null : img.data);
     ms = ms * 0.9 + (performance.now() - t0) * 0.1;
-    octx.putImageData(img, 0, 0);
     const sh = world.shake;
     const ox = sh > 0 ? (Math.random() * 2 - 1) * sh : 0;
     const oy = sh > 0 ? (Math.random() * 2 - 1) * sh * 0.6 : 0;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, screen.width, screen.height);
-    ctx.imageSmoothingEnabled = false;
     // Bộ đệm đã bằng số điểm ảnh vật lý của hộp, nên đây là *lần phóng to duy nhất* trong cả
-    // đường đi -- và nó là nearest thật vì smoothing đã tắt. Tỉ lệ giờ là số lẻ (4,75 chẳng
-    // hạn), nên độ rung phải quy về số nguyên điểm ảnh vật lý: để lẻ thì `drawImage` phải đặt
-    // ảnh vào toạ độ giữa hai điểm ảnh và canvas tự nội suy lại đúng một lần nữa.
+    // đường đi -- và nó là nearest thật (smoothing tắt ở đường 2D, texelFetch ở đường shader).
+    // Tỉ lệ giờ là số lẻ (4,75 chẳng hạn), nên độ rung phải quy về số nguyên điểm ảnh vật lý:
+    // để lẻ thì ảnh rơi vào toạ độ giữa hai điểm ảnh và bị nội suy lại đúng một lần nữa.
     const px = screen.width / W;
-    ctx.drawImage(off, Math.round(Math.round(ox) * px), Math.round(Math.round(oy) * px),
-                  screen.width, screen.height);
+    const dx = Math.round(Math.round(ox) * px), dy = Math.round(Math.round(oy) * px);
+    const t1 = performance.now();
+    if (gpu) {
+      gpu.upload(buf);
+      gpu.present(dx, dy);
+    } else {
+      octx.putImageData(img, 0, 0);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, screen.width, screen.height);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(off, dx, dy, screen.width, screen.height);
+    }
+    pms = pms * 0.9 + (performance.now() - t1) * 0.1;
     const slotName = sel === 0 ? world.wp.name + ' (đánh thường)'
                    : sel === DASH_SLOT ? DASH_SK.name + ' (lướt né)'
                    : SKILLS[loadout.slots[sel - 1]].name;
@@ -1593,7 +1616,8 @@ if (typeof document !== 'undefined') {
     // khung/giây là đúng thứ làm trình duyệt tính lại bố cục ngay giữa lúc đánh nhau.
     if (world.newGear !== badgeWas) { badgeWas = world.newGear; paintStatBadge(); }
     hud.textContent =
-      'FPS ' + fps.toFixed(0) + '   vẽ ' + ms.toFixed(1) + 'ms   fx ' + world.fxs.length +
+      'FPS ' + fps.toFixed(0) + '   vẽ ' + ms.toFixed(1) + 'ms   hiện ' + pms.toFixed(1) + 'ms'
+      + (gpu ? ' (gpu)' : ' (cpu)') + '   fx ' + world.fxs.length +
       '\nquái ' + world.foes.length + '   hạ ' + world.kills + '   dmg ' + world.dmg +
       '\ncảnh báo ' + world.tels.length +
       (world.danger > 0 ? '   << ĐANG ĐỨNG TRONG VÙNG (' + world.danger + ') >>' : '') +

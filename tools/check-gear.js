@@ -225,27 +225,44 @@ console.log('\n-- chỉ số ăn vào sim --');
 function arena(gear) {
   const t = LAB.newWorld(21, { wp: 'kiem', slots: [0, 1, 2] });
   NO_FOE(t);
+  // Không dao động: mục này đo *hệ số*, và một con số nhân thêm ±15% thì không đo được hệ số nào.
+  // Bề rộng của khoảng dao động có mục riêng ở dưới.
+  t.vary = 0;
   if (gear) { for (const k in gear) t.equip[k] = gear[k]; LAB.syncGear(t); }
   const f = LAB.unit('brute', t.hero.x + 20, t.hero.y);
   f.maxhp = f.hp = 100000;
   t.foes.push(f);
   return { w: t, f: f };
 }
-// +ATK chỉ ăn vào đòn vũ khí, +Magic ATK chỉ ăn vào chiêu. Kiểm bằng cách gọi `hurt` hai lần
-// với đúng cùng một con số, một lần đánh dấu phys và một lần không.
+// +ATK chỉ ăn vào đòn vũ khí, +Magic ATK chỉ ăn vào chiêu, và cả hai là **số phẳng**: cộng
+// thẳng vào cú đánh, không nhân phần trăm. Kiểm bằng cách gọi `hurt` hai lần với đúng cùng một
+// con số, một lần đánh dấu phys và một lần không.
 const base = arena(null);
 LAB.hurt(base.w, base.f, 100, '#fff', false, 0, 0, true);
 const dmgPlain = base.w.dmg;
+eq('nền không trang bị đúng bằng số gọi vào', dmgPlain, 100);
 const atkOnly = arena({ gloves: item('gloves', 'rare', [['atk', 25]]) });
 LAB.hurt(atkOnly.w, atkOnly.f, 100, '#fff', false, 0, 0, true);
-eq('+ATK 25% vào đòn vũ khí', atkOnly.w.dmg, Math.round(dmgPlain * 1.25));
+eq('+ATK 25 cộng phẳng vào đòn vũ khí', atkOnly.w.dmg, dmgPlain + 25);
 LAB.hurt(atkOnly.w, atkOnly.f, 100, '#fff', false, 0, 0, false);
-eq('+ATK không vào chiêu', atkOnly.w.dmg - Math.round(dmgPlain * 1.25), dmgPlain);
+eq('+ATK không vào chiêu', atkOnly.w.dmg - (dmgPlain + 25), dmgPlain);
 const magOnly = arena({ gloves: item('gloves', 'rare', [['mag', 50]]) });
 LAB.hurt(magOnly.w, magOnly.f, 100, '#fff', false, 0, 0, false);
-eq('+Magic ATK 50% vào chiêu', magOnly.w.dmg, Math.round(dmgPlain * 1.5));
+eq('+Magic ATK 50 cộng phẳng vào chiêu', magOnly.w.dmg, dmgPlain + 50);
 LAB.hurt(magOnly.w, magOnly.f, 100, '#fff', false, 0, 0, true);
-eq('+Magic ATK không vào đòn vũ khí', magOnly.w.dmg - Math.round(dmgPlain * 1.5), dmgPlain);
+eq('+Magic ATK không vào đòn vũ khí', magOnly.w.dmg - (dmgPlain + 50), dmgPlain);
+// Cộng phẳng thì *không* phụ thuộc cú đánh to hay nhỏ: đó là toàn bộ khác biệt so với bản %
+// trước đó, và là câu duy nhất phân biệt được hai cách tính bằng một phép đo.
+const flat = arena({ gloves: item('gloves', 'epic', [['mag', 30]]) });
+LAB.hurt(flat.w, flat.f, 40, '#fff', false, 0, 0, false);
+eq('cú 40 → 70', flat.w.dmg, 70);
+LAB.hurt(flat.w, flat.f, 400, '#fff', false, 0, 0, false);
+eq('cú 400 → 430, cộng đúng bấy nhiêu', flat.w.dmg - 70, 430);
+// Hai stat này không được mang cờ pct, nếu không bảng chỉ số in ra dấu %.
+eq('+ATK không phải phần trăm', !LAB.STAT_BY_ID.atk.pct, true);
+eq('+Magic ATK không phải phần trăm', !LAB.STAT_BY_ID.mag.pct, true);
+eq('dòng chỉ số +ATK in ra số trơn', LAB.statText({ id: 'atk', v: 7 }), '+ATK 7');
+eq('dòng chỉ số +Magic ATK in ra số trơn', LAB.statText({ id: 'mag', v: 18 }), '+Magic ATK 18');
 // +Crit rate 100% thì mọi đòn chí mạng, và +Crit damage nhân lên trên đó.
 const critAll = arena({ helmet: item('helmet', 'legendary', [['crit', 100], ['critd', 50]]) });
 LAB.hurt(critAll.w, critAll.f, 100, '#fff', false, 0, 0, true);
@@ -314,7 +331,155 @@ eq('mặc rồi tháo hết ⇒ cùng một trận', run(31, true), run(31, fals
 eq('máu nền vẫn là HERO_HP', LAB.newWorld(1).hero.maxhp, LAB.HERO_HP);
 eq('mana nền vẫn là HERO_MP', LAB.newWorld(1).hero.maxmp, LAB.HERO_MP);
 
-// ---- 8. hai thanh máu/mana vẽ được và nằm trong góc trên trái ----
+// ---- 8. khoảng ngẫu nhiên của sát thương ----
+console.log('\n-- sát thương dao động trong một khoảng --');
+eq('DMG_VARY nằm trong khoảng đọc được', LAB.DMG_VARY > 0 && LAB.DMG_VARY < 0.5, true);
+eq('trận mới bật dao động sẵn', LAB.newWorld(1).vary, LAB.DMG_VARY);
+const wv1 = LAB.newWorld(55, { wp: 'kiem', slots: [0, 1, 2] });
+NO_FOE(wv1);
+const dummy = LAB.unit('brute', wv1.hero.x + 20, wv1.hero.y);
+dummy.maxhp = dummy.hp = 1e9;
+wv1.foes.push(dummy);
+const spread = new Set();
+let lowest = 1e9, highest = -1e9, tot = 0, prev = 0;
+for (let k = 0; k < 400; k++) {
+  LAB.hurt(wv1, dummy, 200, null, false, 0, 0, false);
+  const d = wv1.dmg - prev; prev = wv1.dmg;
+  spread.add(d);
+  if (d < lowest) lowest = d;
+  if (d > highest) highest = d;
+  tot += d;
+}
+eq('400 cú không ra cùng một con số', spread.size > 12, true);
+eq('không cú nào dưới sàn', lowest >= Math.round(200 * (1 - LAB.DMG_VARY)), true);
+eq('không cú nào trên trần', highest <= Math.round(200 * (1 + LAB.DMG_VARY)), true);
+// Không chỉ "có dao động" mà dao động *đủ rộng*: một khoảng ±15% khai báo mà thực tế chỉ chạy
+// ±2% thì bảng số vẫn đọc ra là một con số duy nhất, và đó đúng là cái cần sửa.
+eq('có cú gần sàn', lowest <= 200 * (1 - LAB.DMG_VARY * 0.8), true);
+eq('có cú gần trần', highest >= 200 * (1 + LAB.DMG_VARY * 0.8), true);
+near('trung bình vẫn là con số trong bảng', tot / 400, 200, 4);
+wv1.vary = 0;
+const onlyOne = new Set();
+for (let k = 0; k < 20; k++) {
+  const b = wv1.dmg;
+  LAB.hurt(wv1, dummy, 200, null, false, 0, 0, false);
+  onlyOne.add(wv1.dmg - b);
+}
+eq('vary = 0 thì mọi cú y hệt', onlyOne.size, 1);
+// Câu người chơi thật sự nói ra: một chiêu thả vào một đám thì cả đám *không* nhận cùng một số.
+const wpk = LAB.newWorld(57, { wp: 'kiem', slots: [0, 1, 2] });
+NO_FOE(wpk);
+const pack = [];
+for (let k = 0; k < 8; k++) {
+  const f = LAB.unit('slime', wpk.hero.x + 6 + k * 3, wpk.hero.y + (k % 2 ? 5 : -5));
+  f.maxhp = f.hp = 1e6; f.frozen = 1e9;
+  wpk.foes.push(f); pack.push(f);
+}
+eq('cả đám đều trúng', LAB.hitCircle(wpk, wpk.hero.x + 16, wpk.hero.y, 70, 150, null, false, 0), 8);
+eq('tám con nhận nhiều con số khác nhau', new Set(pack.map(f => 1e6 - f.hp)).size >= 5, true);
+
+// ---- 9. con số chí mạng ----
+console.log('\n-- con số chí mạng --');
+const wcr = LAB.newWorld(61, { wp: 'kiem', slots: [0, 1, 2] });
+NO_FOE(wcr);
+wcr.vary = 0;
+const tgt = LAB.unit('brute', wcr.hero.x + 20, wcr.hero.y);
+tgt.maxhp = tgt.hp = 1e6;
+wcr.foes.push(tgt);
+LAB.hurt(wcr, tgt, 100, null, false, 0, 0, false);
+const numPlain = wcr.nums[wcr.nums.length - 1];
+LAB.hurt(wcr, tgt, 100, null, true, 0, 0, false);
+const numCrit = wcr.nums[wcr.nums.length - 1];
+eq('cú thường không mang cờ chí mạng', numPlain.crit, false);
+eq('cú chí mạng mang cờ', numCrit.crit, true);
+eq('có dấu !', /!$/.test(numCrit.s), true);
+eq('màu chí mạng cố định, không theo màu chiêu', numCrit.col, LAB.CRIT_C);
+eq('con số chí mạng sống lâu hơn', numCrit.life > numPlain.life, true);
+eq('chí mạng giật màn hình một nhịp', wcr.shake > 0, true);
+// Cả năm chỗ đẩy số vào `w.nums` đều lưu *tâm*: con số chí mạng đổi cỡ theo khung, nên biên
+// trái chỉ tính được lúc vẽ, và một chỗ còn lưu biên trái thì con số đó lệch sang trái.
+let noCx = 0;
+for (const n of wcr.nums) if (!(n.cx >= 0) || n.x !== undefined) noCx++;
+eq('mọi con số lưu tâm, không lưu biên trái', noCx, 0);
+eq('bề rộng ×1 khớp textW', LAB.textWScaled('123', 1), LAB.textW('123'));
+eq('×2 thì rộng gấp đôi', LAB.textWScaled('123', 2), LAB.textW('123') * 2);
+// Nhãn né đòn in ra chữ, không phải số: nếu bảng chữ thiếu một glyph thì `hitHero` đo đúng bề
+// rộng của 'NÉ' rồi vẽ ra hai ô trống -- thứ chỉ thấy được bằng mắt.
+for (const ch of 'NÉ0123456789!') eq('có glyph ' + ch, !!LAB.GLYPHS[ch], true);
+// Đường vẽ chí mạng là một nhánh riêng, nên phải có ai chạy nó.
+const pxc = new Uint8ClampedArray(LAB.W * LAB.H * 4);
+let critErr = 'không';
+try { LAB.renderWorld(wcr, pxc); } catch (e) { critErr = String(e && e.message || e); }
+eq('vẽ được khung có số chí mạng', critErr, 'không');
+function litCount(fn) {
+  LAB.buf.fill(0);
+  LAB.setCam(0, 0);
+  fn();
+  let n = 0;
+  for (let i = 0; i < LAB.buf.length; i += 3)
+    if (LAB.buf[i] + LAB.buf[i + 1] + LAB.buf[i + 2] > 0.05) n++;
+  return n;
+}
+const litSmall = litCount(() => LAB.text3x5('123', 40, 40, LAB.CRIT_C, 1));
+const litBig = litCount(() => LAB.textScaled('123', 40, 40, LAB.CRIT_C, 1, 2, LAB.CRIT_KEY));
+eq('chữ chí mạng chiếm nhiều điểm hơn hẳn', litBig > litSmall * 2.5, true);
+eq('chữ thường vẫn vẽ ra cái gì đó', litSmall > 20, true);
+
+// ---- 10. hình nhân vật trong bảng trạng thái ----
+console.log('\n-- hình nhân vật --');
+for (const s of LAB.GEAR_SLOTS) {
+  const art = LAB.DOLL_ART[s.id];
+  eq(s.id + ': có hình', !!art, true);
+  if (!art) continue;
+  eq(s.id + ': mọi hàng đúng ' + LAB.DOLL_W + ' ký tự',
+     art.g.filter(l => l.length !== LAB.DOLL_W).length, 0);
+  eq(s.id + ': nằm trong bảng vẽ', art.y >= 0 && art.y + art.g.length <= LAB.DOLL_H, true);
+  eq(s.id + ': chỉ dùng ký tự có màu', art.g.every(l => /^[.0123]+$/.test(l)), true);
+}
+eq('thứ tự vẽ đủ năm ô',
+   LAB.DOLL_ORDER.slice().sort().join(','), LAB.GEAR_SLOTS.map(s => s.id).sort().join(','));
+const bare = LAB.dollPixels(null);
+eq('bảng vẽ đúng cỡ', bare.length + 'x' + bare[0].length, LAB.DOLL_H + 'x' + LAB.DOLL_W);
+// Không mặc gì thì hình đúng bằng sprite HERO của trận -- cùng một nhân vật, không phải một bản
+// vẽ thứ hai đi lệch dần khỏi cái đang chạy.
+let heroPx = 0;
+for (const ln of LAB.GRIDS.hero) for (const ch of ln) if (LAB.PAL[ch]) heroPx++;
+let barePx = 0;
+for (const row of bare) for (const c of row) if (c) barePx++;
+eq('không mặc gì: đúng bằng HERO', barePx, heroPx);
+for (const s of LAB.GEAR_SLOTS) {
+  const eqp = { helmet: null, armor: null, gloves: null, pants: null, boots: null };
+  eqp[s.id] = item(s.id, 'legendary', [['hp', 1]]);
+  const px = LAB.dollPixels(eqp);
+  const art = LAB.DOLL_ART[s.id];
+  let diff = 0, outside = 0;
+  for (let r = 0; r < LAB.DOLL_H; r++) for (let c = 0; c < LAB.DOLL_W; c++)
+    if (px[r][c] !== bare[r][c]) { diff++; if (r < art.y || r >= art.y + art.g.length) outside++; }
+  eq(s.id + ': mặc vào thì ngoại hình đổi', diff > 5, true);
+  eq(s.id + ': không đổi ngoài hàng của nó', outside, 0);
+}
+// Phẩm chất đổi màu, không đổi hình: bốn ảnh khác nhau nhưng cùng số điểm.
+function dollSig(rar) {
+  const e = { helmet: item('helmet', rar, []), armor: null, gloves: null, pants: null, boots: null };
+  return LAB.dollPixels(e).map(row => row.map(c => c || '-').join('|')).join('/');
+}
+eq('bốn phẩm chất ra bốn hình khác màu', new Set(LAB.GEAR_RARITY.map(r => dollSig(r.id))).size, 4);
+for (const r of LAB.GEAR_RARITY) {
+  const ramp = LAB.dollRamp(r.id);
+  eq(r.id + ': bốn màu hợp lệ',
+     ['0', '1', '2', '3'].filter(k => !/^#[0-9a-f]{6}$/.test(ramp[k])).length, 0);
+}
+// Mặc cả bộ thì cả năm lớp đều còn thấy được: giáp vẽ sau quần và găng vẽ sau giáp, nên nếu
+// thứ tự sai thì một trong hai món biến mất hẳn khỏi hình.
+const full = {};
+for (const s of LAB.GEAR_SLOTS) full[s.id] = item(s.id, s.id === 'gloves' ? 'common' : 'legendary', []);
+const fullPx = LAB.dollPixels(full);
+const glovC = LAB.dollRamp('common');
+let glovSeen = 0;
+for (const row of fullPx) for (const c of row) if (c === glovC['1'] || c === glovC['3']) glovSeen++;
+eq('găng không bị giáp vẽ đè mất', glovSeen > 4, true);
+
+// ---- 11. hai thanh máu/mana vẽ được và nằm trong góc trên trái ----
 console.log('\n-- thanh HP/mana trên buffer --');
 const wv = LAB.newWorld(41, { wp: 'kiem', slots: [0, 1, 2] });
 const px2 = new Uint8ClampedArray(LAB.W * LAB.H * 4);

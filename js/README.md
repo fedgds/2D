@@ -22,6 +22,7 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `weapon.js` | 6 vũ khí: sheet 16 khung (`ART`), `drawSwing`, `drawHeld`, `swing`, `reswing`, `lungeHero` |
 | `sfx.js` | `SFX` — mọi tiếng đều tổng hợp bằng WebAudio lúc chạy |
 | `gear.js` | 5 ô trang bị × 4 phẩm chất × 12 chỉ số: bảng dữ liệu, `rollGear`, `gearSum` |
+| `doll.js` | hình nhân vật trong bảng trạng thái: `dollPixels` (thuần tính) + `drawDoll` (đổ lên canvas) |
 | `world.js` | hero, quái, damage, `newWorld`, `step`, các hàm trúng đòn, mana + `syncGear` |
 | `render.js` | thứ tự vẽ một khung, thanh HP quái, thanh HP/mana của hero (`drawHeroBars`), vòng ngắm cảm ứng (`drawAimCue`), minimap (`setMinimapTop` cho chế độ điện thoại) |
 | `skills.js` | 16 skill (`SKILLS`) |
@@ -31,6 +32,7 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `boss-abil.js` | 12 chiêu boss + `BOSS_SHAPE` (vùng tô, và chính nó là vùng gây damage) |
 | `lab.js` | `globalThis.LAB`: cửa cho harness node, không cần DOM |
 | `icons.js` | icon 32×32 vẽ bằng canvas cho hotbar và bảng chọn |
+| `gpu.js` | `gpuMake`: tonemap + dither + phóng to bằng một fragment shader WebGL2, thay `resolve()` trên browser (`resolve()` vẫn là bản tham chiếu của harness) |
 | `shell.js` | shell browser: layout, menu/hướng dẫn, input, phím cảm ứng, vòng lặp khung |
 
 ## Lưới điểm ảnh — vì sao game từng trông mờ
@@ -422,9 +424,11 @@ cast này rồi đo trên cast khác thì phải gieo cùng một seed cho cả 
 sẽ "đạt" vì điểm đo rơi vào khe trống của mắt lưới.
 
 `check-gear.js` kiểm mana, trang bị và hành trang. Mười hai chỉ số được kiểm **một lần mỗi
-cái, ở chỗ nó thật sự ăn vào sim** (không phải ở bảng dữ liệu): `+ATK` chỉ nhân đòn vũ khí và
-`+Magic ATK` chỉ nhân chiêu — hai lần gọi `hurt` với cùng một con số, khác nhau đúng cờ
-`phys`; `+Crit rate 100` làm mọi đòn chí mạng và `+Crit damage` nhân lên trên đó; `+DEF 100`
+cái, ở chỗ nó thật sự ăn vào sim** (không phải ở bảng dữ liệu): `+ATK` chỉ cộng vào đòn vũ khí và
+`+Magic ATK` chỉ cộng vào chiêu, và cả hai là **số phẳng** — hai lần gọi `hurt` với cùng một con
+số, khác nhau đúng cờ `phys`, cộng một mục nữa chứng minh nó không phụ thuộc thang: cú 40 và cú
+400 cùng nhận thêm đúng bấy nhiêu; `+Crit rate 100` làm mọi đòn chí mạng và `+Crit damage` nhân
+lên trên đó; `+DEF 100`
 cho `defMul` đúng 0,5; `+%Dodge 100` làm `hitHero` trả về 0; hai dòng hồi đo bằng cách chạy
 đủ 60 khung rồi so lượng lên; `+Attack Speed 100%` rút `w.wcd` còn nửa; `+Move Speed 50%` đo
 bằng khoảng cách đi được trong nửa giây. Nhưng mục quan trọng nhất là mục cuối:
@@ -434,9 +438,51 @@ bằng khoảng cách đi được trong nửa giây. Nhưng mục quan trọng 
 
 Câu đó là điều kiện để ba harness kia còn xanh. `check-weapons.js` và `check-boss.js` chốt
 cứng hàng chục con số damage và máu, nên mọi hệ số của trang bị phải là `1 + v/100` hoặc
-`100/(100+v)` — đúng bằng 1 ở mức 0 — và mọi phép bốc thăm của trang bị phải bị **chặn bởi
+`100/(100+v)` — đúng bằng 1 ở mức 0 — còn hai dòng cộng phẳng (`+ATK`, `+Magic ATK`) phải cộng
+đúng 0 ở mức 0, và mọi phép bốc thăm của trang bị phải bị **chặn bởi
 `> 0`** để dòng rng không bị đẩy đi một bước. `+HP Regen/5s` vì thế không có nền: nền khác 0
 là mọi con số máu trong hai tool kia lệch đi.
+
+Cùng lý do đó, ba tool đều đặt `w.vary = 0` ngay sau khi dựng world (xem *Khoảng sát thương*
+dưới đây): một cú đánh nhân thêm ±15% thì không có con số nào chốt cứng được nữa. Bề rộng của
+khoảng dao động có mục kiểm riêng trong `check-gear.js`, và mục đó đo *tính chất* — 400 cú không
+ra cùng một con số, có cú gần sàn, có cú gần trần, trung bình vẫn là con số trong bảng — chứ
+không chốt một con số cụ thể nào.
+
+## Khoảng sát thương, và con số chí mạng
+
+`hurt` trong `world.js` là **cửa duy nhất** mọi sát thương đi ra, nên cả ba việc dưới đây nằm
+gọn trong nó, theo đúng thứ tự này:
+
+1. cộng phẳng `+ATK` (cờ `phys`) hoặc `+Magic ATK`,
+2. nhân khoảng dao động `w.rng.range(1 - w.vary, 1 + w.vary)` với `DMG_VARY = 0.15`,
+3. nhân `+Crit damage` nếu cú này chí mạng.
+
+Thứ tự ấy có ý: dao động nằm **sau** phần cộng của trang bị nên phần trang bị cũng dao động
+cùng nhát đánh nó thuộc về, và nằm **trước** phần chí mạng nên một cú chí mạng đúng bằng một cú
+thường được nhân lên — không phải một phép bốc thăm thứ hai. Bốc trên `w.rng` chứ không `w.crng`:
+sát thương là sim, và một world gieo cùng seed vẫn phải chạy ra cùng một chuỗi.
+
+`w.vary` là **trường của trận**, không phải hằng số đọc trực tiếp, chỉ để ba harness đặt được về
+0. Trong game nó không bao giờ đổi.
+
+Hệ quả của "cộng theo số" phải nói rõ, vì nó không tránh được: phần cộng ăn vào **mỗi nhịp
+trúng**. Một chiêu ruộng đánh 4 nhịp nhận phần cộng bốn lần, một cú `judgment_beam` một nhịp
+nhận đúng một lần. Vì vậy `GEAR_STATS` để `+ATK` ở thang 2–5 còn `+Magic ATK` ở thang 9–24: đòn
+vũ khí một nhịp là 7–20 damage, còn một nhịp chiêu là 42–430, nên một thang chung sẽ hoặc không
+đáng kể với chiêu hoặc nhân ba lần đòn vũ khí.
+
+Con số chí mạng vẽ bằng đường riêng (`drawCritNum` trong `render.js`) chứ không dùng `text3x5`:
+`textScaled` trong `sprites.js` in mỗi ô của bộ chữ 3x5 thành một hình chữ nhật `sc × sc`, nên
+cỡ chữ là một số thực và cú "nảy" `CRIT_POP` từ 2,84 xuống `CRIT_SC = 2.0` chạy trơn. Ba thứ nữa
+làm nó nổi bật: một viền `CRIT_KEY` dày 1 px (lọc trùng bằng `Set`, bằng không mép chữ ghi hai
+lần trên buffer cộng sáng và ra một vệt đậm), một vệt sáng `core` mang **màu của chiêu**, và màu
+chữ thì cố định `CRIT_C` — nhờ vậy một cú chí mạng đọc ra là chí mạng bất kể chiêu nào gây ra nó.
+Nó cũng bay lên nhanh hơn và sống lâu hơn (1,15s so với 0,8s).
+
+Mọi con số trong `w.nums` lưu **tâm** (`cx`), không lưu mép trái: cỡ chữ đổi theo từng khung nên
+mép trái phải suy ra lúc vẽ. Năm chỗ đẩy số vào (`hurt`, `healHero`, ba chỗ trong `foe-abil.js`)
+đều đã đổi theo, và `check-gear.js` kiểm rằng không còn chỗ nào lưu mép trái.
 
 ## Mana, trang bị, hành trang
 
@@ -469,21 +515,78 @@ thường và lướt né không tốn mana, vì cả hai là thứ bấm liên 
 chết vì một con số không hiện ở đâu cả.
 
 Hai cái thanh vẽ **trong buffer điểm ảnh**, không phải DOM (`drawHeroBars`, hộp `HUD_BOX` xuất
-ra cạnh `MM` để harness loại được khỏi phép kiểm mép màn hình). Góc trên trái, vì minimap giữ
-góc dưới phải và giữ góc trên phải ở chế độ điện thoại. Vẽ **đục**, cùng lý do minimap vẽ đục:
-buffer bên dưới là HDR cộng sáng, nên một cái đuốc đứng sau bảng sẽ xoá trắng đúng lúc đang
-đánh nhau. Thanh máu mang theo con số của nó; thanh mana không — một cái thanh thấy được đầu
-mút là đủ cảnh báo cho một cái giá, và con số thứ hai là thêm một thứ phải đọc trong cùng một
-góc.
+ra cạnh `MM` để harness loại được khỏi phép kiểm mép màn hình; nó là *cả* hình chữ nhật được
+tô, kể cả viền). Góc trên trái, vì minimap giữ góc dưới phải và giữ góc trên phải ở chế độ
+điện thoại.
 
-Bảng trạng thái (`I`, hoặc nút ▣ ở thanh trên / ở mép trên khi chơi điện thoại) là DOM, ba cột
-đọc thẳng `world.equip` / `world.gs` / `world.bag`. Nó chỉ vẽ lại lúc mở và lúc vừa mặc/tháo,
+Mỗi thanh là **một hộp có khung riêng**: một đường viền đen bên ngoài, một vành vát (`hudFrame`)
+sáng ở mép trên/trái và tối ở mép dưới/phải nên khung kim loại nổi lên, rồi cái máng lõm bên
+trong. Bốn góc và cái dòng giữa hai hộp *không* được ghi, nên nền game lọt qua đó và góc hộp
+trông tròn. Nhưng lòng hộp vẫn vẽ **đục**, cùng lý do minimap vẽ đục: buffer bên dưới là HDR
+cộng sáng, nên một cái đuốc đứng sau một cái máng trong suốt sẽ xoá trắng đúng lúc đang đánh
+nhau.
+
+Phần đầy là một dải màu nướng sẵn lúc nạp (`bakeFill`): máu đỏ → cam, mana xanh dương → cyan,
+mỗi dòng một sắc độ khác nhau nên dòng trên cùng là vệt bóng và dòng dưới cùng là bóng đổ của
+vành vát. Dải màu thuộc về *cái máng*, không thuộc về phần đang đầy — nên một thanh máu gần cạn
+tự nó đã đỏ sậm, không cần đổi màu để nói câu đó; chỗ máu thấp chỉ thêm một nhịp sáng nhẹ.
+
+**Cả hai thanh đều mang con số của nó**, căn giữa cái máng. Trước đây mana không có số, lý do là
+một cái thanh thấy được đầu mút đã đủ cảnh báo cho một cái giá — nhưng người chơi đang chọn giữa
+hai chiêu là đang so con số mana với giá của chúng, và đọc cái đó ra từ độ dài một cái thanh là
+làm toán trên một bức tranh. Hai con số dùng bộ chữ số **3x4 riêng của HUD** (`HUD_DIG`) chứ
+không dùng font sát thương 3x5: năm dòng cộng viền quanh nó lấp kín một cái thanh bảy dòng, con
+số thôi làm cái nhãn trên thanh mà thành ra chính cái thanh. Căn giữa nên hai con số nằm trên
+cùng một trục và không xê dịch khi số chữ số đổi. `hudNum` viền đen đủ tám phía (nét trắng nằm
+trên nền cam sáng thì một cái bóng đổ một phía không đủ) và vẽ theo toạ độ màn hình, nên không
+cần `CAMX/CAMY`.
+
+Mọi màu ở đây đi qua `asOutput` chứ không qua `hexc`: đây là giao diện, không phải ánh sáng, nên
+màu viết ra là màu phải hiện lên. Chúng còn viết theo dạng hex lặp nibble (`#667788`) vì
+`resolve` lượng tử hoá mỗi kênh về 16 mức (bước 17) — viết vậy thì màu đi qua vòng đó *đúng*
+bằng chính nó, khung không bị dither thành một sắc khác. Riêng `HUD_WASH` (vệt sáng ở đầu mút và
+nhịp máu thấp) là `[1,1,1]` chứ không phải `asOutput('#ffffff')`: cái sau là buffer 4.08, đúng
+cho một nét chữ phải ra trắng tinh và gấp ba mươi lần cái cần cho một lớp phủ 13%.
+
+Bảng trạng thái (`I`, hoặc nút ▣ ở thanh trên / ở mép trên khi chơi điện thoại) là DOM, bốn cột
+đọc thẳng `world.equip` / `world.gs` / `world.bag`, cột đầu là hình nhân vật. Nó chỉ vẽ lại lúc
+mở và lúc vừa mặc/tháo/bỏ,
 nên không phải thứ chạy mỗi khung; chỉ cái chấm đếm món mới là cập nhật trong vòng lặp, và
 cũng chỉ khi con số đổi.
 
 Trong trận có phím `L` để rơi ngay một món theo bảng phẩm chất của boss — cùng lý do như `B`
 gọi boss: tỉ lệ rơi là 15% mỗi mạng, nên nhìn bốn màu khung và bốn số dòng bằng cách đi hạ quái
 là hàng chục mạng cho một món, mà thứ cần nhìn ở đó là cái bảng chứ không phải cái tỉ lệ.
+
+## Hình nhân vật — `doll.js`
+
+Cột NGOẠI HÌNH của bảng trạng thái là **cùng một sprite `HERO`** mà trận đấu đang vẽ, cộng một
+lớp phủ cho mỗi ô đang mặc, in ra một `<canvas>` phóng to bằng `fillRect` từng ô (không
+`drawImage`, nên không có phép nội suy nào chen vào giữa).
+
+Không có art mới cho việc này. Mỗi ô góp một *hình dạng* viết bằng lưới ký tự trong `DOLL_ART`,
+đúng như `sprites.js` viết `HERO`, và phẩm chất chỉ đổi *màu* — cùng cái luật mà `gear.js` đã
+dùng cho hai mươi file PNG: **ô chọn hình, phẩm chất chọn màu**. Bốn màu của một món suy ra từ
+đúng hai màu mà `GEAR_RARITY` đã có (`dollRamp`), nên miếng giáp trên hình và cái khung quanh ảnh
+món đó là *cùng một màu*, và thêm một phẩm chất thứ năm không cần vẽ thêm gì.
+
+Ba lựa chọn đáng ghi lại:
+
+- **`dollPixels` trả về một mảng *màu*, không phải một lưới ký tự.** Năm ô có thể mang năm phẩm
+  chất khác nhau cùng lúc, nên `'1'` ở vai và `'1'` ở giày không cùng một màu; một lưới ký tự sẽ
+  cần năm bộ ký tự riêng.
+- **Bảng vẽ 13×17, `HERO` đặt lệch vào `(+1, +2)`.** Chừa chỗ cho chóp mũ ở trên và cho hai miếng
+  vai / hai cái găng thò ra ngoài thân — một bộ giáp không làm nhân vật to ra thì không đọc ra là
+  giáp.
+- **`DOLL_ORDER` không phải thứ tự của `GEAR_SLOTS`**: `pants → armor → gloves → boots → helmet`,
+  vì giáp phủ lên quần ở hông còn găng phủ lên tay áo của giáp. Vẽ ngược lại thì cái găng biến
+  mất dưới ống tay.
+
+`dollPixels` là toàn bộ phần tính toán và không chạm vào canvas nào, nên `check-gear.js` kiểm
+được không cần DOM: không mặc gì thì ra đúng `HERO`, mặc từng ô thì đổi ≥ 5 ô và **không** đổi ô
+nào ngoài dải hàng của ô đó, bốn phẩm chất ra bốn hình khác màu, mọi hàng của `DOLL_ART` đúng 13
+ký tự (thiếu một ký tự thì lệch cả nửa bộ giáp sang trái mà vẫn trông "gần đúng"), và một cái
+găng thường vẫn thấy được dưới một bộ giáp Huyền Thoại.
 
 ## Xem hiệu ứng mà không cần browser
 

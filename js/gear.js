@@ -36,13 +36,18 @@ const RARITY_BY_ID = {};
 for (const r of GEAR_RARITY) RARITY_BY_ID[r.id] = r;
 
 // The twelve stats, in the order the status panel lists them. `lo`/`hi` is the roll range
-// before the rarity multiplier. `pct` marks the six that the engine reads as percentages --
+// before the rarity multiplier. `pct` marks the five that the engine reads as percentages --
 // every one of those turns into a `1 + v / 100` factor somewhere, which is exactly 1 when
 // nothing is equipped; the flat ones are plain adds. That "0 means today's numbers" property
 // is what keeps tools/check-weapons.js green, so no stat may have a nonzero base.
+//
+// `atk` và `mag` là số phẳng: chúng cộng thẳng vào từng cú đánh (xem `hurt` trong js/world.js),
+// không nhân phần trăm. Vì thế hai khoảng này nhỏ hơn hẳn những khoảng khác *và khác nhau*: một
+// hit vũ khí chỉ 7-20 sát thương (WEAPONS[].dmg), còn một chiêu là 42-430, nên cùng một con số
+// phẳng thì với vũ khí là gấp đôi mà với chiêu là làm tròn số. Hai thang, hai khoảng.
 const GEAR_STATS = [
-  { id: 'atk', name: '+ATK', lo: 4, hi: 13 },
-  { id: 'mag', name: '+Magic ATK', lo: 4, hi: 13 },
+  { id: 'atk', name: '+ATK', lo: 2, hi: 5 },
+  { id: 'mag', name: '+Magic ATK', lo: 9, hi: 24 },
   { id: 'hp', name: '+HP', lo: 14, hi: 48 },
   { id: 'mp', name: '+Mana', lo: 6, hi: 22 },
   { id: 'def', name: '+DEF', lo: 3, hi: 11 },

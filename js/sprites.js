@@ -58,6 +58,11 @@ const GLYPHS = {
   '6': ["###", "#..", "###", "#.#", "###"], '7': ["###", "..#", "..#", "..#", "..#"],
   '8': ["###", "#.#", "###", "#.#", "###"], '9': ["###", "#.#", "###", "..#", "..#"],
   '!': [".#.", ".#.", ".#.", "...", ".#."],
+  // Hai chữ duy nhất trong bảng, và chỉ vì `hitHero` in ra 'NÉ'. Không có chúng thì nhãn né
+  // đòn đo đúng bề rộng của nó rồi vẽ ra hai ô trống -- cái duy nhất nói cho người chơi biết
+  // vì sao cú đó không mất máu lại là cái không hiện. Dấu sắc của É nằm ngoài khung 3x5 nên
+  // nó ăn vào hàng trên cùng và chữ E tụt xuống bốn hàng dưới.
+  'N': ["#.#", "###", "###", "#.#", "#.#"], 'É': ["..#", "###", "#..", "##.", "###"],
 };
 
 // Alpha-over write: sprites are matter, not light.
@@ -202,3 +207,51 @@ function text3x5(s, x, y, colour, alpha, spacing) {
 }
 
 const textW = s => s.length * 4 - 1;
+
+// Cùng bộ chữ 3x5, nhưng mỗi ô là một hình chữ nhật thay vì một điểm. Chỉ có một chỗ dùng:
+// con số chí mạng, thứ duy nhất trong game phải đọc được trong lúc nó rơi đúng vào giữa quả
+// cầu sáng của chính chiêu vừa thả. Font này không có cỡ thứ hai, nên phóng to là cách duy
+// nhất -- và phóng bằng hình chữ nhật thay vì nhân điểm cho phép `sc` là số thực, nên cú nảy
+// vào (2.84 -> 2.0) mượt chứ không giật từng bậc nguyên.
+//
+// Hai ô cạnh nhau luôn dùng chung một biên đã làm tròn (`q(v)` và `q(v+1)`), nên không bao giờ
+// hở một hàng điểm ở giữa một nét dọc.
+//
+// `key` là màu viền: vẽ trước, phình mỗi ô ra 1 điểm về tám phía, và *lọc trùng* -- một điểm
+// viền bị ba ô cùng đòi thì vẽ ba lần, và lúc con số đang mờ dần thì ba lần đó thành một vệt
+// đậm hơn phần còn lại của viền.
+function textScaled(s, x, y, colour, alpha, sc, key) {
+  alpha = alpha === undefined ? 1 : alpha;
+  sc = sc || 1;
+  const cells = [];
+  let cx = 0;
+  for (const ch of s) {
+    const g = GLYPHS[ch];
+    if (g) {
+      for (let row = 0; row < 5; row++)
+        for (let cc = 0; cc < 3; cc++)
+          if (g[row][cc] === '#') cells.push(cx + cc, row);
+    }
+    cx += 4;
+  }
+  const q = v => Math.round(v * sc);
+  if (key) {
+    const seen = new Set();
+    for (let i = 0; i < cells.length; i += 2) {
+      const x0 = x + q(cells[i]) - 1, x1 = x + q(cells[i] + 1) + 1;
+      const y0 = y + q(cells[i + 1]) - 1, y1 = y + q(cells[i + 1] + 1) + 1;
+      for (let py = y0; py < y1; py++) for (let px = x0; px < x1; px++) {
+        const k = py * 8192 + px;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        setPix(px, py, key, alpha);
+      }
+    }
+  }
+  for (let i = 0; i < cells.length; i += 2) {
+    const x1 = x + q(cells[i] + 1), y1 = y + q(cells[i + 1] + 1);
+    for (let py = y + q(cells[i + 1]); py < y1; py++)
+      for (let px = x + q(cells[i]); px < x1; px++) setPix(px, py, colour, alpha);
+  }
+}
+const textWScaled = (s, sc) => Math.round((s.length * 4 - 1) * sc);

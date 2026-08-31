@@ -60,8 +60,11 @@ function hexc(s) {
 // Exact inverse of the tonemap in resolve(): that curve is applied to the *strongest*
 // channel and the other two ride along on the original ratio, so inverting it means
 // inverting one scalar (the max) and scaling the triple back up by it.
+// Takes a hex string or an already-parsed triple. The triple form is for ramps that are mixed
+// in display space first (see bakeFill in render.js): mixing the *buffer* values instead bends
+// the gradient, because this inverse is not linear.
 function asOutput(s) {
-  const c = hexc(s), m = Math.max(c[0], c[1], c[2]);
+  const c = typeof s === 'string' ? hexc(s) : s, m = Math.max(c[0], c[1], c[2]);
   if (m <= 0) return [0, 0, 0];
   const l = -Math.log(1 - Math.min(m, 0.995)) / EXPO;
   return c.map(v => v / m * l);
