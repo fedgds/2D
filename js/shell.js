@@ -385,6 +385,7 @@ if (typeof document !== 'undefined') {
     stickEnd();
     holdEnd(false);
     editUp();
+    gdragOff();
     atkHeld = false;
     if ((mobOn && playing) || tedit) { stickHome(); actsPlace(); }
     if (!playing) keys.clear();
@@ -450,13 +451,17 @@ if (typeof document !== 'undefined') {
       const it = world.equip[sl.id];
       const b = document.createElement('button');
       b.type = 'button'; b.className = it ? 'gitem' : 'gitem empty';
+      // Ô nào là ô nào, đọc được thẳng từ DOM: cú kéo phải tìm ra *ô đúng loại* để sáng nó lên, và
+      // đi tìm bằng thứ tự trong GEAR_SLOTS là buộc hai chỗ phải khớp nhau mãi mãi.
+      b.dataset.slot = sl.id;
       const nm = document.createElement('s'), meta = document.createElement('em');
       if (it) {
         rarStyle(b, it.rar);
         b.append(itemImg(it));
         nm.textContent = gearName(it);
         meta.textContent = it.stats.map(statText).join(' · ');
-        b.title = 'Bấm để tháo ' + gearName(it);
+        b.title = 'Bấm để tháo ' + gearName(it) + ' — hoặc kéo nó về hành trang';
+        b.addEventListener('pointerdown', ev => gdragDown('equip', -1, it, ev));
         b.onclick = () => {
           if (unequipGear(world, sl.id)) { SFX.ui('click'); paintStat(); } else SFX.blocked();
         };
@@ -508,7 +513,9 @@ if (typeof document !== 'undefined') {
       if (it) {
         rarStyle(b, it.rar);
         b.append(itemImg(it));
-        b.title = gearName(it) + '\n' + it.stats.map(statText).join('\n');
+        b.title = gearName(it) + '\n' + it.stats.map(statText).join('\n') +
+                  '\n\nKéo sang ô trang bị (hay sang hình nhân vật) để mặc.';
+        b.addEventListener('pointerdown', ev => gdragDown('bag', i, it, ev));
         b.onclick = () => { bagSel = i; SFX.ui('hover'); paintBag(); paintDetail(); };
       } else {
         b.disabled = true;
@@ -567,6 +574,138 @@ if (typeof document !== 'undefined') {
     else if (scene === 'play' || scene === 'pause') { SFX.ui('click'); setScene('stat'); }
     else SFX.blocked();
   }
+
+  // ---- Kéo thả: hành trang <-> ô trang bị ----------------------------------
+  // Bấm vẫn là bấm. Một cú nhấn chỉ *thành* cú kéo sau khi ngón đi hơn `GDRAG_SLOP` px, nên đường
+  // cũ (chọn ô → đọc chỉ số → bấm MẶC) không mất một bước nào, và bàn phím vẫn đi hết được bảng vì
+  // hai đầu của cú kéo vẫn là hai cái `<button>` với `onclick` của chúng. Kéo thả là *lối tắt*, không
+  // phải cái cửa duy nhất.
+  //
+  // Đi bằng Pointer Events chứ không bằng HTML5 drag-and-drop: cái sau không tồn tại trên màn cảm
+  // ứng, mà bảng này chính là chỗ người chơi điện thoại đổi đồ giữa hai đợt quái.
+  //
+  // Chỗ nhận là *cả một vùng*, không phải đúng một hình chữ nhật: một món chỉ vào được một ô, nên
+  // bắt người chơi nhắm trúng một ô cao 30 px là bắt họ trả tiền cho một thông tin mà máy đã biết
+  // chắc từ đầu. Thả đâu trong cột TRANG BỊ (hay lên hình nhân vật) là mặc, thả đâu trong lưới túi
+  // là tháo — còn ô sẽ nhận thì sáng lên ngay từ lúc món được nhấc lên.
+  const GDRAG_SLOP = 6;
+  const dollBox = stDoll ? stDoll.closest('.dollbox') : null;
+  // `zone` là những vùng nhận cú thả, `lit` là những ô sáng lên — hai danh sách vì chúng khác nhau:
+  // cả cột nhận, nhưng chỉ ô đúng loại được sáng.
+  const gdrag = { on: false, live: false, id: -1, from: '', i: -1, it: null,
+                  el: null, ghost: null, x0: 0, y0: 0, over: false, zone: [], lit: [], cls: 'drop' };
+  function gdragDown(from, i, it, ev) {
+    // Không `preventDefault()` ở đây: cú click phía sau là thứ đang phải giữ nguyên. Chuột phải và
+    // ngón thứ hai thì bỏ qua — một cú kéo đang chạy không được để ngón khác cướp mất.
+    if (gdrag.on || ev.button > 0 || !it) return;
+    gdrag.on = true; gdrag.live = false; gdrag.id = ev.pointerId;
+    gdrag.from = from; gdrag.i = i; gdrag.it = it; gdrag.el = ev.currentTarget;
+    gdrag.x0 = ev.clientX; gdrag.y0 = ev.clientY; gdrag.over = false;
+  }
+  // Ngón đã đi đủ xa: dựng cái bóng bay theo tay và sáng chỗ nhận lên.
+  function gdragLift() {
+    const it = gdrag.it;
+    gdrag.live = true;
+    if (gdrag.from === 'bag') {
+      const sl = stEquip.querySelector('[data-slot="' + it.slot + '"]');
+      gdrag.zone = dollBox ? [stEquip, dollBox] : [stEquip];
+      gdrag.lit = sl ? (dollBox ? [sl, dollBox] : [sl]) : [];
+      gdrag.cls = 'drop';
+    } else {
+      gdrag.zone = [stBag];
+      gdrag.lit = [stBag];
+      // Túi đầy thì tháo ra không có chỗ về (`unequipGear` trả false), và người chơi phải thấy điều
+      // đó *trước* khi thả, không phải nghe một tiếng "không được" sau khi thả.
+      gdrag.cls = world.bag.length >= BAG_MAX ? 'nodrop' : 'drop';
+    }
+    for (const el of gdrag.lit) el.classList.add(gdrag.cls);
+    gdrag.el.classList.add('lift');
+    document.body.classList.add('gdrag');
+    const g = document.createElement('div');
+    g.className = 'gghost';
+    rarStyle(g, it.rar);
+    g.append(itemImg(it));
+    // Cái bóng treo ở <body>, không ở trong panel: `.panel` đang bị `transform: scale(--pk)`, mà
+    // `position: fixed` bên trong một transform tính theo *cái transform đó* chứ không theo viewport
+    // — tức là toạ độ con trỏ sẽ lệch đúng bằng hệ số phóng. Nó tự nhân `--pk` vào mình để vẫn bằng
+    // cỡ cái ô nó vừa rời khỏi.
+    document.body.appendChild(g);
+    gdrag.ghost = g;
+    // Món đang bay là món mà cột chỉ số phải nói về. Chỉ `#stDet` dựng lại — gọi `paintBag()` ở đây
+    // là xoá mất đúng cái nút đang giữ cú kéo, nên trạng thái "đang chọn" đổi bằng class.
+    if (gdrag.from === 'bag') {
+      const on = stBag.querySelector('.gc.on');
+      if (on) on.classList.remove('on');
+      gdrag.el.classList.add('on');
+      bagSel = gdrag.i;
+      paintDetail();
+    }
+    SFX.ui('hover');
+  }
+  // Cái bóng có `pointer-events: none`, nên `elementFromPoint` trả về thứ nằm *dưới* nó — đó là cả
+  // lý do phép thử chỗ thả đọc được bằng một dòng thay vì phải tự so từng hình chữ nhật.
+  function gdragHit(ev) {
+    const el = document.elementFromPoint(ev.clientX, ev.clientY);
+    if (!el) return false;
+    for (const z of gdrag.zone) if (z.contains(el)) return true;
+    return false;
+  }
+  function gdragMove(ev) {
+    if (!gdrag.on || ev.pointerId !== gdrag.id) return;
+    if (!gdrag.live) {
+      if (Math.abs(ev.clientX - gdrag.x0) < GDRAG_SLOP &&
+          Math.abs(ev.clientY - gdrag.y0) < GDRAG_SLOP) return;
+      gdragLift();
+    }
+    // Chỉ chặn mặc định *sau* khi đã thành cú kéo: trên điện thoại `.panel` cuộn dọc được, và một
+    // cú vuốt chưa qua ngưỡng vẫn phải cuộn được cái bảng như thường.
+    ev.preventDefault();
+    gdrag.ghost.style.left = ev.clientX + 'px';
+    gdrag.ghost.style.top = ev.clientY + 'px';
+    const over = gdragHit(ev);
+    if (over !== gdrag.over) {
+      gdrag.over = over;
+      for (const el of gdrag.lit) el.classList.toggle('over', over);
+    }
+  }
+  function gdragUp(ev) {
+    if (!gdrag.on || (ev && ev.pointerId !== gdrag.id)) return;
+    const live = gdrag.live, from = gdrag.from, i = gdrag.i, slot = gdrag.it.slot, el = gdrag.el;
+    const hit = live && ev && ev.type === 'pointerup' && gdragHit(ev);
+    gdragOff();
+    if (!live) return;   // chưa qua ngưỡng: đây là một cú bấm, để `onclick` cũ lo
+    // Nhả ngón ngay trên cái ô vừa nhấc lên thì trình duyệt còn bắn một cú `click` nữa — và với ô
+    // trang bị, cú click đó *chính là* "tháo ra": huỷ một cú kéo lại thành tháo mất món. Ăn đúng một
+    // cú, và chỉ khi nó thật sự sắp tới.
+    if (ev && el && el.contains(ev.target)) eatClick();
+    if (!hit) { SFX.ui('back'); return; }   // thả ra ngoài là *huỷ*, không phải lỗi
+    const ok = from === 'bag' ? equipGear(world, i) : unequipGear(world, slot);
+    if (ok) { SFX.ui('click'); paintStat(); } else SFX.blocked();
+  }
+  function gdragOff() {
+    if (!gdrag.on) return;
+    if (gdrag.ghost) gdrag.ghost.remove();
+    if (gdrag.el) gdrag.el.classList.remove('lift');
+    for (const el of gdrag.lit) el.classList.remove('drop', 'nodrop', 'over');
+    document.body.classList.remove('gdrag');
+    gdrag.on = false; gdrag.live = false; gdrag.id = -1; gdrag.it = null;
+    gdrag.el = null; gdrag.ghost = null; gdrag.over = false;
+    gdrag.zone = []; gdrag.lit = [];
+  }
+  function eatClick() {
+    const off = () => window.removeEventListener('click', kill, true);
+    const kill = ev => { ev.stopPropagation(); ev.preventDefault(); off(); };
+    window.addEventListener('click', kill, true);
+    // Nếu cú click không tới (chuột nhả ra ngoài, ngón bị huỷ) thì cái bẫy phải tự tháo, bằng không
+    // nó ăn mất cú bấm hợp lệ tiếp theo của người chơi.
+    setTimeout(off, 300);
+  }
+  // Nghe ở window chứ không bắt pointer về phần tử: kéo ra khỏi ô nguồn là *chuyện chính* ở đây, và
+  // một cú kéo mất dấu giữa đường là một cái bóng nằm lại trên màn hình.
+  window.addEventListener('pointermove', gdragMove);
+  window.addEventListener('pointerup', gdragUp);
+  window.addEventListener('pointercancel', gdragUp);
+
 
   // ---- The picker ----------------------------------------------------------
   // Arenas are a radio group, weapons are a radio group, skills are a queue of three.

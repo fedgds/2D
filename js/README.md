@@ -35,7 +35,7 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `lab.js` | `globalThis.LAB`: cửa cho harness node, không cần DOM |
 | `icons.js` | icon 32×32 vẽ bằng canvas cho hotbar và bảng chọn, cộng `drawBagIcon` cho nút `#btnBag` |
 | `gpu.js` | `gpuMake`: tonemap + dither + phóng to bằng một fragment shader WebGL2, thay `resolve()` trên browser (`resolve()` vẫn là bản tham chiếu của harness) |
-| `shell.js` | shell browser: layout, menu/hướng dẫn, input, phím cảm ứng, vòng lặp khung |
+| `shell.js` | shell browser: layout, menu/hướng dẫn, input, phím cảm ứng, kéo thả trang bị, vòng lặp khung |
 
 ## Lưới điểm ảnh — vì sao game từng trông mờ
 
@@ -738,11 +738,72 @@ mở và lúc vừa mặc/tháo/bỏ,
 nên không phải thứ chạy mỗi khung; chỉ cái chấm đếm món mới là cập nhật trong vòng lặp, và
 cũng chỉ khi con số đổi.
 
+### Kéo thả — và vì sao cú bấm vẫn còn nguyên
+
+Kéo một món từ hành trang sang cột **TRANG BỊ** (hay sang thẳng hình nhân vật) là mặc, kéo món
+đang mặc về lưới túi là tháo. Cả hai đầu vẫn là hai cái `<button>` với `onclick` của chúng: kéo thả
+là *lối tắt*, không phải cái cửa duy nhất — bàn phím vẫn đi hết được bảng, và đường cũ (chọn ô →
+đọc chỉ số → bấm **MẶC**) không mất một bước nào.
+
+Bốn quyết định, mỗi cái sửa một chỗ dễ hỏng:
+
+* **Pointer Events, không phải HTML5 drag-and-drop.** Cái sau không tồn tại trên màn cảm ứng, mà
+  bảng này chính là chỗ người chơi điện thoại đổi đồ giữa hai đợt quái. `touch-action: none` chỉ đặt
+  lên đúng những ô kéo được, vì `body.mob .panel` cuộn dọc và lấy cả cái bảng ra khỏi tay người chơi
+  để đổi lấy một cú kéo là đổi hỏng.
+* **Ngưỡng 6 px (`GDRAG_SLOP`).** Một cú nhấn chỉ *thành* cú kéo sau khi ngón đã đi đủ xa, nên
+  không có cú bấm nào bị hiểu thành cú kéo — và `preventDefault()` cũng chỉ gọi *sau* ngưỡng, để một
+  cú vuốt chưa quyết định vẫn cuộn được cái bảng.
+* **Chỗ nhận là một *vùng*, không phải một hình chữ nhật.** Một món chỉ vào được một ô, nên bắt
+  người chơi nhắm trúng một ô cao 30 px là bắt họ trả tiền cho một thông tin mà máy đã biết chắc từ
+  đầu. Ô sẽ nhận sáng lên ngay lúc món được nhấc lên (nét đứt), và đặc lại khi ngón thật sự ở trên
+  (`.drop.over`); đỏ (`.nodrop`) là túi đầy — tháo ra không có chỗ về, và điều đó phải thấy được
+  *trước* khi thả chứ không phải nghe một tiếng "không được" sau khi thả.
+* **Ăn đúng một cú `click`.** Nhả ngón ngay trên cái ô vừa nhấc lên thì trình duyệt còn bắn một cú
+  `click` nữa, và với ô trang bị cú click đó *chính là* "tháo ra" — tức là huỷ một cú kéo lại thành
+  tháo mất món. `eatClick()` chặn đúng một cú, chỉ đặt bẫy khi cú đó thật sự sắp tới, và tự tháo bẫy
+  sau 300 ms để không ăn oan cú bấm hợp lệ tiếp theo.
+
+Cái bóng bay theo ngón treo ở `<body>`, không ở trong panel: `.panel` đang bị
+`transform: scale(--pk)`, mà `position: fixed` bên trong một transform tính theo *cái transform đó*
+chứ không theo viewport — toạ độ con trỏ sẽ lệch đúng bằng hệ số phóng. Nó tự nhân `--pk` vào mình
+để vẫn bằng cỡ cái ô nó vừa rời khỏi. Và vì nó có `pointer-events: none`, `elementFromPoint` trả về
+thứ nằm *dưới* nó — đó là cả lý do phép thử chỗ thả đọc được bằng một dòng thay vì tự so từng hình
+chữ nhật.
+
+Lúc nhấc món lên, chỉ `#stDet` dựng lại (để cột chỉ số nói về đúng món đang bay): gọi `paintBag()`
+ở đó là xoá mất chính cái nút đang giữ cú kéo, nên trạng thái "đang chọn" đổi bằng class. Và
+`setScene` gọi `gdragOff()` cùng chỗ với `editUp()` — thoát bảng bằng ESC giữa lúc đang kéo thì cái
+bóng phải đi theo cái bảng.
+
 Trong trận có phím `L` để rơi ngay một món theo bảng phẩm chất của boss — cùng lý do như `B`
 gọi boss: tỉ lệ rơi là 15% mỗi mạng, nên nhìn bốn màu khung và bốn số dòng bằng cách đi hạ quái
 là hàng chục mạng cho một món, mà thứ cần nhìn ở đó là cái bảng chứ không phải cái tỉ lệ. Nó rơi
 cách nhân vật 30 px về phía đang nhìn, không rơi ngay dưới chân: rơi dưới chân thì món vào túi
 trước khi chùm sáng vẽ xong, tức là cái phím đó kiểm được mọi thứ *trừ* thứ nó cần kiểm.
+
+### Ảnh trang bị là 128 px, và cỡ đó suy ra từ CSS
+
+Hai mươi tấm trong `images/gear/` được xuất ở 1254×1254 (17 MB cả bộ). Chỗ to nhất chúng lên
+màn hình là **37 px CSS** (`.gbag .gc img`, ở bề ngang panel lớn nhất 880 px) và **30 px**
+(`.gitem img`, đóng đinh trong `index.html`) — và không bao giờ hơn, vì `.panel` bị
+`transform: scale(var(--pk))` với `pk = clamp(h / 470, 0.6, 1) ≤ 1`: cửa sổ rộng hơn chỉ làm
+panel *thôi co lại*. Nhân cho màn dày nhất còn gặp (DPR 3) là 111 điểm ảnh vật lý, nên **128**
+là cỡ vừa đủ dư mà không bao giờ phải phóng to.
+
+Chênh lệch đó không phải chuyện tiết kiệm băng thông, mà là **lý do duy nhất khiến ô trang bị
+thi thoảng hiện ra rỗng** trong khi khung skill thì không bao giờ: khung skill (320×320, ~28 KB)
+được `ART.preload()` nạp sẵn ở màn chọn vũ khí rồi nướng vào RAM, còn ảnh trang bị chỉ được gán
+`src` đúng lúc `paintStat()` chạy — và một tấm 1254×1254 phải tải 1,5 MB rồi giải nén ~6 MB
+trước khi có một điểm ảnh nào để vẽ. `itemImg` không có bản dự phòng nào để vẽ trong lúc chờ,
+khác `drawSwing`/`drawSlam` (thiếu art thì vẫn còn vệt sáng thủ tục).
+
+`node tools/shrink-gear.js` hạ cả hai mươi tấm xuống 128 px, ghi thẳng lên chỗ cũ: 17 MB → 345 KB
+(2%), tên file không đổi nên `gearIcon()` và `itemImg()` không phải sửa một dòng nào. `SIZE=256`
+nếu sau này có chỗ hiện to hơn; chạy lại lần nữa thì nó bỏ qua những tấm đã đủ nhỏ. Phép thu là
+lọc hộp theo diện tích trên alpha đã nhân trước — 1254/128 không phải số nguyên, và trộn RGB thô
+thì màu nằm dưới vùng trong suốt loang ra thành một vành bẩn chỉ thấy được trên nền tối. Bản gốc
+vẫn nằm trong git.
 
 ## Món rơi ra nằm trên sàn — `w.orbs`
 

@@ -302,6 +302,33 @@
   .gdet .row { display: flex; gap: 5px }
   .gdet .row .mbtn { margin: 0; padding: 5px 8px; font-size: 10px; letter-spacing: .1em }
 
+  /* ---- kéo thả trang bị ---------------------------------------------------------------
+     `touch-action: none` chỉ đặt lên đúng những ô kéo được: `body.mob .panel` cuộn dọc, và
+     lấy cả cái bảng ra khỏi tay người chơi để đổi lấy một cú kéo là đổi hỏng. */
+  .gbag .gc:not(.hole), .gitem:not(.empty) { touch-action: none; cursor: grab }
+  body.gdrag, body.gdrag * { cursor: grabbing !important }
+  /* Ô nguồn mờ đi trong lúc món của nó đang bay: món ở đúng một chỗ, và chỗ đó là dưới ngón. */
+  .gbag .gc.lift, .gitem.lift { opacity: .3 }
+  .gbag .gc.lift:hover, .gitem.lift:hover { transform: none }
+  /* Cái bóng bay theo ngón. Ở <body> nên nó *không* thừa hưởng transform của panel — xem
+     `gdragLift` trong js/shell.js — nên nó tự nhân `--pk` vào để bằng cỡ ô nó vừa rời khỏi. */
+  .gghost {
+    position: fixed; z-index: 70; pointer-events: none; width: 40px; height: 40px; padding: 2px;
+    transform: translate(-50%, -50%) scale(var(--pk));
+    border: 1px solid var(--rar); background: var(--rdim);
+    box-shadow: 0 0 9px var(--rar), 0 5px 14px #000b;
+  }
+  .gghost img { width: 100%; height: 100%; display: block; image-rendering: pixelated }
+  /* Chỗ sẽ nhận, sáng lên ngay từ lúc nhấc món: viền nét đứt là "thả được vào đây", và nó đặc
+     lại khi ngón thật sự đang ở trên. Đỏ là túi đầy — tháo ra không có chỗ về. Lớp tô lúc đó là
+     một `box-shadow: inset` trải rộng, không phải `background`: hai trong ba chỗ nhận (hình nhân
+     vật, ô trang bị) đang có gradient riêng, mà ghi đè `background` là xoá mất gradient ấy. */
+  .drop, .nodrop { outline: 1px dashed #7ef2a0aa; outline-offset: 2px }
+  .nodrop { outline-color: #e07d8eaa }
+  .drop.over, .nodrop.over { outline-style: solid }
+  .drop.over { outline-color: #7ef2a0; box-shadow: inset 0 0 0 2000px #7ef2a01a }
+  .nodrop.over { outline-color: #e07d8e; box-shadow: inset 0 0 0 2000px #e07d8e1a }
+
   /* ---- chế độ điện thoại -------------------------------------------------------------
      Đúng một công tắc (`body.mob`) đổi ba thứ, và không có thứ tư: layout() lấy cả viewport
      thay vì chừa chỗ cho header với hotbar, lớp #touch lên thay bàn phím và con chuột, và
@@ -572,8 +599,10 @@
             <div class="gdet" id="stDet"></div>
           </div>
         </div>
-        <p class="pnote">Quái rơi trang bị, boss rơi hàng tốt hơn. Bấm một ô trong hành trang để
-          xem chỉ số rồi <b>MẶC</b>; bấm ô trang bị đang mặc để tháo ra.</p>
+        <p class="pnote">Quái rơi trang bị, boss rơi hàng tốt hơn. <b>Kéo</b> một món từ hành trang
+          sang cột trang bị (hay sang thẳng hình nhân vật) để mặc, kéo món đang mặc về hành trang để
+          tháo — ô sẽ nhận sáng lên ngay lúc bạn nhấc món lên. Vẫn bấm được như cũ: bấm một ô trong
+          hành trang để xem chỉ số rồi <b>MẶC</b>, bấm ô trang bị đang mặc để tháo ra.</p>
         <button type="button" class="mbtn primary" data-act="back">XONG (ESC)</button>
       </div>
       <!-- Sắp xếp phím: bảng này *không* vẽ lại joystick trong một khung xem trước. Lớp #touch
