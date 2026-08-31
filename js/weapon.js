@@ -55,6 +55,29 @@ const HELD = {
     "..-#-..", ".-###-.", "-#+#+#-", "-#+#+#-", "-#+#+#-", "-#+#+#-",
     ".-+#+-.", ".-+#+-.", "..-#-..", "...=...", "...-...",
   ],
+  // Rìu: một cái đầu bè, thấp, đặt trên một cán dài. Nó gần cỡ tấm khiên ở phần khối, nhưng
+  // đọc ra khác vì tỷ lệ ngược -- khiên là chín dòng khối trên hai dòng cán, rìu là năm dòng
+  // khối trên tám dòng cán. Cái nói ra "đây là một cái đầu nặng ở xa tay" chính là cán dài.
+  riu: [
+    ".-#####-.", "-#+++++#-", "-#+++++#-", ".-#+++#-.", "..-###-..",
+    "....=....", "....=....", "....=....", "....=....", "....=....",
+    "....=....", "....=....", "....=....", "....-....",
+  ],
+  // Thương: dài nhất và mỏng nhất trong bảng này -- 16 dòng, 5 ô ngang, mũi là một cột `#`
+  // rộng đúng một ô. Không có lưỡi để quét, nên hình phải kể chuyện bằng chiều dài: cái duy
+  // nhất một cây thương làm được mà năm vũ khí kia không làm được là *với tới trước khi bị với*.
+  thuong: [
+    "..#..", "..#..", ".+#+.", ".+#+.", ".+#+.", ".-#-.",
+    "..=..", "..=..", "..=..", "..=..", "..=..", "..=..",
+    "..=..", "..=..", "..=..", "..-..",
+  ],
+  // Vuốt: ba lưỡi rời chụm vào một mảng đeo tay. Găng là một khối kín 5 ô -- một cú đấm; cái
+  // này để hở hai rãnh giữa ba lưỡi, và chính hai khe trống đó là thứ đọc ra thành "móng" chứ
+  // không thành "nắm tay". Ngắn thứ hai sau găng: vuốt là vũ khí phải áp vào mới dùng được.
+  vuot: [
+    "#..#..#", "#..#..#", "#+.#.+#", "-#+#+#-", ".-###-.",
+    "..+++..", "..-=-..", "...=...", "...-...",
+  ],
 };
 const HELD_HAFT = hexc('#3a3244'), HELD_DARK = hexc('#141a28');
 // Mild squash only: the hero sprite is unsquashed pixel art, so flattening the weapon to
@@ -172,7 +195,7 @@ const WEAPONS = [
     id: 'khien', name: 'Khiên', label: 'KHIÊN', skill: 'AEGIS CHARGE', art: 'images/skills/khien-frames',
     desc: 'lao lên · hẩy bật · giương khiên', col: hexc('#ffe3a8'), gain: 2.0,
     fps: 28, hits: [7, 11], dmg: 20, range: 40, arc: 1.05,
-    size: 88, axis: SPRITE_UP, reach: 13, travel: 4, push: 30, pushStep: 12, cd: 0.72, shake: 1.5,
+    size: 88, axis: SPRITE_UP, reach: 13, travel: 4, push: 30, pushStep: 12, cd: 0.58, shake: 1.5,
     // Bốn vũ khí cận chiến kia đứng tại chỗ mà vung; cái này *đi tới*. Mỗi đòn đẩy hero lướt
     // lên `len` px trong `dur` giây, và vì `swingOrigin` đọc chỗ hero đang đứng ở từng khung
     // nên cả tấm hiệu ứng lẫn cái nón sát thương tự đi theo -- tầm hiệu dụng là `len + range`
@@ -181,10 +204,17 @@ const WEAPONS = [
     // tường. Cái nó *không* lấy là bất tử -- `dash()` mới cho `h.inv`. Bằng không thì đòn
     // đánh thường của khiên đã gồm luôn cú né, và ba slot skill hết phải chọn gì.
     //
-    // 36 px trong 0.22 s là 164 px/s, gần ba lần tốc đi bộ nhưng chỉ bằng non nửa cú lướt né
-    // (400 px/s): nó phải đọc ra là một cú trườn tới, không phải một cú dịch chuyển. Nhịp đầu
-    // ở khung 7 rơi vào giây 0.25 -- tức là chân vừa đứng lại thì cạnh khiên vừa tới.
-    lunge: { len: 36, dur: 0.22 },
+    // 52 px trong 0.22 s là 236 px/s, hơn bốn lần tốc đi bộ (56) nhưng vẫn chỉ non sáu phần mười
+    // cú lướt né (400 px/s): nó phải đọc ra là một cú trườn tới, không phải một cú dịch chuyển.
+    // Nhịp đầu ở khung 7 rơi vào giây 0.25 -- tức là chân vừa đứng lại thì cạnh khiên vừa tới, và
+    // đó là lý do `dur` giữ nguyên 0.22 khi quãng lao dài ra: kéo dài thời gian trượt là đẩy cú
+    // đánh ra sau lúc chân còn đang đi.
+    //
+    // Quãng 52 với hồi 0.58 s nghĩa là bấm liên tục thì hero đi được 90 px/s, *nhanh hơn đi bộ*.
+    // Đó là chỗ khiên đổi tay: nó thành vũ khí áp sát, không còn là vũ khí đứng chờ. Giá phải trả
+    // vẫn nguyên -- mỗi cú lao chốt cứng một hướng trong 0.22 s, không có bất tử, và đích đến là
+    // giữa thứ vừa nhắm.
+    lunge: { len: 52, dur: 0.22 },
     // Giương khiên. Cùng một trường `guard` mà đao dùng, nên không có mã mới: `hitHero` và cả
     // đường máu chạm người đều đọc nó trên nhát đang chạy. Khiên đỡ tốt hơn đao (0.40 so với
     // 0.60) vì đao còn có xử trảm để bán, còn ở đây chắn đòn *là* mặt hàng -- và vì cú lao ném
@@ -195,6 +225,113 @@ const WEAPONS = [
     // một vòng chơi đầy đủ, và nó cũng có nghĩa là không nối chuỗi được -- thứ vừa đánh không
     // còn đứng đó nữa.
     hold: { art: 'khien', pv: [3, 8], sweep: 0.28, ext: 7.0, rest: -0.25 },
+  },
+  {
+    id: 'riu', name: 'Rìu', label: 'RÌU', skill: 'GRAVEBREAK', art: 'images/skills/riu-frames',
+    desc: 'một nhát · nện xuống đất · chặt què cả đám', col: hexc('#9fe8b4'), gain: 2.0,
+    fps: 22, hits: [7], dmg: 52,
+    size: 94, axis: SPRITE_UP, push: 24, pushStep: 0, cd: 0.80, shake: 2.2,
+    // Rìu **nện xuống đất**, và đó không phải một ghi chú về hình ảnh: `slam` thay hẳn cặp
+    // `range`/`arc` mà tám vũ khí kia dùng, nên rìu không có `arc` (cũng không có `reach`/`travel`:
+    // hai trường ấy là của một nhát quét đi ra từ tay). Đòn không còn là một cái nón mở ra từ hero
+    // mà là một **điểm** cách chân `dist` px theo hướng nhắm, nổ thành một vòng bán kính `r` --
+    // `swingHit` dời gốc nón tới đó rồi bỏ luôn phép thử góc, và `range` (58) được suy ra từ hai số
+    // này ở vòng hậu kỳ dưới bảng chứ không viết tay, bằng không tầm hiển thị và tầm thật lệch nhau.
+    //
+    // Vùng ăn gần như không đổi so với cái nón cũ (π·32² ≈ 3217 px² so với 3400 px² của nón tầm 50
+    // nửa-góc 1,35) nhưng *hình* thì khác hẳn, và cả hai mặt của chỗ khác ấy đều là mặt hàng: nện
+    // được ra xa hơn (mép ngoài 58 so với 50) và ăn cả thứ đứng **ngang hông điểm nện** -- kể cả
+    // thứ ở phía sau nó, chuyện không cái nón nào làm được. Cái giá đi kèm nằm ở hẩy: `hitCone` đẩy
+    // theo trục từ *gốc nón* ra, mà gốc giờ là điểm nện, nên con đứng lọt giữa hero và điểm nện thì
+    // bị hẩy **về phía hero**. Đó là điều khoản của việc nện sát chân mình, không phải một lỗi:
+    // muốn dọn chỗ thì nện ra xa.
+    slam: { dist: 26, r: 32 },
+    // Ô mà mảng bụi trong bộ khung ngồi lên (đo trực tiếp trên frame_08..frame_14: mảng bụi trải
+    // ngang 0,18–0,87 và tâm ellipse bụi ở khoảng 0,86 chiều cao tấm). `drawSlam` đặt đúng ô này
+    // xuống điểm nện, nên `size` 94 không còn là "tấm to bằng nào" mà là một phép đo: nửa bề rộng
+    // mảng bụi vẽ ra thành (0,87 − 0,52) × 94 ≈ 33 px, tức người chơi thấy đúng bán kính 32 mình ăn.
+    pivot: [0.52, 0.86],
+    // Vũ khí cận chiến duy nhất chỉ có **một** nhịp, và đó là cả câu chuyện của nó. Năm cái kia
+    // chia sát thương ra 2–5 nhịp, nên mỗi nhịp là một lần thử: đánh trượt nhịp đầu thì còn nhịp
+    // sau. Ở đây trượt là trượt cả đòn, và đòn đó tới chậm nhất trong game -- nhịp duy nhất rơi ở
+    // khung 7 của một tấm 22 fps, tức 0,32 s sau cú bấm, gần gấp đôi cú đấm đầu của găng (0,06 s).
+    //
+    // Bù lại là con số lớn nhất một cú đánh thường từng có (52 so với 20 của khiên) trong vùng nện
+    // rộng nhất. Nhưng 52 cho một nhịp mỗi 0,80 s chỉ là 65 dps, thấp nhất bảng: rìu *không*
+    // bán sát thương mỗi giây. Một nhịp cũng là chỗ nó ăn trang bị kém nhất -- "+ATK" cộng phẳng
+    // vào từng cú, nên găng năm nhịp ăn năm lần còn rìu ăn một lần (xem `hurt` trong js/world.js).
+    maul: 1.15,
+    // Cái nó bán là `maul`: mọi thứ trúng nhát chặt đi còn một phần ba tốc (`f.slow`, 0.34x trong
+    // js/world.js) suốt 1,15 giây. Không có mã mới -- trường `slow` đã có sẵn từ chiêu độc -- mà
+    // nó đổi hẳn vòng chơi: một nhát vào giữa đám là cả đám bị chặt què, và 0,80 s hồi chiêu trở
+    // thành thứ đi được chứ không phải thứ phải chịu. Rìu là vũ khí duy nhất *tự tạo ra* khoảng
+    // trống để chờ đòn sau của chính nó.
+    //
+    // `pushStep` là 0 vì chỉ có một nhịp, và `push` 24 nằm dưới 30 của khiên: hẩy bật một con vừa
+    // bị làm chậm là trả lại nó đúng cái nó vừa mất, nên rìu đẩy vừa đủ để tạo hình cú nện -- một
+    // vòng xung bung ra từ chỗ lưỡi cắm xuống, chứ không phải một cái gạt tay.
+    hold: { art: 'riu', pv: [4, 12], sweep: 1.70, ext: 4.0, rest: -1.05 },
+  },
+  {
+    id: 'thuong', name: 'Thương', label: 'THƯƠNG', skill: 'LANCE VIGIL', art: 'images/skills/thuong-frames',
+    desc: 'tầm xa nhất · xuyên hàng · giữ mũi thì đau hơn', col: hexc('#cbb9ff'), gain: 2.05,
+    fps: 30, hits: [5, 9], dmg: 15, range: 76, arc: 0.30,
+    size: 96, axis: 0, reach: 14, travel: 14, push: 8, cd: 0.56, shake: 1.2,
+    // `axis` là 0 chứ không phải `SPRITE_UP`, và đây là một phép đo trên tấm art chứ không phải một
+    // lựa chọn: bảy bộ khung kia vẽ nhát quét *hướng lên*, còn bộ này vẽ mũi giáo với mấy vệt gió
+    // nằm ngang chỉ sang **phải** (xem frame_05/frame_11). `stampFrame` quay `e.ang - axis`, nên để
+    // `SPRITE_UP` là quay cả cây giáo lệch 90° -- đâm sang đông thì thấy nó chúc xuống nam, đúng thứ
+    // đọc ra là "không đâm thẳng". Trường này vốn đã sinh ra cho việc đó: đao là -0,072 và cung là
+    // 0,515 vì hai bộ ấy cũng không vẽ đúng trục dọc.
+    thrust: true,
+    // Và `thrust` là *cách vẽ* của một cú đâm, chỗ duy nhất trong tám vũ khí kia không dùng được:
+    // `drawSwing` bỏ vòng cung quầng sáng (một cái cung 0,30 rad thì cong không ra hình gì) và thay
+    // bằng một nét thẳng chạy theo trục nhắm, rồi dời cái loé ở mũi ra 86% tầm thay vì 50% -- điểm
+    // sáng phải nằm đúng chỗ `tip` trả tiền, bằng không hình vẽ dạy người chơi đứng sai chỗ.
+    //
+    // Nó cũng là một trong bốn điều khoản cho phép ngón tay bẻ hướng nhát đang chạy (xem `reaim` ở
+    // vòng hậu kỳ dưới bảng và `reswing` ở cuối file).
+    // Tầm 76 -- xa nhất trong năm vũ khí đánh gần (lưỡi hái 54) -- với cái nón hẹp nhất trong cả
+    // bảng (0,30, hẹp hơn cả lúc cung bật dây). Hai con số ấy đi cùng nhau và cùng nói một câu:
+    // đây không phải một nhát quét, đây là một **đường thẳng**. `hitCone` vốn đã trúng *mọi* thứ
+    // trong nón, nên một cái nón dài mà hẹp tự là một cú xuyên qua cả hàng, không cần thêm gì.
+    //
+    // Giá của cái nón hẹp là một đám đứng tản ra thì gần như không đánh được. Thương không có câu
+    // trả lời cho số đông; nó có câu trả lời cho *khoảng cách*.
+    tip: 1.40,
+    // Và đây là chỗ nó bắt người chơi trả tiền cho tầm xa của mình. Chỉ phần **mũi** giáo đau:
+    // trong khoảng 40% tầm đầu tiên thì đúng bằng con số trên bảng, rồi tăng dần tới ×1,40 ở cuối
+    // tầm. Đứng ôm mặt con quái với cây thương là đánh yếu nhất bảng; đứng đúng cái vành 45–76 px
+    // -- xa hơn mọi thứ chạm được vào hero -- là đánh mạnh nhất bảng. Đó là một kỹ năng đứng chân,
+    // không phải một con số, và nó là cái duy nhất một cây thương nên bán.
+    //
+    // Khác cú dốc tầm của cung ở chỗ căn bản: bên đó là *mũi tên đã bay được bao xa* (một chuyện
+    // xảy ra sau khi bấm, và bấm rồi thì hết quyền), còn đây là *hero đang đứng cách bao xa* --
+    // một chuyện đôi chân quyết định trước mỗi cú bấm.
+    hold: { art: 'thuong', pv: [2, 13], sweep: 0.18, ext: 8.0, rest: -0.06 },
+  },
+  {
+    id: 'vuot', name: 'Vuốt', label: 'VUỐT', skill: 'RIPTOOTH', art: 'images/skills/vuot-frames',
+    desc: 'bốn nhát · vết xé cộng dồn · bám một con', col: hexc('#ff9fa8'), gain: 2.1,
+    fps: 32, hits: [3, 6, 11, 14], dmg: 5, range: 36, arc: 1.25,
+    size: 74, axis: SPRITE_UP, reach: 10, travel: 12, push: 5, pushStep: 0, cd: 0.52, shake: 1.0,
+    // Bốn nhịp, lấy đúng từ tấm art: độ phủ của bộ khung này lên đỉnh **hai** lần (khung 6 và
+    // khung 14) chứ không một lần như bốn bộ kia -- nó là hai lượt cào, mỗi lượt hai móng.
+    //
+    // 5 sát thương một nhịp là thấp nhất trong game, và nó phải thấp: `rend` là thứ nhân nó lên.
+    rend: { add: 0.22, max: 5, life: 2.2 },
+    // Vết xé cộng dồn. Mỗi nhịp trúng để lại một vết trên **con đó** (`f.rnd`, tối đa `max`), và
+    // mọi nhịp sau cộng thêm `dmg * add` cho mỗi vết đang có. Vết tự mờ sau `life` giây kể từ nhịp
+    // cuối, nên nó không tích luỹ qua cả trận.
+    //
+    // Đây là vũ khí duy nhất **mạnh dần trong một trận đấu** thay vì mạnh sẵn: cào một con từ đầu
+    // thì bốn nhịp đầu chỉ ra 32 sát thương, nhưng đòn thứ hai trở đi mỗi đòn ra 46 -- 88 dps, sát
+    // trần của găng. Rải đều lên một đám thì vết chia ra và không con nào lên tới đó, nên nó là
+    // mặt ngược của lưỡi hái: lưỡi hái ăn theo số đông, vuốt ăn theo *sự kiên nhẫn với một con*.
+    //
+    // `pushStep` 0 và `push` 5 -- thấp nhất trong các vũ khí có hẩy -- vì đúng cái lý do kiếm để
+    // `push` bằng 0: hẩy con mồi ra khỏi tầm 36 px là tự xoá mấy vết vừa cào được.
+    hold: { art: 'vuot', pv: [3, 7], sweep: 0.62, ext: 6.0, rest: -0.35 },
   },
 ];
 const WEAPON_BY_ID = {};
@@ -208,6 +345,17 @@ for (const wp of WEAPONS) {
   // zero so its chain cannot shove the target out of reach, and the scythe needs it negative
   // so every beat pulls harder than the last.
   if (wp.pushStep === undefined) wp.pushStep = 4;
+  // Một cú nện không có `range` của riêng nó: tầm với của nó *là* khoảng cách tới điểm nện cộng bán
+  // kính vụ nổ. Suy ra ở đây, một chỗ, nên bảng chỉ số (`weaponStat`), vòng ngắm trên điện thoại
+  // (`wpAimR` trong js/shell.js) và phép thử khoảng cách trong `hitCone` không thể nói ba con số
+  // khác nhau -- đó là cái giá của việc viết tay `range: 58` cạnh `slam`.
+  if (wp.slam) wp.range = wp.slam.dist + wp.slam.r;
+  // Ngón tay có được bẻ hướng nhát *đang chạy* hay không (xem `reswing` ở cuối file). Đây là một
+  // tính chất của **hình cái đòn**, không phải của loại vũ khí: bẻ lại một cú bắn, một cú lao, một
+  // đường đâm hay một điểm nện là chuyện có nghĩa, còn bẻ một cái nón rộng đang quét dở 3–5 nhịp là
+  // cho cái nón đi vòng quanh hero. Năm vũ khí quét nón đều nằm ngoài đây, và không có bảng id nào
+  // phải cập nhật khi thêm vũ khí mới.
+  wp.reaim = !!(wp.shot || wp.lunge || wp.thrust || wp.slam);
   // `col` stays the weapon's identity colour (icon, damage flash, sparks). The sheets are
   // already near-white line art, and tinting them at full strength is most of why a slash
   // looked washed out next to test.html, which draws them untinted: the white-hot centre
@@ -271,7 +419,10 @@ const ART = (() => {
       px[k * 3 + 1] = src[k * 4 + 1] / 255 * cov;
       px[k * 3 + 2] = src[k * 4 + 2] / 255 * cov;
     }
-    const pv = (wp.pivots && wp.pivots[i]) || [0.5, 0.5];
+    // Ba mức, từ riêng tới chung: bảng `pivots` 16 ô cho bộ nào bị cắt sát nét (mỗi khung một tâm
+    // khác), một `pivot` duy nhất cho bộ nào cả 16 khung dùng chung một mốc -- rìu chỉ cần đúng một
+    // con số vì mốc của nó là *chỗ mảng bụi ngồi xuống đất*, không đổi theo khung -- rồi tâm tấm.
+    const pv = (wp.pivots && wp.pivots[i]) || wp.pivot || [0.5, 0.5];
     return { w: dw, h: dh, px, cx: pv[0] * dw, cy: pv[1] * dh };
   };
   return {
@@ -302,11 +453,19 @@ const ART = (() => {
 // Forward transform is  d = R(rot) * (s - pivot)  then  dy *= squash;  the loop walks
 // destination pixels and inverts it, which is the only way to avoid holes when a sprite
 // is rotated and scaled at the same time.
-function stampFrame(fr, x, y, rot, squash, a, col, gain) {
+//
+// `flip` lật tấm theo trục ngang *của chính nó*, quanh đúng cái pivot. Nó không thay được bằng một
+// phép quay: quay một tấm nện 180° là cái lưỡi rơi từ dưới đất lên. Cái duy nhất cần cẩn thận là
+// hộp bao -- pivot lệch tâm thì bên rộng đổi phía, nên `l`/`r` phải lật theo, bằng không nửa tấm
+// bị cắt mất đúng cái nửa vừa lật sang.
+function stampFrame(fr, x, y, rot, squash, a, col, gain, flip) {
   if (!fr || a <= 0) return;
   x = (x - CAMX) * RENDER_SCALE; y = (y - CAMY) * RENDER_SCALE;
   const ca = Math.cos(rot), sa = Math.sin(rot), sq = Math.max(squash, 1e-3);
-  const l = -fr.cx, r = fr.w - fr.cx, t = -fr.cy, b = fr.h - fr.cy;
+  const mx = flip ? -1 : 1;
+  let l = -fr.cx, r = fr.w - fr.cx;
+  if (flip) { const sw = l; l = -r; r = -sw; }
+  const t = -fr.cy, b = fr.h - fr.cy;
   let ax = 1e9, bx = -1e9, ay = 1e9, by = -1e9;
   for (const u of [l, r]) for (const v of [t, b]) {
     const dx = u * ca - v * sa, dy = (u * sa + v * ca) * sq;
@@ -325,7 +484,7 @@ function stampFrame(fr, x, y, rot, squash, a, col, gain) {
     const dyq = (py - y) / sq;
     for (let pxi = x0; pxi <= x1; pxi++) {
       const dx = pxi - x;
-      const su = dx * ca + dyq * sa + fr.cx - 0.5, sv = -dx * sa + dyq * ca + fr.cy - 0.5;
+      const su = mx * (dx * ca + dyq * sa) + fr.cx - 0.5, sv = -dx * sa + dyq * ca + fr.cy - 0.5;
       const sx = Math.round(su), sy = Math.round(sv);
       if (sx < 0 || sy < 0 || sx >= fw || sy >= fh) continue;
       const si = (sy * fw + sx) * 3;
@@ -351,6 +510,9 @@ function swingOrigin(w, e) {
 // test.html uses, which is what makes a 16-frame sheet read as one continuous arc.
 function drawSwing(w, e, p) {
   const wp = e.wp, o = swingOrigin(w, e);
+  // Cú nện không đi qua đường này chút nào: nó không có tấm nghiêng theo hướng nhắm, không có quầng
+  // cung và không có cái loé ở mũi, vì nó không có mũi. Xem `drawSlam`.
+  if (wp.slam) { drawSlam(w, e, p, o); return; }
   const last = wp.frames - 1;
   const fi = Math.min(last, Math.floor(p * wp.frames));
   const prog = Math.min(1, p * wp.frames / last);   // travel stays smooth between frames
@@ -364,13 +526,29 @@ function drawSwing(w, e, p) {
     // simply vanishes. Laying an analytic arc underneath gives the quantiser something to
     // ramp through, and that ramp is what makes the swing look lit rather than pasted on.
     const k = Math.sin(Math.PI * Math.min(1, p * 1.15));
-    arc(x, y, wp.size * 0.30, e.ang, wp.arc * 1.7, wp.size * 0.13, wp.lit,
+    // Một cú đâm thì cái quầng ấy phải là một *nét thẳng dọc trục nhắm*, không phải một cung: cung
+    // 0,30 rad vẽ ra là một vệt cong không nói được gì, mà thứ cây thương làm là đi thẳng. Vẽ từ
+    // mũi về gốc để `fadeEnd` mờ dần về phía tay -- sáng nhất ở đầu mũi, đúng chỗ `tip` trả tiền.
+    if (wp.thrust) {
+      const fd = off + wp.size * 0.40;                // mũi giáo vẽ trên tấm, không phải hết tầm ăn
+      const px2 = o.x + Math.cos(e.ang) * fd, py2 = o.y + Math.sin(e.ang) * fd * wp.squash;
+      line(px2, py2, x, y, wp.size * 0.075, wp.lit, 0.26 * k, 1.4, 0.85);
+      line(px2, py2, x, y, 1.3, wp.lit, 0.34 * k, 1.7, 0.80);
+    } else arc(x, y, wp.size * 0.30, e.ang, wp.arc * 1.7, wp.size * 0.13, wp.lit,
       0.30 * k, wp.squash, 1.4, 1.5);
     for (let tr = 2; tr >= 0; tr--) {
       const fr = set[Math.max(0, fi - tr)];
       if (!fr) continue;
       stampFrame(fr, x, y, rot, wp.squash, tr === 0 ? 1 : 0.26 / tr, wp.lit, wp.gain);
     }
+  } else if (wp.thrust) {
+    // Bản không có art: một đường thẳng chạy hết tầm, vì đó *là* cái đòn. Nhánh cũ vẽ một cung
+    // 0,60 rad ở nửa tầm, tức là một cái gạch cong ngắn hơn cây giáo -- sai cả hình lẫn tầm.
+    const k = Math.sin(Math.PI * p);
+    const fd = off + wp.range * 0.9;
+    const px2 = o.x + Math.cos(e.ang) * fd, py2 = o.y + Math.sin(e.ang) * fd * wp.squash;
+    line(px2, py2, x, y, 2.6, wp.lit, 0.80 * k, 1.5, 0.7);
+    core(px2, py2, 3.0, wp.lit, 0.7 * k, 2);
   } else {
     // Procedural stand-in: same reach, same arc, same colour, so a missing sheet is a
     // downgrade in looks and never a change in what the attack *is*. `arc` takes a full
@@ -400,8 +578,67 @@ function drawSwing(w, e, p) {
     const tx = o.x + Math.cos(e.ang) * (off + wp.range * 0.5);
     const ty = o.y + Math.sin(e.ang) * (off + wp.range * 0.5) * wp.squash;
     core(tx, ty, 3.6, wp.col, 0.6 * a, 2);
-    sparks(tx, ty, 7, 1, wp.range * 0.42, wp.col, 0.5 * a, (e.seed + hf * 31) | 0,
-      0.8, wp.squash, e.ang - wp.arc * 0.5, e.ang + wp.arc * 0.5, 3);
+    // Vệt loé bung ra theo *hình cái đòn*: một nhát quét thì tán đúng trong cái nón nó quét, còn một
+    // cú đâm thì nở tròn quanh chỗ mũi cắm vào -- tán theo nón 0,30 rad là bảy tia gần như trùng
+    // nhau thành một gạch, tức là không có cái loé nào cả. Bán kính cũng phải nhỏ lại: 42% của tầm
+    // 76 là một mảng 32 px, to hơn cả con quái vừa bị chọc.
+    const sp = wp.thrust ? 1.0 : wp.arc * 0.5;
+    sparks(tx, ty, 7, 1, wp.range * (wp.thrust ? 0.20 : 0.42), wp.col, 0.5 * a,
+      (e.seed + hf * 31) | 0, 0.8, wp.squash, e.ang - sp, e.ang + sp, 3);
+  }
+}
+
+// Cú nện. Bốn thứ nó *không* làm là gần hết định nghĩa của nó, và cả bốn đều là chỗ bản đầu sai:
+// không quay tấm art theo hướng nhắm (bộ khung này vẽ một lưỡi rơi thẳng xuống rồi nổ thành mảng
+// bụi ở đáy tấm -- quay nó 90° là biến một cú nện thành một cú vả ngang), không nén tấm theo
+// `squash` (nó đã tự vẽ phối cảnh 3/4 rồi: mảng bụi dưới đáy vốn là một ellipse dẹt, nén thêm 0,72
+// nữa là dí cả cột bụi xuống thành một vệt), không đi ra theo `reach`/`travel` (đích là một *điểm*
+// cố định, không phải một cái nón mở dần) và không có loé ở mũi, vì nó không có mũi.
+//
+// Bù lại nó có hai thứ không vũ khí nào khác cần. Một vòng **báo trước** trên sàn trong 0,32 s
+// trước khi lưỡi tới đất: rìu vừa là đòn chậm nhất game vừa là đòn duy nhất mà trượt là mất cả
+// đòn, nên nó là chỗ duy nhất một lời báo trước đáng giá -- và nó báo cho *cả hai bên*, vì cái vòng
+// ấy cũng là thứ dạy người chơi rằng đòn này nổ ở một điểm chứ không quét từ tay ra. Rồi một vòng
+// sóng nở đúng tới `slam.r`: bán kính ăn là thứ đọc được bằng mắt, không phải bằng bảng chỉ số.
+function drawSlam(w, e, p, o) {
+  const wp = e.wp, S = wp.slam, sq = wp.squash;
+  const ix = o.x + Math.cos(e.ang) * S.dist, iy = o.y + Math.sin(e.ang) * S.dist * sq;
+  const fi = Math.min(wp.frames - 1, Math.floor(p * wp.frames));
+  const at = wp.hits[0] / wp.frames;                // khung 7/16: lưỡi cắm xuống đất
+  if (p < at) {
+    const k = c01(p / at);
+    ring(ix, iy, S.r * (1.55 - 0.55 * k), 1.0, wp.col, 0.14 + 0.26 * k, sq, 1.7);
+    for (let i = 0; i < 4; i++) {
+      const a = i / 4 * TAU + Math.PI * 0.25, rr = S.r * (1.15 - 0.35 * k);
+      chevron(ix + Math.cos(a) * rr, iy + Math.sin(a) * rr * sq, a + Math.PI, 3.6, wp.lit, 0.30 * k);
+    }
+  }
+  const set = ART.frames(wp.id);
+  // Lật khi nhắm sang trái, và đây là *toàn bộ* phần "hướng" mà một cú nện có: cái lưỡi phải rơi từ
+  // phía hero xuống điểm nện, nên nhắm sang tây thì tấm lật ngang chứ không quay.
+  const flip = Math.cos(e.ang) < 0;
+  if (set && set[fi]) {
+    for (let tr = 2; tr >= 0; tr--) {
+      const fr = set[Math.max(0, fi - tr)];
+      if (!fr) continue;
+      stampFrame(fr, ix, iy, 0, 1, tr === 0 ? 1 : 0.26 / tr, wp.lit, wp.gain, flip);
+    }
+  } else if (p < at) {
+    // Bản không có art: một nét dựng đứng ngắn dần, tức là cái lưỡi *đang rơi* xuống đúng điểm nện.
+    // Cùng câu chuyện, ít điểm ảnh hơn -- một nhát quét ngang ở đây sẽ là bản không-art kể một cơ
+    // chế khác hẳn bản có art.
+    const k = c01(p / at), h = 46 * (1 - k), bx = ix + (flip ? 13 : -13) * (1 - k);
+    line(bx, iy - h - 8, ix, iy - 2, 3.0, wp.lit, 0.75, 1.5, 0.45);
+    core(bx, iy - h - 8, 3.0, wp.lit, 0.7, 2);
+  }
+  if (p >= at) {
+    const q = c01((p - at) / Math.max(1e-3, 1 - at)), fd = 1 - q * q;
+    shockwave(ix, iy, S.r * (0.30 + 0.80 * q), 3.2, wp.col, wp.lit, 0.80 * fd, sq);
+    cracks(ix, iy, 7, S.r * (0.75 + 0.45 * q), wp.col, 0.55 * fd, e.seed, sq, 1.2);
+    cloud(ix, iy - 3, S.r * (0.45 + 0.40 * q), wp.col, 0.13 * fd, (e.seed ^ 0x51) | 0, 7, sq);
+    core(ix, iy, 5.5 * fd, wp.lit, 0.90 * fd, 2);
+    sparks(ix, iy, 11, 2, S.r * (0.55 + 0.65 * q), wp.col, 0.50 * fd, (e.seed + 7) | 0,
+      0.9, sq, 0, TAU, 3);
   }
 }
 
@@ -474,12 +711,32 @@ function swingHit(w, e) {
     // chỗ sinh ra "tỷ lệ chí mạng 0% mà đánh thường vẫn nổ chí mạng": nhịp cuối của mọi combo
     // luôn true. Nhịp kết vẫn còn nguyên việc của nó -- mở cửa sổ chuỗi, hút máu, xử trảm, cắt
     // -- còn chí mạng thì `hurt` quay một lần duy nhất theo tỷ lệ thật của nhân vật.
-    const fin = last > 0 && i === last;
+    //
+    // Một vũ khí *một nhịp* thì nhịp duy nhất ấy **là** nhịp kết, nên không có `last > 0` ở đây.
+    // Trước có, và nó vô hại đúng đến lúc rìu ra đời: `maul` treo trên nhịp kết mà rìu chỉ có một
+    // nhịp, nên cả cơ chế của nó sẽ im lặng không chạy. Năm vũ khí kia đều từ hai nhịp trở lên
+    // (cung một nhịp nhưng đã `continue` ở trên), nên đổi chỗ này không xê dịch con số nào.
+    const fin = i === last;
     // `e.momo` was decided once, by `swing`, so the bonus covers the whole chain rather than
     // flickering on and off between beats as the window ticks down underneath it.
     const amount = wp.dmg * step * (e.momo ? wp.momentum.dmg : 1);
-    const n = hitCone(w, o.x, o.y, e.ang, wp.range, wp.arc, amount,
-      wp.col, false, wp.push + i * wp.pushStep, swingRiders(w, wp, fin));
+    // Hình cái đòn. Tám vũ khí là một cái nón mở ra từ hero; một cú nện là một *điểm* cách chân
+    // `slam.dist` px theo hướng nhắm, nổ thành một vòng bán kính `slam.r`. Không cần hàm mới: dời
+    // gốc nón tới điểm ấy rồi mở góc ra π là `hitCone` thành một cái vòng tròn (nó gấp `da` về
+    // [0, π] nên π không loại con nào), và cú hẩy tự bung ra theo bán kính vì `hitCone` vốn đẩy
+    // theo trục *từ gốc nón* tới địch. Cả cơ chế của rìu là ba dòng dưới đây.
+    //
+    // Riders vẫn đo từ `o`, không từ điểm nện: `tip` là "hero đứng cách bao xa" -- một chuyện của
+    // đôi chân -- nên nếu có ngày một vũ khí mang cả `slam` lẫn `tip` thì nó vẫn phải trả tiền cho
+    // chỗ đứng, chứ không phải cho chỗ lưỡi rơi.
+    let cx = o.x, cy = o.y, cr = wp.range, cw = wp.arc;
+    if (wp.slam) {
+      cx += Math.cos(e.ang) * wp.slam.dist;
+      cy += Math.sin(e.ang) * wp.slam.dist * wp.squash;
+      cr = wp.slam.r; cw = Math.PI;
+    }
+    const n = hitCone(w, cx, cy, e.ang, cr, cw, amount,
+      wp.col, false, wp.push + i * wp.pushStep, swingRiders(w, wp, fin, o, step));
     if (!n) continue;
     w.shake = Math.max(w.shake, wp.shake * 0.8);
     // Paid in blood rather than in damage, and only on the finisher: the earlier beats are
@@ -495,16 +752,45 @@ function swingHit(w, e) {
   }
 }
 
-// Per-target riders for the finisher, built only when there is one to build: the cone knows
-// distance and angle, and neither of these can be expressed in those terms. The saber's
-// bonus reads how wounded the target already is; the gauntlet's reads whether it is casting.
-function swingRiders(w, wp, fin) {
+// Per-target riders, built from whatever identity the weapon carries: the cone knows distance
+// and angle, and none of these can be expressed in those terms. The saber's bonus reads how
+// wounded the target already is; the gauntlet's reads whether it is casting.
+//
+// Hai loại rider, và ranh giới giữa chúng là một quyết định thiết kế chứ không phải một chi tiết
+// cài đặt. `tip` với `rend` chạy ở **mọi nhịp**: cả mặt hàng của thương là giữ mũi ở đúng khoảng
+// và của vuốt là cào đủ nhịp lên cùng một con, nên một phần thưởng chỉ trả ở nhịp cuối sẽ dạy
+// người chơi đứng sai ở tất cả những nhịp trước nó. Còn `exec`/`cut`/`maul` chỉ ở nhịp kết, vì
+// chúng là *kết quả* của việc đánh trọn một combo, không phải là cách đánh nó.
+//
+// `step` là bậc của nhịp đang đánh, và hai rider chạy-mọi-nhịp nhân vào nó: bảng chỉ số hứa
+// "mũi ×1.40" với "xé +22% mỗi vết", tức là phần trăm của *cú đánh ấy*. Không nhân thì nhịp
+// bậc 1.5 chỉ được thưởng 26% thay vì 40% và cái nhãn nói sai. `exec`/`cut`/`maul` không cần
+// nhân: chúng nổ đúng một lần ở một bậc cố định, nên nhân vào chỉ là chỉnh lại một hằng số.
+function swingRiders(w, wp, fin, o, step) {
   // `phys` is unconditional: a swing is the physical path, so gear scales it by +ATK rather
-  // than +Magic ATK. The other two riders only exist on the finisher beat.
+  // than +Magic ATK.
   const r = { phys: true };
-  if (!fin || (!wp.exec && !wp.cut)) return r;
+  const sp = step === undefined ? 1 : step;
+  // Mũi giáo. Đo lại đúng cái khoảng cách `hitCone` đo -- dy chia SWING_SQ, nên đánh sang bên và
+  // đánh xuống dưới cùng một thước -- rồi chỉ trả thưởng trên 60% ngoài của tầm. Trong 40% trong
+  // thì bằng đúng con số trên bảng: cây thương không có phần thưởng nào cho việc đứng gần.
+  if (wp.tip) r.amp = f => wp.dmg * sp * (wp.tip - 1) *
+    c01((Math.hypot(f.x - o.x, (midY(f) - o.y) / SWING_SQ) - wp.range * 0.40) / (wp.range * 0.45));
+  // Vết xé. `amp` đọc số vết *đang* có rồi `onHit` mới thêm vết, và thứ tự đó là cả cơ chế: nhịp
+  // đầu tiên lên một con chưa có vết nào ra đúng `dmg`, còn nhịp thứ tư ăn ba vết của ba nhịp
+  // trước. Chồng vết nằm trên **con quái**, không trên nhát đánh, nên bỏ nó ra là mất.
+  if (wp.rend) {
+    r.amp = f => wp.dmg * sp * wp.rend.add * f.rnd;
+    r.onHit = f => { f.rnd = Math.min(wp.rend.max, f.rnd + 1); f.rndT = wp.rend.life; };
+  }
+  if (!fin) return r;
+  // Ở nhịp kết. Không vũ khí nào mang hai trong ba cái dưới đây, và cũng không cái nào mang
+  // `tip`/`rend` cùng lúc với chúng, nên gán thẳng chứ không phải cộng dồn hai hàm.
   if (wp.exec) r.amp = f => wp.dmg * wp.exec * c01(1 - f.hp / f.maxhp);
   if (wp.cut) r.onHit = f => cutCast(w, f, wp.cut);
+  // Chặt què. `f.slow` đã có sẵn và `stepFoe` đã đọc nó (còn 0,34 tốc), nên cả cơ chế của rìu là
+  // một phép gán -- đúng cùng lối mà `cut` mượn `f.frozen` của js/foe-abil.js.
+  if (wp.maul) r.onHit = f => { f.slow = Math.max(f.slow, wp.maul); };
   return r;
 }
 
@@ -654,7 +940,14 @@ function weaponStat(wp) {
   // cả khoảng vừa lướt qua. Ghi rời hai số chứ không cộng sẵn, vì cú lao là thứ xảy ra dù có
   // trúng ai hay không -- người chơi cần biết nó *đi* bao xa, không chỉ với tới đâu.
   return `${wp.dmg}×${wp.hits.length} nhịp · tầm ${Math.round(wp.range)}`
-    + (wp.lunge ? ` · lao ${Math.round(wp.lunge.len)}` : '');
+    + (wp.lunge ? ` · lao ${Math.round(wp.lunge.len)}` : '')
+    // Cú nện phải nói ra bán kính, vì `tầm 58` một mình đọc ra là một cái nón 58 px như tám cái kia,
+    // còn thứ nó thật sự làm là nổ một vòng 32 px ở cách chân 26 px -- kể cả sau lưng cái vòng ấy.
+    + (wp.slam ? ` · nện vùng ${Math.round(wp.slam.r)}` : '')
+    // Hai cái này phải nói ra bằng số, vì cả hai đổi hẳn con số bên trái: `dmg×nhịp` của thương
+    // là con số lúc đứng gần (thấp nhất của nó), còn của vuốt là con số lúc chưa có vết nào.
+    + (wp.tip ? ` · mũi ×${wp.tip.toFixed(2)}` : '')
+    + (wp.rend ? ` · xé +${Math.round(wp.rend.add * 100)}% mỗi vết` : '');
 }
 
 // Push the hero along the swing's own angle. This reuses the dash's three fields rather than
@@ -712,23 +1005,30 @@ function swing(w, tx, ty) {
 // kéo ngắm chỉ ăn từ nhát *sau*, còn nhát vừa bấm vẫn bay vào con quái mà `touchAim()` chọn --
 // đúng thứ người chơi đọc ra là "kéo ngắm không bằng con quái ở gần".
 //
-// Sửa được là vì hai vũ khí này không giải xong ở khung bấm: cung bật dây ở nhịp 8, tức 0,29 s
-// sau cú bấm, và khiên lao 0,22 s rồi mới hẩy ở nhịp 7 (0,25 s). Trong quãng đó mũi tên còn
-// chưa rời dây, nên đây không phải sửa lại quá khứ.
+// Sửa được là vì bốn vũ khí này không giải xong ở khung bấm: cung bật dây ở nhịp 8, tức 0,29 s
+// sau cú bấm; khiên lao 0,22 s rồi mới hẩy ở nhịp 7 (0,25 s); thương đâm ở nhịp 5 của một tấm
+// 30 fps (0,17 s); rìu nện ở nhịp 7 của một tấm 22 fps (0,32 s, chậm nhất game). Trong quãng đó
+// mũi tên còn chưa rời dây và cái lưỡi còn chưa tới đất, nên đây không phải sửa lại quá khứ.
 //
-// Bốn vũ khí kia không đi qua đây: chúng đứng tại chỗ quét một cái nón, con gần nhất luôn là câu
-// trả lời đúng, và cho quét lại góc giữa một chuỗi 4 nhịp là cho cái nón đi vòng quanh hero.
+// Điều kiện thứ hai, và nó mới là điều kiện thật: bẻ được hay không phụ thuộc **hình cái đòn**.
+// Một cú bắn, một cú lao, một đường đâm và một điểm nện đều bẻ có nghĩa -- đổi hướng bay, đổi chỗ
+// mình sẽ đứng, đổi cái hàng mình xuyên, đổi chỗ lưỡi rơi. Còn năm vũ khí kia quét một cái nón
+// rộng 1,05–2,25 rad trong 3–5 nhịp: cho ngắm lại giữa chuỗi là cho cái nón đi vòng quanh hero,
+// tức là một nhát vung trúng cả bốn phía. Cờ này chốt ở `wp.reaim` (xem vòng hậu kỳ dưới bảng vũ
+// khí), một chỗ, và js/shell.js đọc đúng nó để quyết định nút ĐÁNH có kéo ngắm được không.
 function reswing(w, tx, ty) {
-  // Nhát đang chạy chọn *giống* `step`: entry cuối có `.wp`. Hồi 0,7 s dài hơn 0,57 s của tấm
-  // hiệu ứng nên bình thường chỉ có một, và mũi tên đang bay không có `.wp` (nó ở trong `data`).
+  // Nhát đang chạy chọn *giống* `step`: entry cuối có `.wp`. Hồi của các vũ khí này vẫn dài hơn
+  // tấm hiệu ứng của nó (0,70 > 0,57 với cung; 0,58 > 0,571 với khiên) nên bình thường chỉ có một
+  // -- mà kể cả khi +Tốc Đánh ép hai nhát chồng nhau thì `for` này vẫn trả về nhát *mới nhất*, đúng
+  // cái mà ngón tay đang ngắm. Mũi tên đang bay không có `.wp` (nó ở trong `data`).
   let e = null;
   for (const x of w.fxs) if (x.wp) e = x;
-  if (!e || (!e.wp.shot && !e.wp.lunge)) return false;
+  if (!e || !e.wp.reaim) return false;
   const wp = e.wp, h = w.hero;
   e.x = clamp(tx, BOUND.x0 - 18, BOUND.x1 + 18);
   e.y = clamp(ty, BOUND.y0 - 16, BOUND.y1 + 10);
   // Góc đo từ chỗ hero đang đứng *ở khung này*, không từ `e.ox/e.oy` như `swing()`: lúc bấm hai
-  // chỗ đó là một, nhưng sau đó hero đã đi (khiên vừa lao 30 px), và điểm ngắm thì `holdTrack`
+  // chỗ đó là một, nhưng sau đó hero đã đi (khiên vừa lao 52 px), và điểm ngắm thì `holdTrack`
   // cũng tính lại từ chỗ mới -- đo từ chỗ cũ là góc lệch đi đúng quãng vừa trượt. `e.ox/e.oy` giữ
   // nguyên vì nó là *chỗ xuất phát*: vệt lao vẽ từ đó.
   e.ang = Math.atan2((e.y - h.y) / wp.squash, e.x - h.x);

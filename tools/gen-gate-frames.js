@@ -31,7 +31,11 @@ const OUT = path.join(root, 'js/gate-frames.js');
 // Hai mẫu cho mỗi pixel gameplay, hệt boss art: browser vẽ ở RENDER_SCALE 2 nên lưới dày gấp
 // đôi là lưới không mất chi tiết ở bước cuối. gate.js chia cho SCALE nên cỡ thật không đổi.
 const SCALE = 2;
-const BODY_W = 44 * SCALE;         // bề rộng thật của cổng, tính bằng pixel thế giới
+// Bề rộng thật của cổng, tính bằng pixel thế giới. 62 px là hơn bốn lần bề ngang hero (11 px) và
+// cao 51 px so với 14 px của hero: một cánh cổng phải *cao hơn cái thứ đi qua nó*, bằng không nó
+// đọc ra là một vòng sáng nằm trên sàn. Ảnh gốc 1352x1163 nên phóng lên không mất chi tiết -- cái
+// đổi theo con số này là GATE_RX/GATE_RY và các bán kính trong `drawGate` (xem js/gate.js).
+const BODY_W = 62 * SCALE;
 const PAL_N = 40;                  // vòng sáng này chỉ có lam + trắng: 40 màu là dư
 const A_EDGE = 0.02;               // ngưỡng alpha để tính bbox trên ảnh gốc
 const L_CUT = 0.035;               // dưới mức sáng này thì là '.', tức là không cộng gì

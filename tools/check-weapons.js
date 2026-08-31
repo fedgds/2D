@@ -1,4 +1,4 @@
-// Kiểm sáu cơ chế riêng của sáu vũ khí, không cần browser.
+// Kiểm chín cơ chế riêng của chín vũ khí, không cần browser.
 //
 // Chạy: node tools/check-weapons.js
 //
@@ -76,12 +76,17 @@ function beats(w, wp, ang, opt) {
   const e = { wp, i: -1, t: wp.dur, dur: wp.dur, seed: 99, data: {},
               ox: w.hero.x, oy: w.hero.y - w.hero.h * 0.5,
               x: w.hero.x + 40, y: w.hero.y, ang: ang || 0,
-              pt: o.from === undefined ? 0 : o.from, p: 1, momo: !!o.momo };
+              pt: o.from === undefined ? 0 : o.from, p: o.to === undefined ? 1 : o.to, momo: !!o.momo };
   LAB.swingHit(w, e);
   return e;
 }
 const LAST = wp => (wp.hits[wp.hits.length - 1] - 0.5) / wp.frames;  // chỉ nhịp cuối
 const WP = LAB.WEAPON_BY_ID;
+// Nhóm *quét một cái nón*. Rìu nện xuống một điểm (`slam`) nên nó không có `arc` chút nào, và
+// `Math.max` trên một mảng có `undefined` không đỏ -- nó ra NaN, rồi mọi phép so với NaN đều
+// false, tức là bài test vẫn chạy mà không còn kiểm gì. Nên chỗ nào so bề rộng nón cũng so
+// trong nhóm này, và một vũ khí kiểu điểm về sau thêm vào cũng tự nằm ngoài.
+const SWEEP = LAB.WEAPONS.filter(x => x.arc !== undefined);
 
 // ---- 1. Kiếm: chuỗi nhịp ---------------------------------------------------------
 console.log('-- kiếm · chuỗi nhịp --');
@@ -216,8 +221,21 @@ eq('đỉnh ramp trước khi hết tầm', cung.shot.ramp < cung.shot.max, true
   // Áp mặt vẫn là tay yếu nhất trong game, chỉ là không còn bằng không: một nhịp cung ở
   // 16 px chia cho `cd` phải thấp hơn dps của cả bốn vũ khí kia.
   const dps = prof[0][1] / cung.cd;
-  const mel = LAB.WEAPONS.filter(x => !x.shot).map(x =>
-    x.dmg * x.hits.reduce((s, _, i) => s + (x.hits.length > 1 ? 1 + 0.5 * (i / (x.hits.length - 1)) : 1), 0) / x.cd);
+  // Mẫu dps của một vũ khí cận chiến: `dmg` × tổng bậc nhịp, chia hồi. Vuốt phải cộng thêm phần
+  // `rend`, và không phải để cho nó dễ thở: gần hết sát thương của vuốt *nằm trong* chồng vết xé,
+  // nên đem riêng `dmg` trơ của nó ra so là nói sai về vuốt chứ không phải nói đúng về cung. Lấy
+  // ngay nhát *mở đầu* -- chồng còn trống, mỗi nhịp mới cộng được một vết -- tức là chặn dưới
+  // thật của vuốt, không phải con số lúc đã bám đủ năm vết.
+  const meleeDps = x => {
+    const n = x.hits.length;
+    let d = 0;
+    for (let i = 0; i < n; i++) {
+      const step = n > 1 ? 1 + 0.5 * (i / (n - 1)) : 1;
+      d += x.dmg * step * (1 + (x.rend ? x.rend.add * Math.min(x.rend.max, i) : 0));
+    }
+    return d / x.cd;
+  };
+  const mel = LAB.WEAPONS.filter(x => !x.shot).map(meleeDps);
   console.log('     dps áp mặt: cung ' + dps.toFixed(0) + ' · cận chiến '
               + mel.map(x => x.toFixed(0)).join('/'));
   eq('áp mặt vẫn kém mọi vũ khí cận chiến', dps < Math.min(...mel), true);
@@ -275,7 +293,7 @@ console.log('\n-- lưỡi hái · thu hoạch --');
 const hai = WP['luoi-hai'];
 eq('push âm là kéo', hai.push < 0, true);
 eq('nhịp sau kéo mạnh hơn', hai.pushStep < 0, true);
-eq('cung rộng nhất', hai.arc >= Math.max(...LAB.WEAPONS.map(x => x.arc)), true);
+eq('cung rộng nhất', hai.arc >= Math.max(...SWEEP.map(x => x.arc)), true);
 {
   const w = bench('luoi-hai');
   w.hero.hp = 200;
@@ -479,6 +497,16 @@ eq('lao xong mới tới nhịp đầu', khien.lunge.dur < khien.hits[0] / khien
               + (LAB.DASH_LEN / LAB.DASH_DUR).toFixed(0) + ' px/s');
   eq('lao nhanh hơn đi bộ', spd > 56, true);
   eq('lao chậm hơn lướt né', spd < LAB.DASH_LEN / LAB.DASH_DUR, true);
+  // Bấm liên tục thì hero đi được `len / cd` px/s, và đó là chỗ khiên đổi tay: một vũ khí *áp sát*
+  // chứ không phải một vũ khí đứng chờ. Hai đầu chặn nói ra cả điều khoản: nhanh hơn đi bộ (bằng
+  // không cú lao chỉ là trang trí), mà không bằng lướt né (bằng không đánh thường đã gồm cú né).
+  const chain = khien.lunge.len / khien.cd;
+  console.log('     lao liên tục ' + chain.toFixed(0) + ' px/s · đi bộ 56 px/s');
+  eq('bấm liên tục thì đi nhanh hơn đi bộ', chain > 56, true);
+  eq('mà vẫn chậm hơn lướt né', chain < LAB.DASH_LEN / LAB.DASH_DUR, true);
+  // Hồi vẫn dài hơn tấm hiệu ứng, nên nhát sau bắt đầu sau khi nhát trước vẽ xong -- `w.sw` chỉ
+  // giữ được một nhát cho tư thế tay và cho `guard`, và hai nhát chồng nhau là hai nhát tranh nó.
+  eq('hồi vẫn dài hơn tấm hiệu ứng', khien.cd > khien.dur, true);
 }
 // `null` cho inp: không có WASD nào bấm, nên mọi chỗ hero dịch được đều là do chính nhát đánh.
 // Chạy dài hơn `lunge.dur` vài khung để cú trượt kết thúc trọn vẹn trong lúc đo.
@@ -570,9 +598,241 @@ const noLunge = Object.assign({}, khien); delete noLunge.lunge;
   eq('vung xong hero tự đi được', w.hero.dsh <= 0, true);
 }
 
-// ---- 7. Ngắm lại nhát đang chạy ---------------------------------------------------
+// ---- 7. Rìu: một nhịp, chặt què chân ---------------------------------------------
+console.log('\n-- rìu · một nhịp --');
+const riu = WP.riu;
+const MELEE = LAB.WEAPONS.filter(x => !x.shot);
+eq('rìu đúng một nhịp', riu.hits.length, 1);
+eq('rìu là vũ khí cận chiến duy nhất một nhịp',
+   MELEE.filter(x => x.hits.length === 1).length, 1);
+// Một nhịp thì con số phải to: cả cái đòn nằm gọn trong một lần `hurt`, nên nếu `dmg` không
+// phải to nhất bảng thì rìu chỉ là một vũ khí chậm mà không được gì.
+eq('rìu có dmg lớn nhất', riu.dmg, Math.max(...MELEE.map(x => x.dmg)));
+eq('rìu hồi lâu nhất', riu.cd, Math.max(...MELEE.map(x => x.cd)));
+eq('rìu không cộng hẩy theo nhịp', riu.pushStep, 0);   // không có nhịp sau để cộng vào
+eq('rìu chặt què chân', riu.maul > 1, true);
+{
+  // `maul` treo trên *nhịp kết*, và nhịp duy nhất của rìu phải chính là nhịp kết. Đây là điều
+  // khoản mà `fin = i === last` trong js/weapon.js giữ; hồi nó còn là `last > 0 && i === last`
+  // thì cả cơ chế này im lặng không chạy mà không ai đỏ.
+  const w = bench('riu');
+  const f = target(w, 'brute', 26, 0);
+  const hp0 = f.hp;
+  beats(w, riu, 0);
+  eq('nhịp duy nhất có ăn', hp0 - f.hp > 0, true);
+  near('trúng rìu là bị chặt què', f.slow, riu.maul, 1e-6);
+  // Chỉ nhịp cuối: cùng một nhịp ấy, chứng minh nó nằm trong cửa sổ nhịp kết chứ không phải
+  // lọt lưới nhờ cả nhát vung được quét một lượt.
+  const w2 = bench('riu');
+  const f2 = target(w2, 'brute', 26, 0);
+  beats(w2, riu, 0, { from: LAST(riu) });
+  near('quét riêng nhịp kết cũng què', f2.slow, riu.maul, 1e-6);
+  // Và vũ khí không có `maul` thì không chạm vào trường ấy: cú què là của trường, không của
+  // riêng con rìu.
+  const w3 = bench('kiem');
+  const f3 = target(w3, 'brute', 26, 0);
+  beats(w3, kiem, 0);
+  eq('vũ khí khác không làm què', f3.slow, 0);
+}
+{
+  // Một vũ khí một nhịp *nói chung* phải nhận đủ quyền nhịp kết, không riêng gì `maul`. Dựng
+  // một cây kiếm giả chỉ còn một nhịp và treo `exec` lên: nếu `fin` lại bị chặn thì chỗ này đỏ.
+  const one = Object.assign({}, kiem, { hits: [kiem.hits[0]], exec: 1 });
+  const bare = Object.assign({}, one); delete bare.exec;
+  const bite = wp => {
+    const w = bench('kiem');
+    const f = target(w, 'brute', 26, 0);
+    // Máu tối đa to và máu hiện tại 2%: `exec` gần đủ phần mà con quái không chết giữa lúc đo --
+    // chết là `hp` kẹp về 0 và hai trường hợp ra cùng một số dù có exec hay không.
+    f.maxhp = 1e6; f.hp = f.maxhp * 0.02;
+    const hp0 = f.hp;
+    beats(w, wp, 0);
+    return hp0 - f.hp;
+  };
+  const withE = bite(one), without = bite(bare);
+  console.log('     một nhịp giả: có exec ' + withE + ' · không exec ' + without);
+  eq('vũ khí một nhịp vẫn được quyền nhịp kết', withE > without, true);
+}
+{
+  // Què chân phải *có nghĩa* ở js/world.js, bằng không `maul` chỉ là một con số đẹp: cùng seed,
+  // cùng con quái, khác đúng trường `slow`.
+  const walk = slow => {
+    const w = bench('riu');
+    const f = target(w, 'slime', 70, 0, false);
+    if (slow) f.slow = 1e9;
+    const x0 = f.x;
+    for (let i = 0; i < 40; i++) LAB.step(w, 1 / 60, null);
+    return Math.abs(f.x - x0);
+  };
+  const free = walk(false), lame = walk(true);
+  console.log('     đi trong 40 khung: thường ' + free.toFixed(1) + ' · què ' + lame.toFixed(1) + ' px');
+  eq('bị què thì đi chậm lại thật', lame < free, true);
+}
+{
+  // Nện xuống *một điểm*, không quét một cái nón. Cả cơ chế nằm ở chỗ tâm vùng nổ dịch
+  // `slam.dist` px về phía nhắm: vòng bán kính `slam.r` ấy không tính từ chân hero nữa.
+  eq('rìu nện một điểm', !!riu.slam, true);
+  eq('rìu không quét nón', riu.arc, undefined);
+  // Một nguồn duy nhất cho tầm: `range` suy ra từ `slam` ở vòng hậu kỳ dưới bảng vũ khí, nên
+  // bảng chỉ số, vòng ngắm của js/shell.js và `hitCone` không thể nói ba con số khác nhau.
+  eq('tầm rìu suy ra từ slam', riu.range, riu.slam.dist + riu.slam.r);
+  const bite = dx => {
+    const w = bench('riu');
+    const f = target(w, 'brute', dx, 0);
+    const hp0 = f.hp;
+    beats(w, riu, 0);
+    return hp0 - f.hp > 0;
+  };
+  const D = riu.slam.dist;
+  eq('đúng chỗ lưỡi rơi thì ăn', bite(D), true);
+  // Hai bài dưới đây là chỗ vòng-dịch-về-trước khác một vòng quanh hero, và khác theo *hai
+  // chiều*: xa hơn cả bán kính mà vẫn ăn, còn dán sát người mà lệch phía sau thì không.
+  eq('xa hơn bán kính vẫn ăn nếu gần điểm nện', riu.slam.r < D + 22 && bite(D + 22), true);
+  eq('đứng sát hero nhưng sau lưng thì không ăn', bite(-30), false);
+  eq('quá tầm thì không ăn', bite(riu.range + 40), false);
+  // Hẩy chạy theo bán kính *từ điểm nện*, không từ hero (`hitCone` lấy góc từ tâm vùng). Nên con
+  // đứng lọt giữa hero và điểm nện bị đẩy *về phía hero*: muốn dọn chỗ thì nện ra xa, chứ không
+  // nện vào chân mình. Đây là hệ quả của thiết kế, không phải lỗi -- ghim lại để khỏi ai "sửa".
+  const w = bench('riu');
+  const f = target(w, 'brute', Math.round(D * 0.4), 0);
+  beats(w, riu, 0);
+  eq('rìu có hẩy', riu.push > 0, true);
+  eq('con lọt trong bị hẩy về phía hero', f.vx < 0, true);
+}
+
+// ---- 8. Thương: với xa, xuyên hàng, thưởng ở mũi ---------------------------------
+console.log('\n-- thương · tầm và mũi --');
+const thuong = WP.thuong;
+eq('thương với xa nhất', thuong.range, Math.max(...MELEE.map(x => x.range)));
+eq('thương có nón hẹp nhất', thuong.arc,
+   Math.min(...MELEE.filter(x => x.arc !== undefined).map(x => x.arc)));
+eq('thương đâm thẳng', !!thuong.thrust, true);
+// Sheet của thương vẽ mũi chỉ sang *đông*, nên `axis` phải là 0: `rot = ang - axis`, tức là
+// axis = 0 mới đưa cái +x của tấm sheet về trùng hướng nhắm. Đây là chỗ đã sai một lần -- để
+// SPRITE_UP như mấy cây quét thì cây thương đâm ngang trong khi ảnh chỉ lên trời.
+eq('trục thương là +x của sheet', thuong.axis, 0);
+eq('thương thưởng ở mũi', thuong.tip > 1, true);
+const noTip = Object.assign({}, thuong); delete noTip.tip;
+// Đo cùng một bia, khác đúng trường `tip`: chênh lệch nào cũng là của cơ chế, không của bảng số.
+function poke(wp, dx, opt) {
+  const w = bench('thuong');
+  const f = target(w, 'slime', dx, 0);
+  f.hp = f.maxhp = 1e6;
+  beats(w, thuong === wp ? thuong : wp, 0, opt);
+  return Math.round(1e6 - f.hp);
+}
+{
+  const near0 = poke(thuong, 20), near1 = poke(noTip, 20);
+  const far0 = poke(thuong, Math.round(thuong.range * 0.95));
+  const far1 = poke(noTip, Math.round(thuong.range * 0.95));
+  console.log('     áp mặt ' + near0 + '/' + near1 + ' · tới mũi ' + far0 + '/' + far1
+              + ' (có mũi / không mũi)');
+  eq('áp mặt thì mũi không thưởng gì', near0, near1);
+  eq('bỏ trường tip thì xa gần bằng nhau', far1, near1);
+  eq('tới mũi thì đau hơn áp mặt', far0 > near0, true);
+  near('phần thưởng đúng bằng tip', far0 / far1, thuong.tip, 0.08);
+  // Dải thưởng phải *liên tục*: đứng lưng chừng được một phần, không phải bật/tắt ở một mốc.
+  const mid = poke(thuong, Math.round(thuong.range * 0.62));
+  console.log('     lưng chừng ' + mid);
+  eq('lưng chừng nằm giữa hai đầu', mid > near0 && mid < far0, true);
+}
+{
+  // Và thưởng ở *mọi* nhịp, không riêng nhịp kết: đây là chỗ `tip` khác `exec`/`cut`/`maul`.
+  // Một cây thương dạy người chơi đứng đâu, nên nó phải trả tiền ngay từ nhịp đầu.
+  const first = { to: (thuong.hits[0] + 0.5) / thuong.frames };
+  const f0 = poke(thuong, Math.round(thuong.range * 0.95), first);
+  const f1 = poke(noTip, Math.round(thuong.range * 0.95), first);
+  console.log('     chỉ nhịp đầu: có mũi ' + f0 + ' · không mũi ' + f1);
+  eq('nhịp đầu cũng được thưởng mũi', f0 > f1, true);
+}
+{
+  // Xuyên hàng không cần mã mới: nón 0.30 rad là một cái *vạch*, nên hai con đứng cùng trục
+  // đều nằm trong đó. Cái phải chứng minh là nón hẹp ấy vẫn với tới cả hai, và một cây nón
+  // rộng-tầm-ngắn thì không.
+  const line = wp => {
+    const w = bench('thuong');
+    const a = target(w, 'slime', 24, 0), b = target(w, 'slime', 64, 0);
+    const h0 = a.hp, h1 = b.hp;
+    beats(w, wp, 0);
+    return [h0 - a.hp > 0, h1 - b.hp > 0];
+  };
+  const both = line(thuong);
+  eq('thương xuyên cả hàng', both[0] && both[1], true);
+  const g = line(WP.gang);
+  eq('găng chỉ tới con đứng gần', g[0] && !g[1], true);
+}
+
+// ---- 9. Vuốt: vết xé cộng dồn -----------------------------------------------------
+console.log('\n-- vuốt · vết xé --');
+const vuot = WP.vuot;
+eq('vuốt đánh nhẹ nhất mỗi nhịp', vuot.dmg, Math.min(...MELEE.map(x => x.dmg)));
+eq('vuốt nhiều nhịp', vuot.hits.length >= 4, true);
+eq('vuốt có vết xé', !!vuot.rend, true);
+const noRend = Object.assign({}, vuot); delete noRend.rend;
+function claw(w, wp, f) {
+  const h0 = f.hp;
+  beats(w, wp || vuot, 0);
+  return h0 - f.hp;
+}
+{
+  // Một nhát vung tự xây chồng cho chính nó: `amp` đọc `f.rnd` *trước* khi `onHit` cộng thêm
+  // (js/world.js: hitCone gọi hurt rồi mới gọi onHit), nên nhịp đầu ăn không, nhịp sau ăn dần.
+  const w = bench('vuot');
+  const f = target(w, 'brute', 22, 0);
+  f.hp = f.maxhp = 1e6;
+  const s1 = claw(w, null, f);
+  eq('một nhát vung để lại đúng số vết', f.rnd, Math.min(vuot.rend.max, vuot.hits.length));
+  const s2 = claw(w, null, f);
+  eq('vết xé chạm trần', f.rnd, vuot.rend.max);
+  const s3 = claw(w, null, f);
+  eq('trần rồi thì không lên nữa', f.rnd, vuot.rend.max);
+  console.log('     ba nhát liền: ' + s1 + ' → ' + s2 + ' → ' + s3);
+  eq('càng bám càng đau', s3 > s1, true);
+  eq('nhát thứ ba không đau hơn nhát thứ hai bao nhiêu', s3 - s2 < s2 - s1, true);
+  // Và cả phần cộng dồn ấy là của trường `rend`: bỏ trường ra thì nhát nào cũng như nhát nào.
+  const w2 = bench('vuot');
+  const g = target(w2, 'brute', 22, 0);
+  g.hp = g.maxhp = 1e6;
+  const b1 = claw(w2, noRend, g), b2 = claw(w2, noRend, g);
+  eq('bỏ trường rend thì không cộng dồn', b1, b2);
+  eq('bỏ trường rend thì không có vết nào', g.rnd, 0);
+  eq('có rend thì nhát đầu đã đau hơn', s1 > b1, true);
+}
+{
+  // Chồng vết nằm trên *một con*, và đó chính là điều nó nói: kiên nhẫn với một mục tiêu.
+  const w = bench('vuot');
+  const a = target(w, 'brute', 22, 0);
+  const b = target(w, 'brute', -60, 0);                // sau lưng: ngoài nón
+  beats(w, vuot, 0);
+  eq('con bị đánh có vết', a.rnd > 0, true);
+  eq('con bên cạnh không có vết', b.rnd, 0);
+}
+{
+  // Hết hạn là rụng cả chồng một lượt, không rụng từng vết: thả mục tiêu ra thì mất hết công,
+  // nên vũ khí này hỏi "có dám đứng lại với nó không" chứ không hỏi "có nhớ đánh thêm không".
+  const w = bench('vuot');
+  const f = target(w, 'brute', 22, 0);
+  f.hp = f.maxhp = 1e6;
+  claw(w, null, f);
+  const kept = vuot.rend.life - 0.2;
+  for (let i = 0; i < Math.floor(kept * 60); i++) LAB.step(w, 1 / 60, null);
+  eq('trong thời hạn thì vết còn nguyên', f.rnd, Math.min(vuot.rend.max, vuot.hits.length));
+  for (let i = 0; i < 20; i++) LAB.step(w, 1 / 60, null);
+  eq('hết hạn thì rụng cả chồng', f.rnd, 0);
+  eq('đồng hồ vết cũng về không', f.rndT, 0);
+  // Đánh lại thì đồng hồ chạy lại từ đầu -- nếu không, chồng vết sẽ hết hạn giữa lúc đang bám.
+  claw(w, null, f);
+  const t0 = f.rndT;
+  for (let i = 0; i < 30; i++) LAB.step(w, 1 / 60, null);
+  const t1 = f.rndT;
+  claw(w, null, f);
+  eq('đánh tiếp thì gia hạn cả chồng', f.rndT > t1 && f.rndT === t0, true);
+}
+
+// ---- 10. Ngắm lại nhát đang chạy --------------------------------------------------
 // Đánh thường trên điện thoại nổ ngay ở cú chạm, nên cử chỉ kéo ngắm chỉ có nghĩa nếu nó sửa
-// được *chính nhát vừa bấm*. Hai vũ khí này còn kịp: cung bật dây ở nhịp 8, khiên còn đang lao.
+// được *chính nhát vừa bấm*. Bốn vũ khí còn kịp: cung bật dây ở nhịp 8, khiên còn đang lao,
+// thương đâm ở nhịp 5, rìu nện ở nhịp 7 -- muộn nhất bảng.
 console.log('\n-- ngắm lại nhát đang chạy --');
 {
   // Bấm sang phải rồi ngắm lại sang trái *trước* nhịp bật dây: cả ba mũi phải bay sang trái. Bia
@@ -620,6 +880,43 @@ console.log('\n-- ngắm lại nhát đang chạy --');
   near('bẻ hướng không cho đi thêm quãng', gone, khien.lunge.len, 1.5);
 }
 {
+  // Thương và rìu vào cùng cửa này vì cùng một lý do với cung và khiên: lúc bấm thì *chưa có
+  // kết quả gì cả*. Thương đâm ở nhịp 5/30 khung (0,17 s), rìu nện ở nhịp 7/22 khung (0,32 s) --
+  // muộn hơn cả nhịp bật dây của cung. Bia đặt hai bên đối xứng nên chỉ có góc quyết định con
+  // nào ăn đòn, và cả ba trường hợp (không ngắm lại / ngắm lại kịp / ngắm lại muộn) chạy trên
+  // cùng một sân.
+  const both = (wp, dx, reAt) => {
+    const w = bench(wp.id);
+    const R = target(w, 'brute', dx, 0), L = target(w, 'brute', -dx, 0);
+    R.hp = R.maxhp = 1e6; L.hp = L.maxhp = 1e6;
+    let turned = null;
+    LAB.swing(w, w.hero.x + dx, w.hero.y);
+    for (let i = 0; i < 80; i++) {
+      if (reAt !== null && Math.abs(i / 60 - reAt) < 1 / 120)
+        turned = LAB.reswing(w, w.hero.x - dx, w.hero.y);
+      LAB.step(w, 1 / 60, null);
+    }
+    return { r: Math.round(1e6 - R.hp), l: Math.round(1e6 - L.hp), turned };
+  };
+  for (const [wp, dx] of [[thuong, 60], [riu, riu.slam.dist]]) {
+    const beat = wp.hits[0] / wp.fps;
+    const plain = both(wp, dx, null), early = both(wp, dx, beat * 0.5),
+          late = both(wp, dx, beat + 0.12);
+    console.log('     ' + wp.id + ': nhịp đầu ở ' + beat.toFixed(2) + 's · thẳng '
+                + plain.r + '/' + plain.l + ' · ngắm lại sớm ' + early.r + '/' + early.l
+                + ' · muộn ' + late.r + '/' + late.l);
+    eq(wp.id + ': không ngắm lại thì ăn theo cú bấm', plain.r > 0 && plain.l === 0, true);
+    eq(wp.id + ': ngắm lại được', early.turned, true);
+    eq(wp.id + ': ngắm lại kịp thì đòn đổi hướng', early.l > 0 && early.r === 0, true);
+    near(wp.id + ': đổi hướng không đổi sức', early.l, plain.r, 1);
+    // Muộn thì chỉ *phần chưa xảy ra* đổi hướng. Rìu một nhịp: nện rồi là xong, ngắm lại không
+    // lấy lại được gì. Thương hai nhịp: mũi đầu vẫn ở hướng cũ, mũi sau theo hướng mới -- đúng
+    // như nó phải thế, và đó là chỗ một cây nhiều nhịp khác một cây một nhịp.
+    eq(wp.id + ': nhịp đã đi qua vẫn ăn ở hướng cũ', late.r > 0, true);
+    eq(wp.id + ': nhịp còn lại đi theo hướng mới', late.l > 0, wp.hits.length > 1);
+  }
+}
+{
   // Không bẻ được một cú lướt né: `dash()` cho 0,30 s bất tử cho một cú trượt 0,155 s, và
   // "không lái được" là cả điều khoản của nó. Bằng không đòn đánh thường của khiên đã thành
   // một cú né có lái.
@@ -630,10 +927,13 @@ console.log('\n-- ngắm lại nhát đang chạy --');
   eq('lướt né vẫn giữ nguyên hướng', w.hero.dvx === vx && w.hero.dvy === vy, true);
 }
 {
-  // Bốn vũ khí cận chiến kia không đi qua đường này: chúng đứng tại chỗ quét một cái nón, và cho
-  // quét lại góc giữa một chuỗi 4 nhịp là cho cái nón đi vòng quanh hero.
-  for (const id of ['kiem', 'dao', 'luoi-hai', 'gang']) {
-    const w = bench(id);
+  // Năm vũ khí còn lại không đi qua đường này: chúng đứng tại chỗ quét một cái nón, và cho quét
+  // lại góc giữa một chuỗi nhịp là cho cái nón đi vòng quanh hero. Danh sách này lấy *mọi* vũ khí
+  // không có `reaim` chứ không viết tay mấy cái id, nên vũ khí thứ mười cũng bị kiểm ngay lúc thêm
+  // vào bảng -- đúng cái lỗi mà ba vũ khí vừa thêm đã lọt qua.
+  for (const wp of LAB.WEAPONS) {
+    if (wp.reaim) continue;
+    const id = wp.id, w = bench(id);
     LAB.swing(w, w.hero.x + 40, w.hero.y);
     LAB.step(w, 1 / 60, null);
     const a0 = w.sw ? w.sw.ang : 0;
@@ -642,6 +942,18 @@ console.log('\n-- ngắm lại nhát đang chạy --');
   }
   // Và không có nhát nào đang chạy thì cũng không có gì để ngắm lại.
   eq('không đang vung thì không ăn', LAB.reswing(bench('cung'), 0, 0), false);
+  // Ai được ngắm lại là một *quyết định thiết kế*, nên nó được ghim ra thành tên: một cái `!!(shot
+  // || lunge || thrust || slam)` chép lại ở đây chỉ chứng minh phép gán ở js/weapon.js chạy đúng,
+  // còn dòng này đỏ lên khi có ai gắn `thrust` lên cây găng.
+  eq('đúng bốn vũ khí ngắm lại được',
+     LAB.WEAPONS.filter(x => x.reaim).map(x => x.id).join(','), 'cung,khien,riu,thuong');
+  // Và nút ĐÁNH của bản điện thoại phải đọc *đúng cái cờ ấy*. Hai bên đọc hai danh sách khác nhau
+  // là kiểu lỗi im lặng nhất ở đây: nút kéo ngắm được mà nhát đánh không đổi hướng (hoặc ngược
+  // lại), không có gì hỏng, chỉ có cử chỉ không có tác dụng. js/shell.js không nạp được trong node
+  // (nó cần DOM), nên chỗ này kiểm bằng chữ.
+  const shellSrc = fs.readFileSync(path.join(root, 'js', 'shell.js'), 'utf8');
+  eq('nút ĐÁNH đọc cờ reaim', /wpAim = weapon && !!sk\.reaim;/.test(shellSrc), true);
+  eq('nút ĐÁNH không giữ danh sách riêng', /sk\.shot \|\| sk\.lunge/.test(shellSrc), false);
 }
 
 // ---- bảng chỉ số hiển thị --------------------------------------------------------

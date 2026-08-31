@@ -180,6 +180,11 @@ const WEAPON_THEMES = {
   // Khiên là cái duy nhất ấm: năm cái kia đều xanh lam/lục, nên trong bảng chọn nó không cần
   // đọc hình mới biết là cái nào -- và sheet của nó vốn vẽ màu kem, tô lạnh lại là nói dối.
   khien:     ['#ffd483', '#fff4d8', '#3a2a12'],
+  // Ba cái sau lấy ba hướng màu chưa ai dùng, và đó là toàn bộ lý do chọn chúng: chín ô trong
+  // bảng chọn mà bảy ô cùng sắc lam thì người chơi phải đọc hình để biết mình đang trỏ vào đâu.
+  riu:       ['#9fe8b4', '#e3fff0', '#12331f'],
+  thuong:    ['#cbb9ff', '#f2ecff', '#221844'],
+  vuot:      ['#ff9fa8', '#ffe4e6', '#3a1218'],
 };
 function drawWeaponIcon(canvas, wp) {
   const g = canvas.getContext('2d');
@@ -242,12 +247,90 @@ function drawWeaponIcon(canvas, wp) {
       g.fillStyle = light; g.fillRect(15, 7, 2, 18);
       g.beginPath(); g.arc(16, 16, 3, 0, Math.PI * 2); g.fill();
       break;
+    // Rìu hai lưỡi. Cán *vẽ sau cùng*, và đó là cả cái mẹo: hai lưỡi liền nhau ở giữa thì đọc ra
+    // thành một cái vòm (bản đầu ra đúng hình cây nấm), còn một cây cán gỗ chạy xuyên qua thì tách
+    // chúng thành hai. Cán màu gỗ chứ không màu tối: một nét tối hơn cái nền là một nét không có.
+    case 'riu':
+      g.fillStyle = accent;
+      g.beginPath(); g.moveTo(15, 5); g.quadraticCurveTo(3, 8, 4, 18);
+      g.quadraticCurveTo(10, 14, 15, 16); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(17, 5); g.quadraticCurveTo(29, 8, 28, 18);
+      g.quadraticCurveTo(22, 14, 17, 16); g.closePath(); g.fill();
+      g.fillStyle = light; g.fillRect(4, 11, 2, 7); g.fillRect(26, 11, 2, 7);
+      g.fillStyle = '#8a6a3c'; g.fillRect(14, 2, 4, 28);
+      g.fillStyle = '#c99f5e'; g.fillRect(15, 2, 1, 28);
+      break;
+    // Thương. Cái phân biệt nó với cây kiếm trong một ô 32 px không phải hình cái mũi, mà là
+    // *tỷ lệ*: gần hết ô là cán gỗ, và mũi chỉ là mấy điểm ảnh ở góc.
+    case 'thuong':
+      g.strokeStyle = '#8a6a3c'; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(3, 29); g.lineTo(21, 11); g.stroke();
+      g.strokeStyle = '#c99f5e'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(3, 27); g.lineTo(20, 10); g.stroke();
+      g.fillStyle = light; g.fillRect(18, 10, 5, 3);
+      g.fillStyle = accent;
+      g.beginPath(); g.moveTo(30, 2); g.lineTo(26, 12); g.lineTo(20, 6); g.closePath(); g.fill();
+      g.fillStyle = light;
+      g.beginPath(); g.moveTo(29, 4); g.lineTo(26, 10); g.lineTo(23, 7); g.closePath(); g.fill();
+      break;
+    // Vuốt: ba cái nanh, vẽ theo *bậc điểm ảnh* chứ không bằng đường cong. Hai bản trước đều ra
+    // hình ba vệt lửa (đúng icon của Huyết Liệt) vì `quadraticCurveTo` ở cỡ 32 px cho ra ba nét
+    // mảnh đều bề dày. Cái nói ra "móng" là *thóp*: gốc bè bốn điểm ảnh, ngọn nhọn một điểm, và
+    // thân lệch dần sang phải nên nó móc. Thanh đeo vẽ sau, cắt chân cả ba.
+    case 'vuot':
+      for (let k = 0; k < 3; k++) {
+        const bx = 4 + k * 8;
+        for (let i = 0; i < 8; i++) {
+          g.fillStyle = i < 2 ? light : accent;
+          g.fillRect(bx + Math.round(3 * Math.sin(i / 7 * 1.9)), 4 + i * 2,
+                     1 + Math.round(i * 0.45), 2);
+        }
+      }
+      g.fillStyle = '#8f4a52'; g.fillRect(4, 20, 24, 7);
+      g.fillStyle = accent; g.fillRect(4, 20, 24, 1);
+      g.fillStyle = deep; g.fillRect(4, 27, 24, 1);
+      g.fillStyle = light; g.fillRect(14, 22, 4, 3);
+      g.fillRect(7, 23, 1, 1); g.fillRect(24, 23, 1, 1);
+      break;
     default:                                       // kiem
       g.fillStyle = '#f4f7ff'; g.fillRect(13, 24, 6, 5);
       g.fillStyle = '#f4f7ff'; g.fillRect(9, 21, 14, 3);
       g.fillStyle = accent; g.fillRect(14, 8, 4, 14);
       g.fillStyle = light; g.fillRect(15, 3, 2, 8);
   }
+  g.restore();
+  g.strokeStyle = '#ffffff22'; g.lineWidth = 1; g.strokeRect(.5, .5, 31, 31);
+}
+
+// Cái ba lô của nút TRANG BỊ. Nút ấy nằm ngay trên màn chơi, nên nó phải đọc ra được ở cỡ một
+// đầu ngón tay và không được giống bất cứ ô nào trong hotbar: mười sáu skill với chín vũ khí đều
+// là *một hình trên một tấm nền*, còn cái này là một khối da nâu ấm choán gần hết ô -- không ô
+// nào khác trong game màu nâu, nên mắt tìm thấy nó mà không cần đọc hình.
+function drawBagIcon(canvas) {
+  const g = canvas.getContext('2d');
+  const accent = '#d29a5c', light = '#ffdfae', deep = '#2a1a10', strap = '#7c5230';
+  g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, 32, 32);
+  const bg = g.createLinearGradient(0, 0, 32, 32);
+  bg.addColorStop(0, deep); bg.addColorStop(1, '#05060b');
+  g.fillStyle = bg; g.fillRect(0, 0, 32, 32);
+  g.globalAlpha = 0.13; g.fillStyle = accent;
+  for (let y = 3; y < 32; y += 7) for (let x = (y % 3) + 1; x < 32; x += 8) g.fillRect(x, y, 1, 1);
+  g.globalAlpha = 1;
+  g.save();
+  g.shadowColor = accent; g.shadowBlur = 3;
+  g.fillStyle = strap;                                 // quai xách trên đỉnh
+  g.fillRect(13, 3, 6, 2); g.fillRect(12, 4, 2, 4); g.fillRect(18, 4, 2, 4);
+  g.fillStyle = strap; g.fillRect(3, 12, 3, 13); g.fillRect(26, 12, 3, 13);  // hai dây vai
+  g.fillStyle = accent; g.fillRect(6, 10, 20, 19);     // thân
+  g.fillStyle = strap; g.fillRect(6, 28, 20, 1);
+  g.fillStyle = light; g.fillRect(5, 8, 22, 8);        // nắp
+  g.fillStyle = strap; g.fillRect(5, 15, 22, 1);
+  g.fillStyle = deep; g.fillRect(14, 13, 4, 5);        // khoá gài
+  g.fillStyle = light; g.fillRect(15, 14, 2, 3);
+  g.fillStyle = strap; g.fillRect(9, 19, 14, 8);       // túi trước
+  g.fillStyle = accent; g.fillRect(10, 20, 12, 6);
+  g.fillStyle = light; g.fillRect(10, 20, 12, 1);
   g.restore();
   g.strokeStyle = '#ffffff22'; g.lineWidth = 1; g.strokeRect(.5, .5, 31, 31);
 }

@@ -13,6 +13,9 @@ const BAR_LO = hexc('#c0374a'), BAR_HI = hexc('#5ac26a'), BAR_BG = hexc('#14141f
 // cannot show the last 3% of 1500 HP.
 const BAR_BOSS = hexc('#ffd98a');
 const BOSS_BAR_W = 44;
+// Màu của vết xé (vuốt, `rend` trong js/weapon.js). Cùng sắc hồng với `col` của vũ khí, nhưng
+// sáng hơn hẳn: nó phải đọc được khi nằm cạnh một thanh máu đỏ.
+const REND_C = hexc('#ffc2c8');
 
 function drawFoe(f) {
   // Boss nào có art trong ANIM_IMG thì vẽ art; còn lại (và cả khi chạy trong node vm không
@@ -50,6 +53,18 @@ function drawFoe(f) {
   else
     blit(fr.g, Math.round(gx), Math.round(gy), flash, f.flip, alpha, dim, im ? im.pal : null);
   if (f.dying) return;
+  // Vết xé, một điểm sáng mỗi vết, xếp thành cột bên phải thanh máu. Đếm điểm chứ không viết số:
+  // bảng GLYPHS chỉ có chữ số và hai chữ cái, mà một chữ số cao 5 px đặt cạnh một con quái cao
+  // 14 px thì xoá mất con quái. Cách nhau 2 px để năm vết còn đếm được bằng mắt.
+  //
+  // Vẽ bằng `setPix` -- đường vật chất, cùng thứ tiếng hai thanh máu đang nói -- chứ không bằng
+  // ánh sáng cộng thêm: đây là một *con số*, không phải một quầng sáng để cảm nhận.
+  if (f.rnd > 0) {
+    const bw = f.boss ? BOSS_BAR_W : f.w;
+    const x = Math.round(f.x - (bw >> 1)) + bw + (f.boss ? 3 : 2);
+    const y = Math.round(f.y - f.h - (f.boss ? 4 : 3));
+    for (let i = 0; i < f.rnd; i++) setPix(x, y - i * 2, REND_C, 0.92);
+  }
   if (f.boss) {
     const bw = BOSS_BAR_W, x0 = Math.round(f.x - (bw >> 1)), y0 = Math.round(f.y - f.h - 5);
     const n = Math.round(bw * f.hp / f.maxhp);

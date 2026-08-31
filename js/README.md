@@ -20,7 +20,7 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `arena.js` | đọc registry `map/`, `applyMap`, rải prop, hạt môi trường |
 | `anim.js` | sinh mọi frame animation lúc nạp từ một pose authored; `heroSet` dựng lại được từ một pose *khác* (nhân vật mặc trang bị) |
 | `boss-img.js` | `ANIM_IMG`/`foeImgFrame`: bốn bộ ảnh → khung vẽ được, và hộp `bh` |
-| `weapon.js` | 6 vũ khí: sheet 16 khung (`ART`), `drawSwing`, `drawHeld`, `swing`, `reswing`, `lungeHero` |
+| `weapon.js` | 9 vũ khí: sheet 16 khung (`ART`), `drawSwing`, `drawHeld`, `swing`, `reswing`, `swingRiders`, `lungeHero` |
 | `sfx.js` | `SFX` — mọi tiếng đều tổng hợp bằng WebAudio lúc chạy |
 | `gear.js` | 5 ô trang bị × 4 phẩm chất × 12 chỉ số: bảng dữ liệu, `rollGear`, `gearSum` |
 | `doll.js` | nhân vật đang mặc trang bị, một lưới ký tự cho cả hai chỗ: `wearBase`/`wearPal`/`wearFrames` (thuần tính) → `wornFrame` cho màn chơi, `drawDoll` cho bảng trạng thái |
@@ -33,7 +33,7 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `boss-abil.js` | 12 chiêu boss + `BOSS_SHAPE` (vùng tô, và chính nó là vùng gây damage) |
 | `gate.js` | cánh cổng boss + phòng boss: `roomApply` (thu `BOUND`/`CAMB`), `openBossGate`, `stepGate`, `enterRoom`/`exitRoom`, `drawGate`/`drawRoom` |
 | `lab.js` | `globalThis.LAB`: cửa cho harness node, không cần DOM |
-| `icons.js` | icon 32×32 vẽ bằng canvas cho hotbar và bảng chọn |
+| `icons.js` | icon 32×32 vẽ bằng canvas cho hotbar và bảng chọn, cộng `drawBagIcon` cho nút `#btnBag` |
 | `gpu.js` | `gpuMake`: tonemap + dither + phóng to bằng một fragment shader WebGL2, thay `resolve()` trên browser (`resolve()` vẫn là bản tham chiếu của harness) |
 | `shell.js` | shell browser: layout, menu/hướng dẫn, input, phím cảm ứng, vòng lặp khung |
 
@@ -215,17 +215,18 @@ Những chỗ đã phải sửa vì *không có chuột*, và tại sao không c
   đang chạy đúng là của ngón đó (`hold` chỉ có một chỗ, nên chạm vào một skill giữa lúc còn giữ đánh
   thường là nhường lần giữ lại cho skill — đánh thường rơi về ngắm tự động và vẫn đánh tiếp).
   Chọn vũ khí theo **cơ chế**, không theo tên: `wpAim = weapon && !!(sk.shot || sk.lunge)`. Cung
-  (`shot`) bắn ba mũi xuyên 210 px, khiên (`lunge`) lao hero 36 px vào chỗ nó nhắm — với hai cái đó
+  (`shot`) bắn ba mũi xuyên 210 px, khiên (`lunge`) lao hero 52 px vào chỗ nó nhắm — với hai cái đó
   "con gần nhất" là câu trả lời *sai*: một hàng quái xếp dọc chỉ ăn đủ ba mũi khi trục bắn nằm trên
   hàng, và một cú lao là *chỗ mình sẽ đứng*, nên lao vào con gần nhất trong lúc nó đứng giữa vùng nổ
-  là đúng thứ người chơi đang cố thoát ra. Bốn vũ khí cận chiến kia đứng tại chỗ quét một cái nón
-  1,05–2,25 rad, ở đó con gần nhất luôn đúng và một cử chỉ ngắm thêm chỉ là một cử chỉ thừa. Đọc
+  là đúng thứ người chơi đang cố thoát ra. Bảy vũ khí cận chiến kia đứng tại chỗ quét một cái nón
+  0,30–2,25 rad, ở đó con gần nhất luôn đúng và một cử chỉ ngắm thêm chỉ là một cử chỉ thừa — kể cả
+  cái nón hẹp 0,30 của thương, vì nhắm vào con gần nhất *là* đặt đường thẳng ấy xuyên qua nó. Đọc
   `shot`/`lunge` nên cây cung thứ hai ngắm được ngay, không có bảng id nào để quên cập nhật.
   Hai con số của vòng: `ky = wp.squash = 0,72` — **không** `GSQ` — vì 0,72 là đúng hệ số `swing()`
   chia vào trục y để ra `e.ang`, nên hướng ngón kéo *bằng đúng* hướng đòn sẽ đi và dải sáng nằm đúng
   trên đường bay của mũi tên / đường lao của khiên (vẽ bằng `GSQ` là lệch góc, nặng nhất ở các hướng
   chéo — đúng chỗ phải ngắm); `r = wpAimR(wp)` là chỗ đòn thật tới (`shot.max`, hoặc `lunge.len +
-  range` = 76 của khiên) **kẹp ở `AIM_MAX`**, vì một ellipse 210 × 151 không có điểm nào nằm trong
+  range` = 92 của khiên) **kẹp ở `AIM_MAX`**, vì một ellipse 210 × 151 không có điểm nào nằm trong
   khung 320×180 (phải `cos < 0,76` và `sin < 0,6` cùng lúc), tức là vẽ 210 thật là vẽ một vòng không
   bao giờ thấy được và đẩy cả ba mũi chỉ hướng ra ngoài màn. Kẹp không hứa sai gì: chế độ `dir` chỉ
   đọc *góc*, đúng lý do ba skill `dir` cũng dùng chung một `AIM_MAX`.
@@ -239,13 +240,14 @@ Những chỗ đã phải sửa vì *không có chuột*, và tại sao không c
   `hold.on && hold.wp && hold.drag`, ngay trước dòng `fire(0)` của phần lặp. Bốn quyết định trong đó:
   chỉ khi ngón **đã kéo thật** (chưa kéo thì `aw` chính là ngắm tự động, ngắm lại mỗi khung theo nó là
   cho mũi tên bám theo con quái đang chạy — một cây cung tự dò, không ai bấm ra thứ đó); chỉ vũ khí có
-  `shot`/`lunge` (bốn vũ khí cận chiến đứng tại chỗ quét một cái nón, cho quét lại góc giữa một chuỗi
+  `shot`/`lunge` (bảy vũ khí cận chiến đứng tại chỗ quét một cái nón, cho quét lại góc giữa một chuỗi
   4 nhịp là cho cái nón đi vòng quanh hero); góc đo từ chỗ hero đang đứng **ở khung này** chứ không từ
-  `e.ox/e.oy` như `swing()` (lúc bấm hai chỗ đó là một, nhưng khiên vừa lao 30 px và `holdTrack` cũng
+  `e.ox/e.oy` như `swing()` (lúc bấm hai chỗ đó là một, nhưng khiên vừa lao được nửa quãng 52 px và
+  `holdTrack` cũng
   tính điểm ngắm lại từ chỗ mới — đo từ chỗ cũ là lệch đi đúng quãng vừa trượt; `e.ox/e.oy` giữ nguyên
   vì nó là chỗ *xuất phát*, vệt lao vẽ từ đó); và cú lao đã chạy thì bẻ **phần còn lại** với nguyên
-  tốc, nên quãng đi vẫn đúng `len = 36` px, chỉ đường đi thành một nét gấp (harness: 19,1 px sang phải
-  + 16,9 px lên bắc = 36,0). `h.inv <= 0` là để **không** bẻ một cú lướt né: `dash()` cho 0,30 s bất tử
+  tốc, nên quãng đi vẫn đúng `len = 52` px, chỉ đường đi thành một nét gấp (harness: 27,6 px sang phải
+  + 24,4 px lên bắc = 52,0). `h.inv <= 0` là để **không** bẻ một cú lướt né: `dash()` cho 0,30 s bất tử
   cho một cú trượt 0,155 s, nên `inv > 0` giữa lúc đang trượt nghĩa là cú trượt đó là của lướt né —
   và "không lái được" là cả điều khoản của lướt né.
 - **Lướt né ngắm được, và tầm của nó là `DASH_LEN = 62` px *thật*.** Đây là chỗ duy nhất trong cả
@@ -337,6 +339,22 @@ Những chỗ đã phải sửa vì *không có chuột*, và tại sao không c
   chỉ của người dùng. Cả hai đều có thể bị từ chối (iPhone không có Fullscreen API), và đó không
   phải lỗi — chế độ này vẫn chơi được, chỉ là còn thanh địa chỉ. Cầm dọc thì `#rotate` (một
   `@media (orientation: portrait)`) nói một câu thay vì vẽ một khung ngang cao bằng đốt ngón tay.
+- **Một cái nút cho cả chuột và ngón tay: `#btnBag`.** Đường vào bảng trang bị từng là **hai** nút —
+  `#btnStat` chữ "▣ TRANG BỊ (I)" trên thanh tiêu đề cho desktop, `#tstat` chữ "▣ ĐỒ" trong `#touch`
+  cho điện thoại — và cả hai đều sai theo cùng một cách: trên điện thoại thanh tiêu đề bị ẩn nên nút
+  kia không tồn tại, còn trên desktop thì mắt người chơi đang ở giữa sân, không ở dòng chữ trên cùng.
+  Giờ là **một** cái nút nằm *trong* `#stage`, vẽ `drawBagIcon` lên một canvas 32×32 (cùng tấm nền và
+  cùng lối dither với icon skill/vũ khí, nhưng là khối da **nâu ấm** — không ô nào khác trong game màu
+  nâu, nên mắt tìm thấy nó mà không cần đọc hình). Bốn quyết định trong đó: nó đứng **trước
+  `#overlay`** trong DOM nên mọi bảng che nó lại, và `setScene` còn ẩn hẳn (`btnBag.hidden = !playing`)
+  vì bảng tạm dừng đã có dòng "TRẠNG THÁI & TRANG BỊ (I)" ngay trong bảng; nó nghe `pointerdown` +
+  `preventDefault` (xem gạch đầu dòng trên — và `preventDefault` chặn luôn cú `click` tổng hợp theo
+  sau, bằng không là mở-rồi-đóng); nó vẫn có `keydown` cho Enter/Space, vì một `<button>` không mở
+  được bằng Enter là một cái nút hỏng với người dùng bàn phím; và badge "MÓN MỚI" (`#btnBag i`, class
+  `.has`) vẽ lại **chỉ khi con số đổi**, không phải mỗi khung. Chỗ đặt thì đổi theo chế độ: desktop
+  là góc trên phải `#stage`, còn `body.mob` dời nó lên cạnh nút `☰ MENU` ở mép trên
+  (`left: 50%; translateX(calc(-50% + 62px))`) — vì trong chế độ ấy góc trên phải là chỗ của minimap,
+  và mép trên giữa là chỗ **xa cả hai vị trí đặt ngón cái**, tức là không bấm nhầm giữa lúc đánh.
 
 `touch-action` là thứ dễ làm hỏng nhất: `none` trên `body` sẽ giết luôn việc cuộn bảng hướng dẫn.
 Nó nằm ở `#touch` với `body.mob #screen`, còn `body.mob .panel` được `pan-y` — bảng hướng dẫn là
@@ -392,13 +410,21 @@ bằng `node:vm`, nên nó bắt luôn lỗi **thứ tự file** chứ không ch
 chỗ là `ReferenceError` ngay lúc nạp. Phần shell browser nằm sau
 `if (typeof document !== 'undefined')` trong `shell.js` nên node bỏ qua sạch.
 
-`check-weapons.js` kiểm sáu cơ chế làm nên bản sắc của sáu vũ khí — chuỗi nhịp của kiếm, đạn
+`check-weapons.js` kiểm chín cơ chế làm nên bản sắc của chín vũ khí — chuỗi nhịp của kiếm, đạn
 bay xuyên của cung, gom bầy hút máu của lưỡi hái, cắt phép của găng, xử trảm và cắm chân của
-đao, cú lao của khiên — cộng `reswing()`, cái ngón tay dùng để sửa nhát đang chạy. Nó so hai
+đao, cú lao của khiên, một nhát chặt què cả đám của rìu, cái vành mũi giáo của thương, chồng vết
+xé của vuốt — cộng `reswing()`, cái ngón tay dùng để sửa nhát đang chạy. Nó so hai
 trường hợp với nhau (có chuỗi / không chuỗi, máu đầy / máu
-cạn, nhịp cuối / nhịp đầu, có `lunge` / bỏ `lunge`, ngắm lại trước / sau nhịp bật dây) chứ không
+cạn, nhịp cuối / nhịp đầu, có `lunge` / bỏ `lunge`, có `tip` / bỏ `tip`, có `rend` / bỏ `rend`,
+ngắm lại trước / sau nhịp bật dây) chứ không
 so lại con số trong bảng, nên
 tinh chỉnh số liệu thì vẫn xanh, làm hỏng cơ chế thì đỏ.
+
+Một chỗ trong đó không so hai trường hợp mà **so cả bảng**: mục "áp mặt vẫn kém mọi vũ khí cận
+chiến" của cung. Mẫu dps cận chiến ở đó phải cộng cả phần `rend`, vì gần hết sát thương của vuốt
+*nằm trong* chồng vết xé — đem riêng `dmg` trơ của nó ra so là nói sai về vuốt chứ không phải nói
+đúng về cung. Nó lấy chồng vết của nhát **mở đầu** (chồng còn trống, mỗi nhịp mới cộng được một
+vết), tức là chặn dưới thật, không phải con số lúc đã bám đủ năm vết.
 
 `check-boss.js` cũng vậy, nhưng cho boss, và nó kiểm *lời hứa* chứ không kiểm bảng: vùng đã tô
 là vùng gây damage và ngược lại (hỏi chính `heroIn`, hàm mà `stepTel` dùng để trừ máu), vùng đó
@@ -484,11 +510,15 @@ Bước 3 là **lần quay duy nhất trong cả game**. Trước đây không p
 lỗi người chơi thấy trước khi đọc code: *bảng trạng thái ghi 0% mà đánh thường vẫn nổ chí mạng*.
 Có sáu chỗ tự nhận là chí mạng mà không hỏi tỷ lệ nào:
 
-- `swingHit` trong `weapon.js` có một biến tên `crit` nhưng thật ra là **nhịp kết** của combo
-  (`last > 0 && i === last`), và nhịp kết thì *luôn* đúng. Nó đã đổi tên thành `fin`, giữ nguyên
+- `swingHit` trong `weapon.js` có một biến tên `crit` nhưng thật ra là **nhịp kết** của combo, và
+  nhịp kết thì *luôn* đúng. Nó đã đổi tên thành `fin`, giữ nguyên
   bốn việc thật của nó (mở cửa sổ chuỗi, `wp.harvest`, `wp.exec`, `wp.cut`) và thôi nói gì về chí
   mạng. Đây là chỗ dễ mất nhất khi sửa: xoá biến đó đi là im lặng gãy bốn cơ chế vũ khí mà
-  `check-weapons.js` đang chốt.
+  `check-weapons.js` đang chốt. Điều kiện của nó cũng đã đổi một lần, từ `last > 0 && i === last`
+  thành `i === last`: rìu chỉ có **một** nhịp (`hits: [7]`), và với vế `last > 0` thì nhịp duy nhất
+  ấy không phải nhịp kết — tức là một vũ khí một nhịp lặng lẽ mất sạch phần thưởng nhịp kết của
+  mình. `check-weapons.js` chốt câu đó bằng một cây kiếm giả một nhịp mang `exec`, so với chính nó
+  bỏ `exec` ra.
 - `arrowHit` tính mũi chính trúng đúng tầm ngọt là chí mạng.
 - bốn chiêu (`skills.js`) truyền `crit: true` thẳng vào `hitCircle`/`hurt`.
 
@@ -513,8 +543,9 @@ giờ đổi. Bù lại, `check-gear.js` đo chính tỷ lệ nền ấy bằng 
 Hệ quả của "cộng theo số" phải nói rõ, vì nó không tránh được: phần cộng ăn vào **mỗi nhịp
 trúng**. Một chiêu ruộng đánh 4 nhịp nhận phần cộng bốn lần, một cú `judgment_beam` một nhịp
 nhận đúng một lần. Vì vậy `GEAR_STATS` để `+ATK` ở thang 2–5 còn `+Magic ATK` ở thang 9–24: đòn
-vũ khí một nhịp là 7–20 damage, còn một nhịp chiêu là 42–430, nên một thang chung sẽ hoặc không
-đáng kể với chiêu hoặc nhân ba lần đòn vũ khí.
+vũ khí một nhịp là 5–52 damage, còn một nhịp chiêu là 42–430, nên một thang chung sẽ hoặc không
+đáng kể với chiêu hoặc nhân ba lần đòn vũ khí. Rìu là chỗ hệ quả ấy đọc ra rõ nhất: một nhịp mỗi
+0,80 s nên nó ăn `+ATK` **một lần** trong lúc găng năm nhịp ăn năm lần.
 
 Con số chí mạng vẽ bằng đường riêng (`drawCritNum` trong `render.js`) chứ không dùng `text3x5`:
 `textScaled` trong `sprites.js` in mỗi ô của bộ chữ 3x5 thành một hình chữ nhật `sc × sc`, nên
@@ -527,6 +558,114 @@ Nó cũng bay lên nhanh hơn và sống lâu hơn (1,15s so với 0,8s).
 Mọi con số trong `w.nums` lưu **tâm** (`cx`), không lưu mép trái: cỡ chữ đổi theo từng khung nên
 mép trái phải suy ra lúc vẽ. Năm chỗ đẩy số vào (`hurt`, `healHero`, ba chỗ trong `foe-abil.js`)
 đều đã đổi theo, và `check-gear.js` kiểm rằng không còn chỗ nào lưu mép trái.
+
+## Rider của một nhát đánh — `swingRiders`
+
+Chín vũ khí, mà `swingHit` chỉ có **một** đường gây sát thương: `hitCone`. Mọi thứ riêng của từng
+vũ khí đi qua `swingRiders(w, wp, fin, o, step)`, hàm trả về `opt` mà `hitCone` nhận — `amp(f)` cộng
+thêm vào con số của từng mục tiêu, `onHit(f)` làm phần còn lại. Không vũ khí nào có nhánh `if` riêng
+trong vòng lặp nhịp, nên thêm vũ khí thứ mười là thêm một trường dữ liệu, không phải sửa vòng lặp.
+
+| trường | vũ khí | rider |
+| --- | --- | --- |
+| `momentum` | kiếm | nhịp kết mở cửa sổ chuỗi: nhát sau nhanh hơn, mạnh hơn |
+| `exec`, `plant`, `guard` | đao | nhịp kết đọc máu đã mất của mục tiêu |
+| `shot` | cung | nhịp duy nhất là *bật dây*: mũi tên tự quyết sau |
+| `harvest` | lưỡi hái | nhịp kết hồi máu theo số con trúng quá con thứ nhất |
+| `cut` | găng | nhịp kết đóng băng con đang niệm 0,25 s |
+| `lunge`, `guard` | khiên | mỗi nhịp lao hero 52 px tới chỗ vừa nhắm |
+| `maul` | rìu | mỗi con trúng còn 0,34× tốc trong 1,15 s (`f.slow`) |
+| `tip` | thương | phần **mũi** giáo đau hơn: ×1,00 → ×1,40 theo khoảng cách |
+| `rend` | vuốt | mỗi nhịp để lại một vết xé trên con đó; nhịp sau cộng theo số vết |
+
+Cú lao của khiên đã được kéo dài: `lunge.len` 36 → **52** px và `cd` 0,72 → **0,58** s, còn `dur`
+giữ nguyên 0,22 s. Hai con số ấy đi cùng nhau và chỉ có nghĩa khi đi cùng nhau: 52 px trong 0,22 s
+là 236 px/s, hơn bốn lần tốc đi bộ (56) nhưng vẫn non sáu phần mười cú lướt né (400), nên nó còn
+đọc ra là một cú trườn tới chứ không phải một cú dịch chuyển; và 52 px mỗi 0,58 s nghĩa là bấm liên
+tục thì hero đi được 90 px/s — **nhanh hơn đi bộ**. Đó là chỗ khiên đổi tay, từ vũ khí đứng chờ
+thành vũ khí áp sát. `dur` phải giữ nguyên: nhịp đầu ở khung 7 của tấm 28 fps rơi vào giây 0,25,
+tức chân vừa đứng lại thì cạnh khiên vừa tới, còn kéo dài quãng trượt là đẩy cú đánh ra sau lúc
+chân còn đang đi.
+
+Ba trường mới của ba vũ khí mới đều **không có mã mới**: `maul` ghi vào `f.slow`, cái trường mà
+chiêu độc đã dùng từ trước; `tip` là một `amp` đọc `Math.hypot` — cùng phép đo mà `hitCone` vừa
+dùng để biết con đó có trúng; `rend` thêm đúng hai trường vào foe, `f.rnd` (số vết, trần `rend.max`)
+và `f.rndT` (đồng hồ, đặt lại về `rend.life` mỗi lần trúng lại). Cả chồng vết **hết cùng một lúc**
+khi `rndT` cạn, không mờ từng vết một: một chồng năm vết rụng dần thành bốn, ba, hai là một thứ
+người chơi không đọc được trên màn hình, còn "bám thì còn, rời thì mất" thì đọc được.
+
+**Hai rider chạy-mọi-nhịp nhân vào bậc của nhịp** (`step`), ba rider của nhịp kết thì không:
+
+```js
+if (wp.tip)  r.amp = f => wp.dmg * sp * (wp.tip - 1) * c01(...);
+if (wp.rend) r.amp = f => wp.dmg * sp * wp.rend.add * f.rnd;
+```
+
+`swingHit` đã nhân sát thương gốc của mỗi nhịp với một bậc chạy từ 1,0 lên 1,5 dọc chuỗi. Bảng chỉ
+số hứa với người chơi "mũi ×1.40" và "xé +22% mỗi vết", tức là phần trăm **của cú đánh ấy** — không
+nhân `step` vào thì nhịp bậc 1,5 chỉ được thưởng +26% thay vì +40%, và cái nhãn nói sai. `exec`,
+`cut`, `maul` thì cố tình để trơ: chúng nổ đúng một lần ở một bậc cố định, nên nhân vào chỉ là
+chỉnh lại một hằng số ở một chỗ khó đọc hơn.
+
+Còn `f.rnd` được đọc **trước** khi nhịp đó cộng vết của mình, và đó là thứ tự của `hitCone` chứ
+không phải một lựa chọn ở đây: nó gọi `hurt(..., amount + opt.amp(f), ...)` rồi mới gọi `opt.onHit(f)`.
+Nhờ vậy nhịp đầu của một lần vung vào một con còn sạch đúng bằng con số trên bảng, và người chơi
+thấy chồng vết lớn lên qua từng nhịp thay vì được trả trước.
+
+## Hai nhát không phải nhát quét — rìu nện đất, thương đâm thẳng
+
+Cả chín vũ khí đi qua cùng một đường: `drawSwing` dán tấm sheet với `rot = e.ang - wp.axis`, rồi
+`swingHit` gọi `hitCone` với một cái nón mở từ chân hero. Với bảy cây quét thì đúng. Với hai cây
+này thì **phép xoay ấy nói sai một câu**, và đó là toàn bộ nội dung của chỗ sửa này — không phải
+một hiệu ứng mới.
+
+`thuong-frames` vẽ mũi giáo chỉ sang **đông**. `axis: SPRITE_UP` (−π/2) là "cái *lên trời* của tấm
+sheet trùng hướng nhắm", nên nó lệch cây thương đúng 90°: đâm sang phải thì ảnh chỉ lên trời. Sửa
+bằng đúng một trường, `axis: 0`. `axis` tồn tại để nói tấm sheet vẽ theo hướng nào; sửa ở đây thì
+không có mã nào phải sửa theo.
+
+`riu-frames` thì không xoay được chút nào: nó vẽ một cú chặt **xuống**, bụi nổ ở đáy giữa tấm. Xoay
+nó 0 rad ra đúng cú nện; xoay 90° ra một cú đập ngang — đúng cái người chơi thấy. Nên rìu không đi
+qua `drawSwing` nữa: `drawSlam` dán sheet **không xoay** (`rot = 0`, `squash = 1`), chỉ **lật ngang**
+theo hướng nhắm (`stampFrame` nhận thêm tham số `flip`, lật trong không gian nguồn nên mép điểm ảnh
+vẫn cứng), và dán nó ở *điểm lưỡi rơi* chứ không ở chân hero.
+
+Hình học của cú nện nằm gọn trong một trường, `slam: { dist: 26, r: 32 }`, và ba con số quanh nó
+đều truy được về tấm ảnh: vệt bụi trong sheet chiếm 0,18–0,87 chiều cao với tâm ellipse ≈ 0,86, nên
+`pivot: [0.52, 0.86]`; `size: 94` để nửa bề rộng bụi *vẽ ra* là (0,87 − 0,52) × 94 ≈ 33 px, khớp
+`r = 32`. Vòng nổ ăn đúng chỗ nó hiện.
+
+Tầm thì **suy ra**, không viết tay:
+
+```js
+if (wp.slam) wp.range = wp.slam.dist + wp.slam.r;      // rìu -> 58
+wp.reaim = !!(wp.shot || wp.lunge || wp.thrust || wp.slam);
+```
+
+Ba chỗ đọc `range` — bảng chỉ số (`weaponStat`), vòng ngắm của `shell.js` (`wpAimR`), và `hitCone`
+của mấy cây không có `slam` — nhờ vậy không thể nói ba con số khác nhau.
+
+Vùng ăn cũng **không cần máy móc mới**: `hitCone` với tâm dịch `dist` px về phía nhắm và
+`arc_ = Math.PI` là một hình tròn, vì nửa-góc được gập vào [0, π] nên phép thử góc luôn đúng. Diện
+tích π·32² ≈ 3217 px² so với cái nón cũ (tầm 50, nửa góc 1,35) ≈ 3400 px², với xa 58 thay vì 50:
+đổi **hình**, không đổi sức. Một hệ quả đi kèm và nó là chủ ý: `hitCone` lấy góc hẩy từ *tâm vùng*,
+nên con đứng lọt giữa hero và điểm nện bị đẩy **về phía hero** — muốn dọn chỗ thì nện ra xa, chứ
+không nện vào chân mình. `check-weapons.js` ghim điều khoản đó lại để khỏi ai "sửa" nó.
+
+### Ai được kéo ngắm trên điện thoại — `wp.reaim`
+
+Bản điện thoại nổ đòn ngay ở cú chạm, nên cử chỉ kéo ngắm chỉ có nghĩa với vũ khí **chưa chốt kết
+quả ở khung bấm**. Bây giờ là bốn: cung bật dây ở 0,29 s, khiên còn đang lao 0,25 s, thương đâm ở
+0,17 s, rìu nện ở 0,32 s — muộn nhất bảng. Năm cây còn lại đứng tại chỗ quét một cái nón 1,05–2,25
+rad trong 3–5 nhịp, mà với một cái nón rộng thế thì "con gần nhất" của `touchAim()` luôn là câu trả
+lời đúng, và một cử chỉ thêm vào chỉ là một cử chỉ thừa.
+
+Cờ ấy chốt ở **một chỗ** (`wp.reaim`, vòng hậu kỳ dưới bảng vũ khí) và hai bên đọc đúng nó:
+`reswing` để nhận nhát đang chạy, `shell.js` để quyết định nút ĐÁNH có kéo ngắm được không. Hai bên
+giữ hai danh sách riêng là kiểu lỗi im lặng nhất có thể có ở đây — nút vẫn kéo được mà đòn không
+đổi hướng, không có gì hỏng, chỉ có một cử chỉ không tác dụng — nên `check-weapons.js` kiểm cả cái
+danh sách bốn tên ấy **và** kiểm bằng chữ rằng `js/shell.js` đọc `sk.reaim` chứ không tự dựng lại
+điều kiện.
 
 ## Mana, trang bị, hành trang
 
@@ -833,11 +972,17 @@ hai bảng là toàn cục, còn `w.room` là của từng trận, nên hai worl
 | --- | --- | --- |
 | `GATE_OPEN` | 0,72 s | cổng nở ra hết; trong lúc đó **chưa** cho vào |
 | `GATE_HOLD` | 0,5 s | phải đứng trong miệng bấy nhiêu lâu |
-| `GATE_RX`/`GATE_RY` | 11 / 6 | bàn chân phải nằm trong hình ê-líp này |
+| `GATE_RX`/`GATE_RY` | 15 / 8 | bàn chân phải nằm trong hình ê-líp này |
 | `GATE_DIST` | 104 px | cổng mở cách người chơi bấy nhiêu: thấy được mà không đè lên |
 | `ROOM_W`/`ROOM_H` | 640 / 420 | **rộng hơn khung nhìn** ở cả hai chiều |
 | `ROOM_PAD` | 24 px | camera được nhìn quá tường bấy nhiêu |
 | `ROOM_FADE` | 7 px game | bề dày dải chuyển tiếp ngoài tường |
+
+`GATE_RX`/`GATE_RY` **đi theo cỡ art**, không phải hai con số tự do: bề rộng thật của cổng là
+`BODY_W` trong `tools/gen-gate-frames.js` (62 px thế giới, cao 51 — xem *Sinh lại khung cổng từ
+ảnh*), miệng cổng trong lưới rộng khoảng 11,6 px, và ê-líp đứng phải rộng hơn cái lỗ một chút vì
+nó là **sai số cho đôi chân**, không phải một phép thử hình học. Phóng art to ra mà để nguyên hai
+bán kính này là người chơi đứng đúng vào giữa cái lỗ mà không được tính vào.
 
 `ROOM_W` phải lớn hơn `W`, và `W` lên tới 480 trên điện thoại (xem `FRAME_W`) — 640 là mức thấp
 nhất còn dư. Phòng hẹp hơn khung nhìn thì hai đầu kẹp camera **đảo nhau** và camera nhảy loạn;

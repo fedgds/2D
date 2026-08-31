@@ -365,6 +365,9 @@ if (typeof document !== 'undefined') {
     // đổi skill, rồi tiếp tục là trả về một màn hình đóng băng không khác gì treo máy.
     if (playing) { paused = false; stepOnce = false; }
     overlay.hidden = playing;
+    // Nút ba lô chỉ sống lúc đang chơi. Ở menu thì nó là một cái nút nổi trên một tấm bảng đang
+    // che sân, và ở bảng tạm dừng thì đã có dòng TRẠNG THÁI & TRANG BỊ ngay trong bảng.
+    btnBag.hidden = !playing;
     for (const k in panels) panels[k].hidden = k !== s;
     hud.style.opacity = playing || s === 'pause' ? '1' : '0';
     // Lớp cảm ứng sống trong lúc chơi -- và trong bảng sắp xếp phím, vì ở đó nó *chính là* thứ
@@ -780,10 +783,8 @@ if (typeof document !== 'undefined') {
   }
   const btnMenu = document.getElementById('btnMenu');
   const btnGuide = document.getElementById('btnGuide');
-  const btnStat = document.getElementById('btnStat');
   btnMenu.onclick = ev => { ev.currentTarget.blur(); toggleMenu(); };
   btnGuide.onclick = ev => { ev.currentTarget.blur(); toggleGuide(); };
-  btnStat.onclick = ev => { ev.currentTarget.blur(); toggleStat(); };
 
   // ---- Mixer ---------------------------------------------------------------
   const soundBox = document.getElementById('soundBox');
@@ -1044,17 +1045,22 @@ if (typeof document !== 'undefined') {
       // Chạm-rồi-nhả *không kéo* vẫn ra đòn ngay như cũ (xem `hold.drag` trong holdEnd), nên cú né
       // gấp không mất gì: chỉ khi ngón đi quá AIM_DEAD thì đây mới thành một cú ngắm.
       //
-      // Đánh thường thì chỉ hai vũ khí *ném một thứ đi* hoặc *tự mang hero đi*: cung (`shot`) bật ba
-      // mũi bay 210 px xuyên qua cả hàng, khiên (`lunge`) lao hero 36 px vào giữa chỗ nó nhắm. Với
-      // hai cái đó "con gần nhất" của `touchAim()` là một câu trả lời sai: một hàng quái xếp dọc chỉ
-      // ăn đủ ba mũi khi trục bắn nằm trên hàng, và một cú lao là *chỗ mình sẽ đứng* -- lao vào con
-      // gần nhất trong lúc nó đứng giữa vùng nổ là đúng thứ người chơi đang cố thoát ra. Bốn vũ khí
-      // cận chiến kia đứng tại chỗ mà quét một cái nón rộng 1,05-2,25 rad, nên con gần nhất luôn là
-      // câu trả lời đúng và một cử chỉ ngắm thêm vào chỉ là một cử chỉ thừa.
+      // Đánh thường thì chỉ những vũ khí *chưa chốt kết quả ở khung bấm* mới ngắm được: cung (`shot`)
+      // bật ba mũi bay 210 px xuyên qua cả hàng, khiên (`lunge`) lao hero 52 px vào giữa chỗ nó nhắm,
+      // thương (`thrust`) đâm một đường thẳng dài 76 px, rìu (`slam`) nện một điểm cách chân 26 px sau
+      // 0,32 s. Với bốn cái đó "con gần nhất" của `touchAim()` là một câu trả lời sai: một hàng quái
+      // xếp dọc chỉ ăn đủ ba mũi (hay đủ cả đường đâm) khi trục nằm trên hàng, một cú lao là *chỗ mình
+      // sẽ đứng* -- lao vào con gần nhất trong lúc nó đứng giữa vùng nổ là đúng thứ người chơi đang cố
+      // thoát ra -- và một cú nện thì cái phải chọn là *chỗ lưỡi rơi*, không phải con nào ở gần.
       //
-      // Đọc *cơ chế* (`shot`/`lunge`), không đọc tên vũ khí: thêm cây cung thứ hai là nó ngắm được
-      // luôn, và không có bảng id nào ở đây để quên cập nhật.
-      const wpAim = weapon && !!(sk.shot || sk.lunge);
+      // Năm vũ khí còn lại đứng tại chỗ quét một cái nón rộng 1,05–2,25 rad trong 3–5 nhịp, nên con
+      // gần nhất luôn là câu trả lời đúng và một cử chỉ ngắm thêm vào chỉ là một cử chỉ thừa.
+      //
+      // Đọc *cơ chế*, không đọc tên vũ khí -- và đọc nó ở đúng một chỗ: `wp.reaim` do js/weapon.js
+      // chốt, cùng cái cờ mà `reswing` dùng để nhận nhát đang chạy. Hai bên đọc hai danh sách khác
+      // nhau là kiểu lỗi im lặng nhất có thể có ở đây: nút vẫn kéo ngắm được mà nhát đánh không đổi
+      // hướng, hoặc ngược lại.
+      const wpAim = weapon && !!sk.reaim;
       const aimable = wpAim || (!weapon && (isDash || sk.mode !== 'self'));
       const b = document.createElement('button');
       b.type = 'button';
@@ -1138,16 +1144,21 @@ if (typeof document !== 'undefined') {
   document.getElementById('tpause').addEventListener('pointerdown', ev => {
     ev.preventDefault(); toggleMenu();
   });
-  const tstat = document.getElementById('tstat');
-  tstat.addEventListener('pointerdown', ev => { ev.preventDefault(); toggleStat(); });
-  // Cùng một con số hiện ở hai chỗ: chấm cam trên nút cảm ứng và cái đuôi trên nút thanh trên.
-  // Một hàm vẽ cả hai, vì hai chỗ đọc `world.newGear` riêng là hai chỗ để nó lệch nhau.
+  // Nút ba lô. Một nút cho cả chuột và ngón tay, nên nó nghe `pointerdown` chứ không nghe `click`:
+  // trên điện thoại `click` tới sau một quãng chờ, và ở giữa một trận đánh thì quãng chờ ấy đọc ra
+  // thành "nút bị lag". `preventDefault` chặn luôn cú click tổng hợp theo sau, nên không mở-rồi-đóng.
+  // Bàn phím vẫn còn đường riêng: phím I ở chỗ xử lý phím, và Enter/Space ở dưới -- một cái nút
+  // <button> mà không mở được bằng Enter là một cái nút hỏng với người dùng bàn phím.
+  const btnBag = document.getElementById('btnBag');
+  drawBagIcon(btnBag.querySelector('canvas'));
+  btnBag.addEventListener('pointerdown', ev => { ev.preventDefault(); btnBag.blur(); toggleStat(); });
+  btnBag.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggleStat(); }
+  });
   function paintStatBadge() {
     const n = world.newGear | 0;
-    tstat.classList.toggle('has', n > 0);
-    tstat.firstElementChild.textContent = String(Math.min(n, 99));
-    btnStat.textContent = n > 0 ? '▣ TRANG BỊ (I) +' + Math.min(n, 99) : '▣ TRANG BỊ (I)';
-    btnStat.classList.toggle('on', n > 0);
+    btnBag.classList.toggle('has', n > 0);
+    btnBag.querySelector('i').textContent = String(Math.min(n, 99));
   }
 
   // Không có con trỏ thì ngắm phải *tự động*, và nó lấy theo ba nguồn vì chiêu 'dir'/'point'

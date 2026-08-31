@@ -54,6 +54,10 @@ function unit(kind, x, y) {
   return { kind, x, y, w: A ? A.bw : g[0].length, h: A ? A.bh : g.length, vx: 0, vy: 0,
            hp: k.hp, maxhp: k.hp, spd: k.spd, mass: k.mass,
            flash: 0, flip: false, dim: 1, slow: 0, frozen: 0, dying: 0,
+           // Vết xé của vuốt (`rend` trong js/weapon.js): `rnd` là số vết đang có, `rndT` là
+           // thời gian còn lại của cả chồng. Nó ở trên con quái chứ không trên nhát đánh, vì đó
+           // đúng là điều nó nói: người chơi đang xây một cái gì đó *lên một mục tiêu cụ thể*.
+           rnd: 0, rndT: 0,
            // Casting state. `acd` is staggered from the spawn position instead of from a
            // random draw, so two monsters that walk in together do not wind up in lockstep.
            tel: null, chg: 0, acd: 1.1 + (Math.abs((x * 31 + y * 17) | 0) % 240) / 100,
@@ -586,6 +590,10 @@ function step(w, dt, inp) {
     f.flash = Math.max(0, f.flash - dt * 2.6);
     if (f.slow > 0) f.slow -= dt;
     if (f.frozen > 0) f.frozen -= dt;
+    // Chồng vết xé hết hạn thì mất **cả chồng**, không rụng từng cái. Rụng dần nghĩa là con số
+    // sát thương tụt xuống ngay trong lúc người chơi vẫn đang cào đúng con đó, còn câu phải đọc
+    // ra là "bỏ nó ra là mất hết" -- một cái hạn chót, không phải một cái đồng hồ chạy nền.
+    if (f.rndT > 0 && (f.rndT -= dt) <= 0) { f.rndT = 0; f.rnd = 0; }
     if (f.dying) {
       f.dying += dt;
       if (f.dying > 0.30) {

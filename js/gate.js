@@ -31,7 +31,11 @@ const GATE_H = GATE_ART.ch / GATE_ART.scale;
 const GATE_GAIN = 0.58;      // art gốc đủ sáng để trắng cả khung 320x180 nếu cộng nguyên
 const GATE_OPEN = 0.72;      // giây để cổng nở ra hết; trong lúc đó chưa cho vào
 const GATE_HOLD = 0.5;       // giây phải đứng trong miệng
-const GATE_RX = 11, GATE_RY = 6;   // bàn chân phải nằm trong hình ê-líp này
+// Bàn chân phải nằm trong hình ê-líp này. Hai số này **đi theo cỡ art**: miệng cổng trong lưới rộng
+// khoảng 11,6 px thế giới, và ê-líp đứng phải rộng hơn cái lỗ một chút -- nó là sai số cho đôi chân,
+// không phải một phép thử hình học. Trục y nén xuống hơn nửa vì thế giới nhìn 3/4: một vòng tròn
+// thật trên sàn đọc ra là một hình bẹt.
+const GATE_RX = 15, GATE_RY = 8;
 const GATE_DIST = 104;       // cổng mở cách người chơi bấy nhiêu: thấy được mà không đè lên
 
 // Phòng boss. Phải **rộng hơn khung nhìn** ở cả hai chiều, nếu không thì hai đầu kẹp camera đảo
@@ -223,31 +227,35 @@ function drawGate(w) {
   const hd = g.hold / GATE_HOLD;
 
   // Vũng sáng dưới chân cổng: cái duy nhất nói cho người chơi biết *đứng vào đâu*. Nó ăn theo `hd`
-  // nên bước vào là nó sáng lên ngay -- phản hồi trước khi đồng hồ nửa giây kịp chạy hết.
-  puddle(g.ex, g.ey + 1, (12 + hd * 5) * op, (4.4 + hd * 1.9) * op, C, (0.15 + 0.1 * hd) * op,
+  // nên bước vào là nó sáng lên ngay -- phản hồi trước khi đồng hồ nửa giây kịp chạy hết. Bán kính
+  // phủ trọn ê-líp GATE_RX/GATE_RY: cái vũng *là* hình vẽ của vùng đứng, nên nó nhỏ hơn vùng đó là
+  // người chơi đứng đúng chỗ mà không thấy mình đã đứng đúng.
+  puddle(g.ex, g.ey + 1, (17 + hd * 7) * op, (6.2 + hd * 2.7) * op, C, (0.15 + 0.1 * hd) * op,
          g.seed, 6, 1.3);
 
   blitLight(GATE_ART.g, g.x - GATE_W * 0.5, g.y - GATE_H, GATE_ART.scale, GATE_PAL[K],
             GATE_GAIN * op * br * (1 + hd * 0.45));
 
   // Xoáy trong miệng: ba cung quay khác tốc, khác chiều. Miệng cổng không được phép là một cái lỗ
-  // tối đứng im -- đứng im thì nó đọc ra là một vết sơn, còn quay thì nó là một chỗ để đi qua.
+  // tối đứng im -- đứng im thì nó đọc ra là một vết sơn, còn quay thì nó là một chỗ để đi qua. Ba
+  // bán kính bò từ giữa lỗ ra tới quá mép nó một chút, nên cái xoáy đọc ra là *cái lỗ đang quay*
+  // chứ không phải một vòng tròn nằm trong lỗ.
   for (let i = 0; i < 3; i++) {
-    const sp = (i & 1) ? -1 : 1, r = 4.6 + i * 3.2;
-    arc(g.ex, g.my, r, w.t * (1.5 + i * 0.5) * sp, 1.5 + i * 0.4, 0.9, i === 0 ? HT : C,
+    const sp = (i & 1) ? -1 : 1, r = 6.5 + i * 4.5;
+    arc(g.ex, g.my, r, w.t * (1.5 + i * 0.5) * sp, 1.5 + i * 0.4, 1.2, i === 0 ? HT : C,
         (0.3 - i * 0.06) * op, 0.86, 1.4, 3);
   }
   // Hạt bay lên khỏi miệng, hạt mới mỗi khung (đổi seed theo `frame`): cổng đang thở ra.
-  sparks(g.ex, g.my, 6, 2, 11, HT, 0.26 * op, (g.seed ^ (w.frame * 2654435761)) >>> 0,
+  sparks(g.ex, g.my, 7, 3, 15.5, HT, 0.26 * op, (g.seed ^ (w.frame * 2654435761)) >>> 0,
          1, 0.8, -Math.PI * 0.95, -Math.PI * 0.05, 2.2);
 
   // Cú bung lúc mở: vành sáng nở ra rồi tắt, cộng một chùm tia. Đây là thứ bắt mắt người chơi đang
   // nhìn chỗ khác, và nó phải to hơn cả cánh cổng mới làm được việc đó.
   if (g.t < 0.62) {
     const k = 1 - g.t / 0.62, e = 1 - k;
-    ring(g.ex, g.my, 6 + e * 34, 1.4 + k * 2, HT, 0.5 * k * k, 0.9, 1.4);
-    star(g.ex, g.my, HT, 6, 2, 10 + e * 22, 1.2, 0.42 * k * k, g.seed, 0.4);
-    core(g.ex, g.my, 5 + e * 12, HT, 0.42 * k * k, 1.8);
+    ring(g.ex, g.my, 8.5 + e * 48, 1.4 + k * 2, HT, 0.5 * k * k, 0.9, 1.4);
+    star(g.ex, g.my, HT, 6, 2, 14 + e * 31, 1.2, 0.42 * k * k, g.seed, 0.4);
+    core(g.ex, g.my, 7 + e * 17, HT, 0.42 * k * k, 1.8);
   }
   // Vành tiến độ ở *chân* người chơi, không ở giữa cổng: nó trả lời câu "tôi đã đứng đủ chưa", và
   // câu ấy nói về chỗ đôi chân đang ở. Đầy vòng là đi.
