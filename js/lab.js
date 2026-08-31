@@ -40,13 +40,35 @@ const LAB = { W, H, SCALE, SKILLS, buf, newWorld, spawnFoe, unit, cast, step,
               BAG_MAX, GEAR_DROP, GEAR_BOSS_BOOST,
               gearIcon, gearName, statText, gearScore, rollGear, rollRarity, rollDrop, gearSum,
               syncGear, equipGear, unequipGear, trashGear, dropLoot, defMul,
+              // Món rơi ra nằm trên sàn. Cả bốn hằng số và cả ba hàm ra đây, vì đây là chỗ đầu
+              // tiên trong hệ trang bị mà một món *tồn tại ngoài túi*: "rơi ra rồi đi tới thì
+              // nhặt được" và "túi đầy thì món ở lại chứ không bốc hơi" là hai bất biến kiểm được
+              // bằng cách bước sim, không phải hai câu hứa. `ORB_C` để kiểm màu bốn phẩm chất
+              // đúng là màu của bảng trang bị.
+              ORB_MAX, ORB_MAG, ORB_TAKE, ORB_WAIT, spawnOrb, stepOrb, takeOrb, ORB_C, ORB_P, orbY,
+              // Cánh cổng boss và phòng boss. Cả bảng hằng ra đây vì harness phải chứng minh được
+              // ba bất biến mà mắt không thấy: phòng **hẹp hơn sân nhưng rộng hơn khung nhìn** (hẹp
+              // hơn thì kẹp camera đảo), `BOUND` và `CAMB` trở về đúng cỡ gốc sau khi ra khỏi phòng
+              // (chúng là toàn cục -- rò một lần là mọi trận sau đó chơi trong một cái sân hẹp), và
+              // đồ trên sàn không bốc hơi lúc đổi sàn.
+              GATE_W, GATE_H, GATE_OPEN, GATE_HOLD, GATE_RX, GATE_RY, GATE_DIST,
+              ROOM_W, ROOM_H, ROOM_PAD, GATE_ART, GATE_PAL, BOUND0, CAMB,
+              openGate, openBossGate, stepGate, enterRoom, exitRoom, sweepOrbs, roomApply,
               // Khoảng ngẫu nhiên của sát thương, và con số chí mạng. `DMG_VARY` ra đây vì hai
               // harness pin số cứng phải *tắt* được nó (`w.vary = 0`) mới đo được cái chúng đo,
               // nên "mức mặc định là bao nhiêu" là một câu cần kiểm chứ không phải một con số ẩn.
-              DMG_VARY, CRIT_C, CRIT_KEY, textScaled, textWScaled, text3x5, textW, GLYPHS,
+              // `CRIT_BASE`/`CRIT_BASE_D` cũng vậy, và vì thêm một lý do: chúng là *một* tỷ lệ
+              // dùng cho cả vũ khí lẫn mười sáu chiêu, nên "bảng trạng thái ghi đúng con số đang
+              // quay" là một bất biến kiểm được thay vì một lời hứa.
+              DMG_VARY, CRIT_BASE, CRIT_BASE_D, CRIT_C, CRIT_KEY,
+              textScaled, textWScaled, text3x5, textW, GLYPHS,
               // Hình nhân vật. `dollPixels` là toàn bộ phần tính toán -- `drawDoll` chỉ đổ nó lên
               // canvas -- nên harness kiểm được "mặc vào thì ngoại hình đổi" mà không cần DOM.
+              // `wearBase`/`wearPal`/`wornFrame` là cùng cái hình ấy đi ra màn chơi: một lưới ký
+              // tự, hai chỗ dùng, nên harness kiểm được *đúng cái* mà bảng trạng thái in ra cũng
+              // là cái mà trận đấu vẽ, chứ không phải hai bản vẽ giống nhau.
               DOLL_W, DOLL_H, DOLL_DX, DOLL_DY, DOLL_ORDER, DOLL_ART, dollRamp, dollPixels,
+              WEAR_CH, wearBase, wearPal, wearSig, wearFrames, wornFrame, heroSet, heroPick,
               HERO_HP, HERO_MP, MP_REGEN, HUD_BOX, drawHeroBars,
               cam: () => ({ x: CAMX, y: CAMY }) };
 if (typeof globalThis !== 'undefined') globalThis.LAB = LAB;

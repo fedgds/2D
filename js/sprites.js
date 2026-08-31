@@ -21,9 +21,15 @@ const PAL = {};
 }
 const WHITE = hexc('#ffffff');
 
-const HERO = ["...KKKKK...", "..KAAAAAK..", "..KASSSAK..", "..KSESESK..",
+// 11x14, và mỗi hàng phải kiếm được chỗ của nó. Hai chỗ đáng nói: tóc hai bên đầu là 'a' chứ
+// không phải 'A', nên mái tóc và khuôn mặt không dính thành một khối sáng; và hàng 9 là cái
+// thắt lưng ('L', cùng màu quần) chứ không phải thêm một hàng áo, nên thân trên có điểm kết
+// thúc thay vì loang xuống hông. Mọi phép biến hình trong js/anim.js đọc theo hàng/cột của
+// bảng này (chân cột 2-4 và 6-8, cột 5 là viền chung; thân hàng 5-9; chân hàng 10-13), nên đổi
+// *màu* của một ô thì tự do, đổi *chỗ* của một bộ phận thì phải sửa cả bộ khung.
+const HERO = ["...KKKKK...", "..KAAAAAK..", "..KaSSSaK..", "..KSESESK..",
               "...KSSSK...", "..KcAAAcK..", ".KCAAAAACK.", ".KCAaAaACK.",
-              ".KCAAAAACK.", "..KcAAAcK..", "..KLLKLLK..", "..KLLKLLK..",
+              ".KCAAAAACK.", "..KcLLLcK..", "..KLLKLLK..", "..KLLKLLK..",
               "..KBBKBBK..", "...KK.KK..."];
 const SLIME = ["...KKK...", ".KKGGGKK.", "KGGGGGGGK", "KGEGGGEGK",
                "KGGGGGGGK", ".KgggggK.", "..KKKKK.."];
@@ -145,6 +151,47 @@ function blitFine(grid, x, y, sourceScale, flash, flip, alpha, dim, pal) {
       buf[i3] = buf[i3] * inv + _tmp[0] * k;
       buf[i3 + 1] = buf[i3 + 1] * inv + _tmp[1] * k;
       buf[i3 + 2] = buf[i3 + 2] * inv + _tmp[2] * k;
+    }
+  }
+}
+
+// Same inverse sampler as blitFine, but it **adds** instead of blending over. That one word is
+// the whole difference between imported matter and imported light: the boss art is a body that
+// hides the floor, while the boss gate (images/gates/gate-1.png, baked by tools/gen-gate-frames.js)
+// is a ring of cold fire that the floor shows through.
+//
+// The grid it eats is already premultiplied, so it carries no alpha channel at all -- a cell's
+// colour *is* its intensity. Two things fall out of that for free: the art's soft outer falloff
+// becomes a real glow instead of a fringe of half-transparent pixels, and the dark hole in the
+// middle of the ring adds nothing, so the gate reads as a mouth rather than a black sticker.
+// `gain` scales the whole grid (the source art is bright enough to wash out a 320x180 frame at
+// full strength) and `tint` optionally multiplies per channel so one image can open in a
+// different colour without rebaking.
+function blitLight(grid, x, y, sourceScale, pal, gain, tint) {
+  gain = gain === undefined ? 1 : gain;
+  if (gain <= 0) return;
+  const sw = grid[0].length, sh = grid.length;
+  sourceScale = sourceScale || 1;
+  const dw = Math.max(1, Math.round(sw * RENDER_SCALE / sourceScale));
+  const dh = Math.max(1, Math.round(sh * RENDER_SCALE / sourceScale));
+  const rx0 = Math.round((x - CAMX) * RENDER_SCALE), ry0 = Math.round((y - CAMY) * RENDER_SCALE);
+  const tr = tint ? tint[0] : 1, tg = tint ? tint[1] : 1, tb = tint ? tint[2] : 1;
+  for (let ry = 0; ry < dh; ry++) {
+    const sy = Math.min(sh - 1, Math.floor(ry * sourceScale / RENDER_SCALE));
+    const line = grid[sy], py = ry0 + ry;
+    if (py < 0 || py >= RH) continue;
+    for (let rx = 0; rx < dw; rx++) {
+      const raw = Math.min(sw - 1, Math.floor(rx * sourceScale / RENDER_SCALE));
+      const ch = line[raw];
+      if (ch === '.') continue;
+      const p = pal[ch];
+      if (!p) continue;
+      const px = rx0 + rx;
+      if (px < 0 || px >= RW) continue;
+      const i3 = (py * RW + px) * 3;
+      buf[i3] += p[0] * gain * tr;
+      buf[i3 + 1] += p[1] * gain * tg;
+      buf[i3 + 2] += p[2] * gain * tb;
     }
   }
 }

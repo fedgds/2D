@@ -528,6 +528,67 @@ const SFX = (() => {
       tone({ f0: 1180, f1: 1880, dur: 0.09, type: 'triangle', gain: 0.13 });
       noise({ type: 'highpass', f0: 2600, dur: 0.07, gain: 0.07 });
     },
+    // ---- trang bị rơi ra, và trang bị được nhặt ---------------------------
+    // Hai việc khác nhau nên hai tiếng khác nhau, và cái phân biệt chúng không phải cao độ mà là
+    // *hướng*: món bật ra là một tiếng tinh rơi xuống (cao xuống thấp, có tiếng xì của không khí),
+    // món vào túi là một chuỗi đi lên và đóng lại. Người chơi biết mình vừa được thêm một món mà
+    // không cần rời mắt khỏi con quái tiếp theo.
+    //
+    // `tier` là 0..3 theo bảng phẩm chất. Nó không đổi cao độ gốc -- một cái mũ Thường và một cái
+    // mũ Huyền Thoại vẫn là cùng một tiếng, nên tai học được "đây là tiếng trang bị" ngay lần
+    // đầu -- nó chỉ *thêm nốt*: Thường một nốt, Huyền Thoại bốn. Đó là lối rẻ nhất để "món xịn"
+    // nghe ra là món xịn mà không cần một tiếng thứ ba.
+    loot(tier, pan) {
+      if (!unlock() || !gate('loot', 40)) return;
+      const n = clamp((tier | 0) + 1, 1, 4);
+      noise({ type: 'highpass', f0: 4200, f1: 1800, dur: 0.09, gain: 0.07, pan: pan });
+      for (let i = 0; i < n; i++)
+        tone({ f0: hz(48 + i * 5), f1: hz(41 + i * 5), dur: 0.16, type: 'triangle',
+               gain: 0.10 - i * 0.012, at: i * 0.045, pan: pan });
+    },
+    pick(tier) {
+      if (!unlock() || !gate('pick', 55)) return;
+      const n = clamp((tier | 0) + 2, 2, 5);
+      for (let i = 0; i < n; i++)
+        tone({ f0: hz(36 + i * 7), dur: 0.13 + i * 0.02, type: 'triangle',
+               gain: 0.11, at: i * 0.035, atk: 0.004 });
+      // Nốt đóng, một quãng tám trên nốt cuối và mảnh hơn: không có nó thì chuỗi đi lên rồi cụt,
+      // và một món Huyền Thoại nghe ra như một món Thường bị kéo dài.
+      tone({ f0: hz(36 + n * 7), dur: 0.24, type: 'sine', gain: 0.07, at: n * 0.035 });
+      noise({ type: 'highpass', f0: 3000, f1: 6000, dur: 0.08, gain: 0.05 });
+    },
+    // ---- cánh cổng boss --------------------------------------------------
+    // Ba khoảnh khắc, một họ âm: cổng mở ra, bước vào, bước ra. Cái nối chúng lại là quãng năm
+    // rỗng (0 và 7) giữ nguyên ở cả ba tiếng -- tai nhận ra "cái cổng" trước khi kịp phân biệt là
+    // vào hay ra. Cái tách chúng ra là *hướng của cú quét*: mở là một tiếng dâng lên và ở lại,
+    // vào là một cú hút xuống rồi bùng, ra là một tiếng thở phào đi xuống rồi mở sáng.
+    //
+    // Tiếng mở cố tình dài (1,2 giây) và không có gate: nó là cái thông báo duy nhất rằng có một
+    // cánh cổng vừa xuất hiện ở đâu đó sau lưng, nên nó phải chen được qua giữa một trận đánh.
+    portal(kind, pan) {
+      if (!unlock()) return;
+      if (kind === 'open') {
+        noise({ type: 'bandpass', f0: 320, f1: 1500, dur: 1.2, gain: 0.14, pan: pan });
+        [0, 7, 12].forEach((s, i) => tone({
+          f0: hz(s + 24), f1: hz(s + 31), dur: 0.9, type: 'sine',
+          gain: 0.11 - i * 0.02, at: i * 0.11, atk: 0.12, pan: pan }));
+        tone({ f0: 55, f1: 82, dur: 1.0, gain: 0.22, atk: 0.2 });
+        return;
+      }
+      if (kind === 'in') {
+        // Hút: quét xuống, rồi một cú bùng trắng. Đây là tiếng của "sàn vừa đổi".
+        noise({ type: 'bandpass', f0: 2400, f1: 220, dur: 0.34, gain: 0.2 });
+        [19, 12, 7, 0].forEach((s, i) => tone({
+          f0: hz(s + 24), dur: 0.2, type: 'triangle', gain: 0.12, at: i * 0.035 }));
+        tone({ f0: 140, f1: 42, dur: 0.5, gain: 0.34, at: 0.14 });
+        noise({ type: 'highpass', f0: 900, f1: 4000, dur: 0.22, gain: 0.16, at: 0.16 });
+        return;
+      }
+      [0, 7, 12, 24].forEach((s, i) => tone({
+        f0: hz(s + 24), dur: 0.45, type: 'sine', gain: 0.12 - i * 0.015, at: i * 0.06, atk: 0.02 }));
+      noise({ type: 'highpass', f0: 1200, f1: 5200, dur: 0.3, gain: 0.12 });
+      tone({ f0: 82, f1: 110, dur: 0.5, gain: 0.2 });
+    },
     // ---- interface -------------------------------------------------------
     ui(kind) {
       if (!unlock()) return;

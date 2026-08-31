@@ -91,6 +91,123 @@ function drawCritNum(n, a) {
   textScaled(n.s, Math.round(n.cx - wid / 2), y, n.col, a, sc, CRIT_KEY);
 }
 
+// ---- món trang bị nằm trên sàn ---------------------------------------------------------------
+// Hai màu cho mỗi phẩm chất, lấy từ đúng ramp mà js/doll.js dựng cho phẩm chất ấy. Không phải để
+// tiết kiệm một dòng: cái vệt sáng bay ra khỏi con quái và miếng giáp người chơi sắp mặc vào là
+// *cùng một màu*, nên "cái cam vừa rơi" và "cái cam đang trên vai" nối được với nhau mà không cần
+// một chú thích nào. `c` là màu phẩm chất thuần (buffer là cộng sáng, nên nó cần độ bão hoà), `h`
+// là bậc điểm nhấn gần trắng dùng cho hạt lõi và tia loé.
+//
+// `p` là **trọng số nổi bật**, và nó là thứ trả lời câu "món này có đáng chạy tới không?" trước
+// khi người chơi đọc nổi màu. Nó nhân vào bán kính, vũng sáng, tia loé và số hạt bay lên, nên đồ
+// Sử Thi và Huyền Thoại không chỉ khác màu mà khác *cỡ*: nhận ra được ở rìa màn hình, qua thân một
+// con quái, hay khi cả sàn đang loé vì skill. Đồ Thường thì nhỏ hơn một chút so với trước -- khoảng
+// cách giữa hai đầu bảng mới là tín hiệu, và nó rẻ hơn việc làm mọi món đều sáng rực.
+const ORB_P = { common: 0.94, rare: 1.10, epic: 1.42, legendary: 1.72 };
+const ORB_C = {};
+for (let i = 0; i < GEAR_RARITY.length; i++) {
+  const r = GEAR_RARITY[i];
+  ORB_C[r.id] = { c: hexc(r.col), h: hexc(dollRamp(r.id)['4']), p: ORB_P[r.id] || 1, k: i };
+}
+
+// Chỗ món đang ở trên màn hình. `z` là độ cao trên sàn và là của sim; cái nhấp nhô lên xuống thì
+// *của render*, vì một món nằm yên vẫn phải thở mà một phần điểm ảnh dao động trong sim là một
+// phần điểm ảnh có thể lệch giữa hai trận cùng seed. Lệch pha theo `seed`, nên năm món nằm cạnh
+// nhau không nhấp nhô cùng một nhịp -- năm cái đèn cùng pha đọc ra là một thanh đèn.
+function orbPh(w, o) { return 0.5 + 0.5 * Math.sin(w.t * 3.1 + (o.seed & 63) * 0.1); }
+function orbY(w, o) { return o.y - o.z - (o.land > 0 ? 1.3 + (orbPh(w, o) - 0.5) * 1.8 : 0); }
+
+// Lớp sàn: vũng sáng và vành quanh nó. Đây là cái duy nhất còn nhìn ra được khi món nằm sau một
+// cái cột hay dưới chân một con quái, nên nó rộng hơn thân món và phập phồng cùng nhịp với thân.
+// Món đang bay thì chưa có vũng, chỉ một cái bóng nhỏ đậm dần khi nó xuống -- không có cái bóng
+// ấy thì đường bay không nói được nó sắp chạm đất ở đâu.
+//
+// Hai bậc trên có thêm một vành ngoài rất mờ, rộng gần gấp đôi: nó không đọc ra như một cái vành
+// nữa mà như một quầng sáng trên sàn, và đó là cái nhìn thấy được từ xa nhất trong cả hiệu ứng.
+function drawOrbFloor(w, o) {
+  const C = ORB_C[o.rar] || ORB_C.common, p = C.p;
+  if (o.land <= 0) { shadowAt(o.x, o.y, 2.4, 1.2, 0.45 * c01(1 - o.z / 24)); return; }
+  const ph = orbPh(w, o);
+  puddle(o.x, o.y, (6.7 + ph * 1.5) * p, (2.6 + ph * 0.6) * p, C.c, 0.15 + 0.07 * ph, o.seed, 5, 1.3);
+  ring(o.x, o.y, (7.7 + ph * 2.1) * p, 0.9, C.c, 0.11 + 0.06 * ph, 0.38, 1.5);
+  if (C.k >= 2)
+    ring(o.x, o.y, (12.5 + ph * 4.6) * p, 0.85, C.c, 0.075 + 0.055 * ph, 0.34, 1.15);
+}
+
+// Lớp trên: chùm tia bật ra, vệt bay, thân món, tia loé, và mấy hạt bay lên. Vẽ *trên* nhân vật
+// vì tất cả là ánh sáng cộng vào -- một món đang bị hút vào người thì cái sáng lên là người, và
+// đó đúng là việc đang xảy ra.
+function drawOrb(w, o) {
+  const C = ORB_C[o.rar] || ORB_C.common, y = orbY(w, o), pw = C.p;
+  // Chùm tia bật ra khỏi xác: 0,4 giây, và tính từ *chỗ bật* chứ không phải chỗ món đang bay tới.
+  // Câu nó nói là "con này vừa trả đồ", nên nó phải đứng lại ở chỗ cái xác vừa nằm.
+  if (o.t < 0.42) {
+    const k = 1 - o.t / 0.42, e = 1 - k;
+    sparks(o.sx, o.sy, 9 + C.k * 4, 1.5, (3 + e * 17) * pw, C.c, 0.55 * k * k, o.seed, 1, 0.62, 0, TAU, 3.2);
+    star(o.sx, o.sy, C.h, 5, 0, (5 + e * 9) * pw, 1.1, 0.42 * k * k, (o.seed ^ 0x9e37) >>> 0, 0.4);
+    core(o.sx, o.sy, (2.4 + e * 6) * pw, C.h, 0.5 * k * k, 1.8);
+  }
+  // Đang bay: vệt kéo theo đúng vận tốc *trên màn hình*, nên `vz` (đi lên) trừ vào y. Món vừa bật
+  // ra có vệt dựng đứng, món sắp chạm đất có vệt gần ngang -- một vệt luôn nằm ngang thì cả đường
+  // vòng cung biến thành một vật trượt trên sàn.
+  if (o.land <= 0) {
+    const sx = o.vx * 0.055, sy = (o.vy - o.vz) * 0.055;
+    line(o.x - sx, y - sy, o.x, y, 1.5, C.c, 0.4, 1.4, 1);
+  }
+  const ph = orbPh(w, o), pl = o.pull;
+  // Cột sáng mảnh dựng lên khỏi món, **chỉ** cho Sử Thi và Huyền Thoại. Đây là cái duy nhất trong
+  // cả hiệu ứng vươn ra ngoài tầm mắt hướng xuống sàn: nó cao hơn thân quái, nên một món cam nằm
+  // sau đàn quái vẫn tự chỉ chỗ nó. Mờ dần ở đầu trên (`fadeEnd`) để nó không thành một cây cột.
+  if (C.k >= 2 && o.land > 0.1) {
+    const bh = (13 + ph * 5) * pw, ba = (0.19 + 0.08 * ph) * (C.k >= 3 ? 1.35 : 1);
+    line(o.x, y - 2, o.x, y - 2 - bh, 1.1 + C.k * 0.25, C.c, ba, 1.1, 1);
+  }
+  // Hai lõi: quầng màu phẩm chất, và một hạt gần trắng ở giữa. Không có hạt trắng thì một món
+  // Thường (xanh lá tối) chìm hẳn vào sàn của arena rừng.
+  core(o.x, y, (3.9 + ph * 0.9 + pl * 1.6) * pw, C.c, 0.5 + 0.12 * ph + pl * 0.25, 1.7);
+  core(o.x, y, (1.45 + pl * 0.5) * pw, C.h, 0.85, 1.3);
+  // Tia loé bốn cánh, và nó **tắt hẳn** nửa chu kỳ. Sáng liên tục thì món là một bóng đèn; tắt
+  // rồi loé lại mới là lấp lánh, và chu kỳ riêng theo `seed` nên hai món cạnh nhau loé lệch nhau.
+  // Cái quầng mềm một mình chỉ làm món *sáng hơn*; thứ mắt đọc ra là "lấp lánh" là bốn cái gai
+  // vươn ra rồi thu về, nên có cả hai: quầng cho khối sáng, gai cho nhịp.
+  //
+  // Hai bậc trên loé nhanh hơn (`2.3 -> 3.1`) và thêm hai cánh nữa: cùng một cỡ, một cái nhấp
+  // nháy gấp rưỡi vẫn bắt mắt hơn -- chuyển động là thứ thị giác ngoại vi đọc được, không phải màu.
+  const tw = Math.sin(w.t * (2.3 + C.k * 0.26) + (o.seed & 255) * 0.05);
+  if (tw > 0) {
+    glare(o.x, y, (5.4 + tw * 3.4) * pw, (3.4 + tw * 2.4) * pw, C.h, 0.30 * tw);
+    star(o.x, y, C.h, 4 + (C.k >= 2 ? 2 : 0), 0.5, (2.2 + tw * 5.4) * pw, 0.85, 0.55 * tw * tw, 0x2b1, 0);
+  }
+  // Mấy hạt bay lên khỏi món đã nằm yên: cái làm nó "lấp lánh bay ra" chứ không chỉ là một đốm
+  // sáng đứng im. Mỗi hạt một đồng hồ riêng lệch pha, nên chúng không lên thành một hàng. Bậc càng
+  // cao càng nhiều hạt (3 -> 6), và đó là cách rẻ nhất để một món trông "đang toả" thay vì "đang sáng".
+  if (o.land > 0.1) {
+    const n = 3 + C.k;
+    for (let i = 0; i < n; i++) {
+      const p = (w.t * 0.62 + i * 0.37 + ((o.seed >>> (i * 4)) & 15) * 0.06) % 1;
+      const rx = Math.sin(i * 2.1 + (o.seed & 7) + p * 3.4) * 3.1 * pw;
+      core(o.x + rx, y - 1 - p * 9 * pw, 0.85 + C.k * 0.08, C.h, 0.5 * (1 - p) * Math.min(1, p * 6), 1.3);
+    }
+  }
+}
+
+// Cú nháy lúc món vào túi, ở *người nhân vật* chứ không ở chỗ món vừa nằm: câu nó nói là "cái này
+// giờ là của bạn", và một vòng sáng nở ra ở chỗ khác thì nói đúng câu ngược lại. Màu là màu phẩm
+// chất, nên nhặt được một món cam thì biết ngay mà không cần mở túi.
+function drawGot(w) {
+  const C = ORB_C[w.gotR] || ORB_C.common, h = w.hero, pw = C.p;
+  const k = w.got / 0.34, e = 1 - k, y = h.y - h.h * 0.5;
+  ring(h.x, y, (2 + e * 13) * pw, 1.2 + k * 1.4, C.c, 0.5 * k * k, 0.62, 1.5);
+  core(h.x, y, (3 + e * 5) * pw, C.h, 0.4 * k * k, 1.8);
+  star(h.x, y, C.h, 6, 1, (6 + e * 6) * pw, 1, 0.35 * k, 0x51e7, 0.35);
+  // Nhặt được đồ tím hoặc cam thì có thêm một vành thứ hai đi sau, chậm hơn: hai vòng sáng nối
+  // nhau đọc ra là "được cái tốt", và người chơi không phải mở túi mới biết.
+  if (C.k >= 2) {
+    const k2 = c01(k * 1.45 - 0.45), e2 = 1 - k2;
+    if (k2 > 0) ring(h.x, y, (3 + e2 * 19) * pw, 1 + k2 * 1.2, C.h, 0.3 * k2 * k2, 0.62, 1.3);
+  }
+}
+
 function renderWorld(w, out) {
   setCam(w.cam.x, w.cam.y);           // integer camera + floor window for this frame
   buf.set(FLOOR);
@@ -120,6 +237,9 @@ function renderWorld(w, out) {
     const k = 1 - p.t / p.life;
     core(p.x, p.y, p.r + (1 - k) * 1.6, DUST, 0.34 * k * k, 1.6);
   }
+  // Vũng sáng của món trên sàn, cùng lớp với bụi chân: nó nằm *trên* sàn và *dưới* mọi thứ đứng
+  // trên sàn, nên một con quái đi qua che nó đúng như che một cái vũng nước.
+  if (w.orbs) for (const o of w.orbs) drawOrbFloor(w, o);
   // Tall props sort into the same y order as the units, so walking behind a pillar
   // puts the pillar in front of the enemy that is behind it.
   const order = [];
@@ -137,15 +257,29 @@ function renderWorld(w, out) {
     if (n.crit) { drawCritNum(n, a); continue; }
     text3x5(n.s, Math.round(n.cx - textW(n.s) / 2), Math.round(n.y), n.col, a);
   }
-  const hf = heroFrame(h);
+  // Nhân vật đang mặc gì thì trên màn chơi thấy đúng cái đó: `wornFrame` trả về khung của
+  // ANIM.hero khi người trần, còn khi có trang bị thì là bộ khung dựng từ *cùng* lưới ký tự mà
+  // bảng trạng thái đang in ra, cộng bảng màu riêng của bộ đồ (xem js/doll.js). `hf.dx`/`hf.dy`
+  // kéo lưới 13x16 về đúng chỗ lưới 11x14 đứng, nên hitbox và bàn chân không xê dịch.
+  const hf = wornFrame(w, h);
   drawHeld(w, true);
-  blit(hf.g, Math.round(h.x - (h.w >> 1)), Math.round(h.y - h.h) + hf.dy,
-       h.flash, h.flip, 1, 1);
+  blit(hf.g, Math.round(h.x - (h.w >> 1)) + hf.dx, Math.round(h.y - h.h) + hf.dy,
+       h.flash, h.flip, 1, 1, hf.pal);
   drawHeld(w, false);
   for (const e of w.fxs) if (e.sk.over) e.sk.over(w, e, e.p);
+  // Cánh cổng boss, trước món trên sàn: nó là một khối sáng to bằng một phần bảy bề rộng khung,
+  // nên một viên đồ rơi ngay trước cổng phải nằm *trên* nó mới còn đọc được.
+  if (w.gate) drawGate(w);
+  // Món trên sàn, sau hiệu ứng chiêu: một chiêu đang nổ không được phép chôn cái vừa rơi ra.
+  if (w.orbs) for (const o of w.orbs) drawOrb(w, o);
+  if (w.got > 0) drawGot(w);
   // Weather last of the world layers: snow and embers are between the camera and
   // everything else, so they pass in front of the hero -- but still under the HUD.
   if (MAPDEF.ambDraw && w.amb && w.amb.length) MAPDEF.ambDraw(ambArg(w, 0));
+  // Tường phòng boss sau *mọi* lớp thế giới, kể cả thời tiết: nó là một mặt nạ, và cái nó phải che
+  // gồm cả bông tuyết đang rơi ngoài phòng. Trước HUD, vì HUD không thuộc thế giới.
+  if (w.room) drawRoom(w);
+  if (w.flash > 0) veil(GATE_WHITE, c01(w.flash) * 0.85);
   if (w.danger > 0) drawHeroWarn(w);
   drawWeaponCue(w);
   drawHeroBars(w);
@@ -408,7 +542,15 @@ const MM_FOE = hexc('#c0374a'), MM_HERO = hexc('#eaf9ff');
 const MM_WARN = hexc('#ffd24a');
 function drawMinimap(w) {
   const x0 = W - MM_W - 3, y0 = MM_TOP ? 4 : H - MM_H - 3;
-  const sx = MM_W / WW, sy = MM_H / WH;
+  // Trong phòng boss thì minimap vẽ **cái phòng**, không vẽ cả thế giới: giữ tỷ lệ cũ thì cả trận
+  // đấu gói vào một hình chữ nhật 16x10 điểm ảnh ở giữa bảng, và người chơi với con boss cách nhau
+  // hai điểm ảnh. `ox`/`oy` là gốc toạ độ, `sx`/`sy` là tỷ lệ -- đổi cả hai cùng lúc là đủ, vì mọi
+  // điểm trên bảng đều đi qua đúng phép biến đổi này.
+  const rm = w.room;
+  const ox = rm ? rm.x0 : 0, oy = rm ? rm.y0 : 0;
+  const sx = MM_W / (rm ? ROOM_W : WW), sy = MM_H / (rm ? ROOM_H : WH);
+  const px = v => x0 + clamp(Math.round((v - ox) * sx), 0, MM_W - 1);
+  const py = v => y0 + clamp(Math.round((v - oy) * sy), 0, MM_H - 1);
   // Opaque, not blended. At 0.62 a torch standing behind the panel -- or any bright cast in
   // the bottom-right corner -- bled through as a warm haze and drowned the dots, because the
   // buffer underneath is additive HDR and can sit far above 1.0. A map you cannot read when
@@ -421,10 +563,15 @@ function drawMinimap(w) {
   for (let y = 0; y < MM_H; y++) {
     setPixS(x0 - 1, y0 + y, MM_ED, 1); setPixS(x0 + MM_W, y0 + y, MM_ED, 1);
   }
-  for (const p of LANDMARKS)
-    setPixS(x0 + Math.round(p.x * sx), y0 + Math.round(p.y * sy), MM_LM, 0.75);
-  const vx = Math.round(CAMX * sx), vy = Math.round(CAMY * sy);
-  const vw = Math.max(2, Math.round(W * sx)), vh = Math.max(2, Math.round(H * sy));
+  // Mốc của cả thế giới chỉ có nghĩa khi đang xem cả thế giới. Trong phòng thì mọi mốc đều nằm
+  // ngoài khung và sẽ bị kẹp về bốn mép -- bốn cái điểm sai chỗ tệ hơn không có điểm nào.
+  if (!rm) for (const p of LANDMARKS) setPixS(px(p.x), py(p.y), MM_LM, 0.75);
+  // Khung nhìn, kẹp vào trong bảng: trong phòng camera được ra ngoài tường ROOM_PAD điểm ảnh, nên
+  // nếu không kẹp thì cái khung này vẽ tràn ra ngoài viền minimap.
+  const vx = clamp(Math.round((CAMX - ox) * sx), 0, MM_W - 1);
+  const vy = clamp(Math.round((CAMY - oy) * sy), 0, MM_H - 1);
+  const vw = clamp(Math.round((CAMX + W - ox) * sx), 0, MM_W - 1) - vx;
+  const vh = clamp(Math.round((CAMY + H - oy) * sy), 0, MM_H - 1) - vy;
   for (let x = 0; x <= vw; x++) {
     setPixS(x0 + vx + x, y0 + vy, MM_VIEW, 0.85);
     setPixS(x0 + vx + x, y0 + vy + vh, MM_VIEW, 0.85);
@@ -440,21 +587,41 @@ function drawMinimap(w) {
   for (const f of w.foes) {
     if (f.dying) continue;
     const warn = !!f.tel;
-    const px = x0 + clamp(Math.round(f.x * sx), 0, MM_W - 1);
-    const py = y0 + clamp(Math.round(f.y * sy), 0, MM_H - 1);
-    setPixS(px, py, warn ? MM_WARN : MM_FOE, 0.95);
+    const fx = px(f.x), fy = py(f.y);
+    setPixS(fx, fy, warn ? MM_WARN : MM_FOE, 0.95);
     if (warn) {
-      setPixS(px + 1, py, MM_WARN, 0.45); setPixS(px - 1, py, MM_WARN, 0.45);
-      setPixS(px, py + 1, MM_WARN, 0.45); setPixS(px, py - 1, MM_WARN, 0.45);
+      setPixS(fx + 1, fy, MM_WARN, 0.45); setPixS(fx - 1, fy, MM_WARN, 0.45);
+      setPixS(fx, fy + 1, MM_WARN, 0.45); setPixS(fx, fy - 1, MM_WARN, 0.45);
     }
   }
   for (const e of w.tels) {
     if (e.fired) continue;
-    setPixS(x0 + clamp(Math.round(e.x * sx), 0, MM_W - 1),
-            y0 + clamp(Math.round(e.y * sy), 0, MM_H - 1), MM_WARN, 0.8);
+    setPixS(px(e.x), py(e.y), MM_WARN, 0.8);
   }
-  const hx = x0 + clamp(Math.round(w.hero.x * sx), 0, MM_W - 1);
-  const hy = y0 + clamp(Math.round(w.hero.y * sy), 0, MM_H - 1);
+  // Món trên sàn, một điểm màu phẩm chất, nhấp nháy. Nó ở đây vì lý do rất cụ thể: món chỉ tự
+  // bay vào túi trong bán kính 34px, nên một món rơi lúc đang chạy -- hoặc rơi lúc túi đầy -- là
+  // một món *bị bỏ lại*, và không có cái điểm này thì cách duy nhất tìm lại nó là đi rà cả sân.
+  // Nhấp nháy chứ không sáng đều: nó là thứ tạm, không phải một cái mốc như LANDMARKS.
+  if (w.orbs && w.orbs.length) {
+    const bl = 0.55 + 0.45 * Math.sin(w.t * 6);
+    for (const o of w.orbs) {
+      const C = ORB_C[o.rar] || ORB_C.common;
+      setPixS(px(o.x), py(o.y), C.h, bl);
+    }
+  }
+  // Cánh cổng, một điểm nhấp nháy chậm hơn món trên sàn và bằng màu của chính nó. Nó là thứ *duy
+  // nhất* nói cho người chơi biết cổng vừa mở ở đâu khi họ đã chạy khỏi chỗ đó: một cánh cổng đứng
+  // ngoài khung nhìn thì không có gì trên màn hình chỉ về phía nó cả.
+  if (w.gate) {
+    const g = w.gate, C = GATE_HOT[g.kind === 'out' ? 'out' : 'in'];
+    const bl = 0.6 + 0.4 * Math.sin(w.t * 3.4);
+    const gx = px(g.ex), gy = py(g.ey);
+    setPixS(gx, gy, C, bl);
+    setPixS(gx + 1, gy, C, bl * 0.5); setPixS(gx - 1, gy, C, bl * 0.5);
+    setPixS(gx, gy + 1, C, bl * 0.5); setPixS(gx, gy - 1, C, bl * 0.5);
+  }
+  const hx = px(w.hero.x);
+  const hy = py(w.hero.y);
   setPixS(hx, hy, MM_HERO, 1); setPixS(hx + 1, hy, MM_HERO, 0.5);
   setPixS(hx - 1, hy, MM_HERO, 0.5); setPixS(hx, hy - 1, MM_HERO, 0.5);
   setPixS(hx, hy + 1, MM_HERO, 0.5);

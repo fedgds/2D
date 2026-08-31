@@ -473,7 +473,7 @@ SKILLS.push({
   hit(w, e) {
     const d = e.data;
     if (crossed(e, 0.22))
-      hitCircle(w, d.cx, d.cy, 27, 210, C.blush, true, 46);
+      hitCircle(w, d.cx, d.cy, 27, 210, C.blush, false, 46);
   },
 });
 // Bốn mốc của một lần sụp, và mọi lớp đều đọc *cùng* bốn con số này. Bản trước chỉ có `pop`
@@ -548,7 +548,7 @@ SKILLS.push({
     for (const at of [0.30, 0.52]) if (crossed(e, at)) hitCircle(w, e.x, e.y - 10, 30, 72, C.lilac);
     // Cú kết ăn theo cái loé, không ăn theo lúc quả cầu bắt đầu co: hai thứ lệch nhau thì
     // người chơi mất máu trước khi thấy chuyện gì xảy ra.
-    if (crossed(e, 0.82)) hitCircle(w, e.x, e.y - 10, 48, 255, C.viop, true, 58);
+    if (crossed(e, 0.82)) hitCircle(w, e.x, e.y - 10, 48, 255, C.viop, false, 58);
   },
 });
 // Một trụ sáng phải có nhịp: gồng → đỉnh → tan. `fade(p, 0.42)` bình phương đặt đỉnh ở đúng
@@ -627,7 +627,7 @@ SKILLS.push({
   hit(w, e) {
     if (!crossed(e, 0.24)) return;
     const inner = foesIn(w, e.x, e.y, 30);
-    for (const f of inner) hurt(w, f, 430, C.holyp, true);
+    for (const f of inner) hurt(w, f, 430, C.holyp, false);
     for (const f of foesIn(w, e.x, e.y, 52))
       if (inner.indexOf(f) < 0) hurt(w, f, 90, C.holy, false, 0, 0);
   },
@@ -735,7 +735,7 @@ SKILLS.push({
   hit(w, e) {
     const d = e.data;
     d.foes.forEach((f, k) => {
-      if (crossed(e, d.arr[k])) hurt(w, f, k === 2 ? 132 : 92, C.limeh, k === 2, 0, 0);
+      if (crossed(e, d.arr[k])) hurt(w, f, k === 2 ? 132 : 92, C.limeh, false, 0, 0);
     });
   },
 });

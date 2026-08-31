@@ -53,6 +53,10 @@ function bench(wpId) {
   // cứng vài chục con số dmg với sai số ±1, nên một cú đánh dao động ±15% thì mọi phép đo ở
   // đây mất nghĩa. Bề rộng của khoảng đó được kiểm riêng trong tools/check-gear.js.
   w.vary = 0;
+  // Và tắt chí mạng, cùng một lý do: nhân vật có 15% chí mạng sẵn từ đầu (CRIT_BASE), nên một
+  // phép đo dmg chốt cứng sẽ đỏ khoảng một lần trong bảy nếu để nguyên. Tỷ lệ ấy được kiểm riêng
+  // trong tools/check-gear.js.
+  w.crit = 0;
   w.hero.x = LAB.WW * 0.5; w.hero.y = LAB.WH * 0.5;
   LAB.snapCam(w);
   return w;

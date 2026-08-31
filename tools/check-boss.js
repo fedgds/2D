@@ -55,6 +55,7 @@ function bench(seed) {
   w.spawnT = 1e9; w.kills = 0; w.boss = null; w.bossN = 0;
   w.god = false;                        // damage phải thật, vì có mục đo damage
   w.vary = 0;                           // sát thương không dao động: xem bench() ở check-weapons
+  w.crit = 0;                           // và không chí mạng: 15% nền cũng làm số chốt cứng lệch
   w.hero.x = Math.round(LAB.WW * 0.5); w.hero.y = Math.round(LAB.WH * 0.5);
   LAB.snapCam(w);
   return w;
@@ -532,36 +533,69 @@ sec('bộ chiêu: 3-4 chiêu một con, và mỗi chiêu tự nhất quán');
   }
 }
 
-sec('cửa boss: đúng mốc, một con một lúc, và không bao giờ do bốc thăm');
+sec('cửa boss: đủ mốc thì mở cổng, không gọi boss ra giữa sân');
 {
   const AT = LAB.BOSS_AT;
   const w = bench();
   w.kills = AT - 1; LAB.bossGate(w);
-  eq('còn thiếu 1 kill → chưa có boss', w.foes.length, 0);
+  eq('còn thiếu 1 kill → chưa có cổng', w.gate, null);
+  eq('và chưa có boss', w.foes.length, 0);
   w.kills = AT; LAB.bossGate(w);
-  eq('đủ ' + AT + ' kill → có boss', w.foes.length, 1);
-  eq('boss là một trong ba kind', BOSSES.indexOf(w.foes[0].kind) >= 0, true);
-  eq('bossN đếm lên', w.bossN, 1);
-  const first = w.boss;
-  // Gọi thêm cả trăm frame nữa, kill tăng vượt mốc sau: vẫn chỉ một con. Bốn telegraph từ một
-  // caster đã là hết những gì sàn nói được.
-  w.kills = AT * 3;
+  eq('đủ ' + AT + ' kill → cổng mở', !!w.gate, true);
+  eq('cổng là cổng vào', w.gate.kind, 'in');
+  // Cái quan trọng nhất của bản này: mốc kill **không** còn tự gọi boss ra. Người chơi đang đánh
+  // giữa một đám sáu con với một phần tư thanh máu thì không bị một con boss rơi xuống đầu.
+  eq('đủ mốc mà chưa vào cổng → chưa có boss', w.foes.length, 0);
+  eq('và bossN chưa nhích', w.bossN, 0);
+  eq('chưa vào phòng nào', w.room, null);
+  // Cổng ở trong sân, và trong tầm mắt lúc nó mở: một cánh cổng mở ngoài khung hình là một cánh
+  // cổng không ai thấy mở.
+  const g = w.gate;
+  eq('cổng nằm trong sân', g.x >= LAB.BOUND.x0 && g.x <= LAB.BOUND.x1 &&
+     g.y >= LAB.BOUND.y0 && g.y <= LAB.BOUND.y1, true);
+  le('cổng trong tầm mắt (ngang)', Math.abs(g.ex - w.hero.x), LAB.W * 0.5);
+  le('cổng trong tầm mắt (dọc)', Math.abs(g.ey - w.hero.y), LAB.H * 0.5);
+  // Gọi thêm cả trăm frame với kill vượt xa mốc: vẫn đúng một cánh cổng, vẫn cánh cổng ấy.
+  w.kills = AT * 4;
   for (let i = 0; i < 120; i++) LAB.bossGate(w);
-  eq('vượt mốc mà con cũ còn sống → không con thứ hai', w.foes.length, 1);
-  eq('vẫn là con cũ', w.boss === first, true);
-  // Giết nó rồi mới tới lượt con sau, và mốc là 2*AT chứ không phải "kill tiếp theo": một con
-  // vừa chết không được kéo con kế vào ngay frame sau.
-  first.hp = 0; first.dying = 0.1;
-  w.kills = AT * 2 - 1; LAB.bossGate(w);
-  eq('boss chết → w.boss nhả ra', w.boss, null);
-  eq('chưa tới mốc sau → chưa có con mới', w.foes.length, 1);
-  w.foes.length = 0;
-  w.kills = AT * 2; LAB.bossGate(w);
-  eq('tới mốc ' + AT * 2 + ' → con thứ hai', w.foes.length, 1);
-  eq('bossN đếm tiếp', w.bossN, 2);
-  eq('con thứ hai khác kind con thứ nhất', w.foes[0].kind !== first.kind, true);
-  // Xuất hiện ngoài khung hình, kể cả khi hero đứng sát góc map -- chỗ mà cái clamp có thể kéo
-  // điểm sinh về gần người.
+  eq('vượt mốc mà cổng còn mở → không cổng thứ hai', w.gate === g, true);
+}
+
+sec('vào cổng: đứng đủ lâu mới vào, và lỡ chạy qua thì không');
+{
+  const AT = LAB.BOSS_AT, HOLD = LAB.GATE_HOLD, OPEN = LAB.GATE_OPEN;
+  const w = bench();
+  w.kills = AT; LAB.bossGate(w);
+  const g = w.gate;
+  // Đứng ngay vào miệng nhưng cổng chưa nở hết: chưa cho vào. Nếu không có chặn này thì cánh cổng
+  // mở ra ngay dưới chân người chơi sẽ hút họ vào phòng boss trước khi họ kịp thấy nó.
+  w.hero.x = g.ex; w.hero.y = g.ey;
+  for (let i = 0; i < 30; i++) LAB.stepGate(w, OPEN / 60);
+  eq('cổng chưa nở hết → chưa vào', w.room, null);
+  eq('và đồng hồ đứng-vào chưa chạy', w.gate.hold, 0);
+  // Chạy qua miệng cổng: vào rồi ra ngay. Không được vào phòng. Đây là tình huống thật -- người
+  // chơi tránh đòn ngang qua cổng -- và một cơ chế "chạm là vào" sẽ ném họ vào trận boss.
+  const w2 = bench();
+  w2.kills = AT; LAB.bossGate(w2);
+  const g2 = w2.gate;
+  for (let i = 0; i < 60; i++) LAB.stepGate(w2, OPEN / 40);   // để cổng nở hết
+  for (let i = 0; i < 8; i++) {
+    w2.hero.x = g2.ex; w2.hero.y = g2.ey; LAB.stepGate(w2, HOLD * 0.3);
+    w2.hero.x = g2.ex + LAB.GATE_RX * 3; LAB.stepGate(w2, HOLD * 0.3);
+  }
+  eq('chạy qua miệng cổng → không vào phòng', w2.room, null);
+  eq('cổng vẫn còn đó', !!w2.gate, true);
+  // Đứng yên đủ HOLD giây: vào.
+  w2.hero.x = g2.ex; w2.hero.y = g2.ey;
+  for (let i = 0; i < 40; i++) { if (w2.room) break; LAB.stepGate(w2, HOLD / 20); }
+  eq('đứng đủ ' + HOLD + 's → vào phòng', !!w2.room, true);
+  eq('cổng đóng lại', w2.gate, null);
+}
+sec('sinh boss: ngoài khung hình, và không bao giờ do bốc thăm');
+// Hai câu này vẫn còn giá trị nguyên vẹn sau khi có cổng, vì `spawnBoss` được gọi trực tiếp:
+// trong phòng boss nó là con duy nhất, nên "sinh ngoài khung hình" là điều kiện để người chơi
+// thấy nó đi vào chứ không phải hiện ra giữa mặt.
+{
   let onScreen = 0, tries = 0;
   for (const [hx, hy] of [[0.5, 0.5], [0.02, 0.02], [0.98, 0.5], [0.5, 0.98], [0.98, 0.98]]) {
     for (let s = 1; s <= 40; s++) {
@@ -581,6 +615,147 @@ sec('cửa boss: đúng mốc, một con một lúc, và không bao giờ do b�
   let rolled = 0;
   for (let i = 0; i < 40000; i++) if (LAB.KIND[LAB.pickKind(rng)].boss) rolled++;
   eq('pickKind bốc trúng boss (40000 lần)', rolled, 0);
+}
+
+// Đưa một world vào phòng boss bằng đúng con đường người chơi đi: đủ kill → cổng mở → đứng vào
+// miệng cho tới khi đồng hồ đầy. Không gọi `enterRoom` trực tiếp, vì cái đáng kiểm ở đây là *cả
+// đường đi*: một cánh cổng mở ở chỗ không đứng vào được cũng là một cánh cổng hỏng.
+function intoRoom(w) {
+  w.kills = LAB.BOSS_AT * ((w.bossN || 0) + 1);
+  LAB.bossGate(w);
+  const g = w.gate;
+  if (!g) return null;
+  for (let i = 0; i < 60; i++) LAB.stepGate(w, LAB.GATE_OPEN / 40);   // chờ cổng nở hết
+  for (let i = 0; i < 60 && !w.room; i++) {
+    w.hero.x = g.ex; w.hero.y = g.ey;
+    LAB.stepGate(w, LAB.GATE_HOLD / 20);
+  }
+  return w.room;
+}
+
+sec('phòng boss: hẹp hơn sân, nhưng vẫn rộng hơn khung nhìn');
+// Ba bất biến mà mắt không thấy được, và cả ba đều là lỗi câm nếu sai. Phòng hẹp hơn khung nhìn
+// thì hai đầu kẹp camera đảo nhau và khung hình nhảy loạn; phòng rộng bằng sân thì "thu nhỏ lại"
+// là một lời nói suông; phòng nằm ra ngoài sân gốc thì một nửa trận đấu diễn ra trong tường.
+{
+  const w = bench();
+  const r = intoRoom(w);
+  eq('đi qua cổng thì vào được phòng', !!r, true);
+  le('phòng hẹp hơn sân', r.x1 - r.x0, LAB.BOUND0.x1 - LAB.BOUND0.x0 - 1);
+  le('phòng thấp hơn sân', r.y1 - r.y0, LAB.BOUND0.y1 - LAB.BOUND0.y0 - 1);
+  ge('phòng rộng hơn khung nhìn', r.x1 - r.x0, LAB.W + 1);
+  ge('phòng cao hơn khung nhìn', r.y1 - r.y0, LAB.H + 1);
+  eq('phòng nằm trọn trong sân gốc',
+     r.x0 >= LAB.BOUND0.x0 && r.x1 <= LAB.BOUND0.x1 &&
+     r.y0 >= LAB.BOUND0.y0 && r.y1 <= LAB.BOUND0.y1, true);
+  // `BOUND` là chỗ hơn ba mươi phép kẹp đọc -- bước đi, dash, cú lao vũ khí, mọi skill, cú hút của
+  // boss, chỗ món rơi xuống. Nó bằng đúng cái phòng thì tất cả những chỗ đó thu theo.
+  eq('BOUND thu về đúng phòng',
+     LAB.BOUND.x0 === r.x0 && LAB.BOUND.x1 === r.x1 &&
+     LAB.BOUND.y0 === r.y0 && LAB.BOUND.y1 === r.y1, true);
+  ge('kẹp camera không đảo (ngang)', LAB.CAMB.x1, LAB.CAMB.x0);
+  ge('kẹp camera không đảo (dọc)', LAB.CAMB.y1, LAB.CAMB.y0);
+  le('camera không nhìn ra ngoài phòng quá ' + LAB.ROOM_PAD, r.x0 - LAB.CAMB.x0, LAB.ROOM_PAD);
+  // Và trận đấu bên trong: đúng một con, không quái thường, mốc mới nhích lúc này.
+  eq('có boss trong phòng', !!w.boss, true);
+  eq('boss là một trong ba kind', BOSSES.indexOf(w.boss.kind) >= 0, true);
+  eq('sân dọn sạch, chỉ còn boss', w.foes.length, 1);
+  eq('bossN nhích lúc vào phòng, không lúc đủ kill', w.bossN, 1);
+  eq('cổng đóng lại sau khi vào', w.gate, null);
+  ge('hẹn giờ sinh quái tắt trong phòng', w.spawnT, 1e6);
+  eq('nhân vật đứng trong phòng',
+     w.hero.x >= r.x0 && w.hero.x <= r.x1 && w.hero.y >= r.y0 && w.hero.y <= r.y1, true);
+  // Đi hết ba mươi giây trong phòng: mọi phép kẹp phải giữ cả người lẫn boss ở trong, và không có
+  // frame nào ném lỗi vì `drawRoom` đọc một mép nằm ngoài buffer.
+  const px = new Uint8ClampedArray(LAB.W * LAB.H * 4);
+  let out = 0, err = '';
+  w.god = true;
+  try {
+    for (let n = 0; n < 1800; n++) {
+      // Đi vòng quanh phòng: mỗi trục đổi chiều theo một chu kỳ khác nhau, nên trong ba mươi giây
+      // nhân vật tì vào cả bốn mặt tường chứ không chỉ hai mặt.
+      const a = n * 0.021;
+      LAB.step(w, 1 / 60, { dx: Math.cos(a), dy: Math.sin(a * 1.37),
+                            ax: w.hero.x + 20, ay: w.hero.y });
+      if (w.hero.x < r.x0 - 1 || w.hero.x > r.x1 + 1 || w.hero.y < r.y0 - 1 || w.hero.y > r.y1 + 1) out++;
+      for (const f of w.foes) if (f.x < r.x0 - 1 || f.x > r.x1 + 1 || f.y < r.y0 - 1 || f.y > r.y1 + 1) out++;
+      if (n % 30 === 0) LAB.renderWorld(w, px);
+    }
+  } catch (ex) { err = ex.message + ' @ ' + ex.stack.split('\n')[1]; }
+  eq('ba mươi giây trong phòng: không ném lỗi', err || 'không', 'không');
+  eq('ba mươi giây trong phòng: không ai lọt ra ngoài tường', out, 0);
+}
+
+sec('ra phòng: boss chết thì cổng về mở ở chỗ nó nằm xuống');
+{
+  const w = bench();
+  const r = intoRoom(w);
+  const back = { x: w.ret.x, y: w.ret.y };
+  const b = w.boss, bx = b.x, by = b.y;
+  // Kill vượt xa mốc sau: đang ở trong phòng thì tuyệt đối không mở thêm cổng vào. Không có chặn
+  // này thì đánh boss xong lại thấy hai cánh cổng và không biết cái nào đi đâu.
+  w.kills = LAB.BOSS_AT * 9;
+  LAB.bossGate(w);
+  eq('boss còn sống → chưa có cổng nào', w.gate, null);
+  b.hp = 0; b.dying = 0.1;
+  LAB.bossGate(w);
+  eq('boss chết → cổng về mở', !!w.gate, true);
+  eq('và nó là cổng ra', w.gate.kind, 'out');
+  eq('vẫn không có cổng vào thứ hai dù kill vượt mốc', w.gate.kind === 'in', false);
+  le('cổng về mở ở chỗ boss nằm xuống (ngang)', Math.abs(w.gate.x - bx), LAB.GATE_W * 0.5 + 1);
+  le('cổng về mở ở chỗ boss nằm xuống (dọc)', Math.abs(w.gate.y - by), LAB.GATE_H * 0.5 + 1);
+  eq('cổng về nằm trong phòng',
+     w.gate.x >= r.x0 && w.gate.x <= r.x1 && w.gate.y >= r.y0 && w.gate.y <= r.y1, true);
+
+  const g = w.gate;
+  for (let i = 0; i < 60; i++) LAB.stepGate(w, LAB.GATE_OPEN / 40);
+  for (let i = 0; i < 60 && w.room; i++) {
+    w.hero.x = g.ex; w.hero.y = g.ey;
+    LAB.stepGate(w, LAB.GATE_HOLD / 20);
+  }
+  eq('đứng vào cổng về → ra khỏi phòng', w.room, null);
+  // Hai bảng này là toàn cục. Rò một lần là *mọi trận sau đó* chơi trong một cái sân hẹp bằng
+  // phòng boss, và không có gì trên màn hình nói vì sao.
+  eq('BOUND trở lại đúng cỡ sân gốc',
+     LAB.BOUND.x0 === LAB.BOUND0.x0 && LAB.BOUND.x1 === LAB.BOUND0.x1 &&
+     LAB.BOUND.y0 === LAB.BOUND0.y0 && LAB.BOUND.y1 === LAB.BOUND0.y1, true);
+  eq('CAMB trở lại cả thế giới',
+     LAB.CAMB.x0 === 0 && LAB.CAMB.y0 === 0 &&
+     LAB.CAMB.x1 === LAB.WW - LAB.W && LAB.CAMB.y1 === LAB.WH - LAB.H, true);
+  le('về đúng chỗ đã bước vào (ngang)', Math.abs(w.hero.x - back.x), 1);
+  le('về đúng chỗ đã bước vào (dọc)', Math.abs(w.hero.y - back.y), 1);
+  ge('sân cũ có người ở', w.foes.length, 1);
+  eq('không còn boss', w.boss, null);
+  // Và mốc sau vẫn tới được: ra khỏi phòng, đủ kill, cổng mở lại.
+  w.kills = LAB.BOSS_AT * 2;
+  LAB.bossGate(w);
+  eq('đủ mốc thứ hai → cổng vào mở lại', w.gate && w.gate.kind, 'in');
+}
+
+sec('đổi sàn: đồ đang nằm trên sàn vào túi, không bốc hơi');
+// Phòng boss là một khoanh khác của map, nên một món còn nằm trên sàn lúc đổi sàn sẽ nằm ngoài
+// tường -- tức là mất. Kiểm cả hai chiều, và kiểm cả trường hợp túi đầy: đường sai ở đó không phải
+// "nhặt thiếu" mà là "lặng lẽ xoá một món Huyền Thoại của người chơi".
+{
+  const w = bench();
+  w.bag.length = 0;
+  const it = () => LAB.rollGear(w.grng, 'armor', 'legendary');
+  for (let i = 0; i < 6; i++) LAB.spawnOrb(w, it(), w.hero.x + 26 + i * 7, w.hero.y + 14);
+  eq('6 món đang nằm trên sàn', w.orbs.length, 6);
+  intoRoom(w);
+  eq('vào phòng thì sàn sạch', w.orbs.length, 0);
+  eq('và 6 món đó ở trong túi', w.bag.length, 6);
+
+  // Túi đầy: món ở lại chứ không bị xoá. Nó sẽ nằm ngoài phòng, nhưng nó *còn*, và người chơi
+  // dọn túi rồi ra là nhặt được.
+  const w2 = bench();
+  w2.bag.length = 0;
+  for (let i = 0; i < LAB.BAG_MAX; i++) w2.bag.push(LAB.rollGear(w2.grng, 'armor', 'common'));
+  for (let i = 0; i < 4; i++) LAB.spawnOrb(w2, LAB.rollGear(w2.grng, 'boots', 'epic'),
+                                           w2.hero.x + 26 + i * 7, w2.hero.y + 14);
+  intoRoom(w2);
+  eq('túi đầy → 4 món ở lại trên sàn', w2.orbs.length, 4);
+  eq('túi không phình quá trần', w2.bag.length, LAB.BAG_MAX);
 }
 
 sec('vẽ được: mỗi chiêu chạy qua trọn một cast mà không ném lỗi');

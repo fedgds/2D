@@ -243,7 +243,7 @@
      GEAR_RARITY trong js/gear.js) chứ không viết lại ở đây: bốn màu ở hai nơi là hai nguồn
      sự thật cho một thứ. */
   .stcols { display: grid; grid-template-columns: auto 1.05fr .85fr 1.1fr; gap: 4px 14px; align-items: start }
-  /* Hình nhân vật. Cỡ do JS đặt (13x17 điểm ảnh nhân một số nguyên), nên ở đây chỉ có cái khung
+  /* Hình nhân vật. Cỡ do JS đặt (13x16 điểm ảnh nhân một số nguyên), nên ở đây chỉ có cái khung
      và nền -- một chiều rộng CSS sẽ kéo giãn canvas và làm nhoè đúng thứ duy nhất cần nét. */
   .dollbox {
     display: flex; justify-content: center; padding: 8px 10px;
@@ -524,7 +524,9 @@
            pixelated giữ nguyên từng điểm ảnh.
            Cột đầu là hình nhân vật (js/doll.js) -- một <canvas>, vì nó *không* có file ảnh: nó
            dựng từ đúng sprite HERO của trận cộng lớp phủ của năm ô đang mặc, nên mặc vào là thấy
-           đổi ngay chứ không cần một bộ hai mươi ảnh nhân vật thứ hai. -->
+           đổi ngay chứ không cần một bộ hai mươi ảnh nhân vật thứ hai. Và vì cùng lưới ký tự ấy
+           cũng là cái mà trận đấu vẽ (`wornFrame`), hình ở đây là *hình đang chạy ngoài kia*,
+           không phải một bản minh hoạ. -->
       <div class="panel wide" id="pnStat" hidden>
         <div class="gtitle">TRẠNG THÁI NHÂN VẬT</div>
         <div class="stcols">
@@ -778,6 +780,7 @@
 <script src="js/fx.js"></script>
 <script src="js/sprites.js"></script>
 <script src="js/boss-frames.js"></script>
+<script src="js/gate-frames.js"></script>
 <script src="js/scene.js"></script>
 <script src="js/arena.js"></script>
 <script src="js/anim.js"></script>
@@ -793,6 +796,7 @@
 <script src="js/foe-abil.js"></script>
 <script src="js/boss.js"></script>
 <script src="js/boss-abil.js"></script>
+<script src="js/gate.js"></script>
 <script src="js/lab.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/gpu.js"></script>

@@ -15,21 +15,23 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `fx.js` | primitive cộng sáng: `core`, `beam`, `ring`, `arc`, `bolt`, `veil`… |
 | `sprites.js` | palette + grid nhân vật, `blit`, `blitRot`, `text3x5` |
 | `boss-frames.js` | **sinh tự động** — lưới ký tự + palette riêng của 3 boss, dựng từ ảnh |
+| `gate-frames.js` | **sinh tự động** — lưới ký tự + palette của cánh cổng boss, dựng từ `images/gates/gate-1.png` |
 | `scene.js` | sàn dựng sẵn, bóng tiếp đất, đèn riêng của hero, `setCam` |
 | `arena.js` | đọc registry `map/`, `applyMap`, rải prop, hạt môi trường |
-| `anim.js` | sinh mọi frame animation lúc nạp từ một pose authored |
+| `anim.js` | sinh mọi frame animation lúc nạp từ một pose authored; `heroSet` dựng lại được từ một pose *khác* (nhân vật mặc trang bị) |
 | `boss-img.js` | `ANIM_IMG`/`foeImgFrame`: bốn bộ ảnh → khung vẽ được, và hộp `bh` |
 | `weapon.js` | 6 vũ khí: sheet 16 khung (`ART`), `drawSwing`, `drawHeld`, `swing`, `reswing`, `lungeHero` |
 | `sfx.js` | `SFX` — mọi tiếng đều tổng hợp bằng WebAudio lúc chạy |
 | `gear.js` | 5 ô trang bị × 4 phẩm chất × 12 chỉ số: bảng dữ liệu, `rollGear`, `gearSum` |
-| `doll.js` | hình nhân vật trong bảng trạng thái: `dollPixels` (thuần tính) + `drawDoll` (đổ lên canvas) |
-| `world.js` | hero, quái, damage, `newWorld`, `step`, các hàm trúng đòn, mana + `syncGear` |
-| `render.js` | thứ tự vẽ một khung, thanh HP quái, thanh HP/mana của hero (`drawHeroBars`), vòng ngắm cảm ứng (`drawAimCue`), minimap (`setMinimapTop` cho chế độ điện thoại) |
+| `doll.js` | nhân vật đang mặc trang bị, một lưới ký tự cho cả hai chỗ: `wearBase`/`wearPal`/`wearFrames` (thuần tính) → `wornFrame` cho màn chơi, `drawDoll` cho bảng trạng thái |
+| `world.js` | hero, quái, damage, `newWorld`, `step`, các hàm trúng đòn, mana + `syncGear`, món rơi nằm trên sàn (`w.orbs`) |
+| `render.js` | thứ tự vẽ một khung, thanh HP quái, thanh HP/mana của hero (`drawHeroBars`), quả sáng của món rơi (`ORB_C`/`orbY`), vòng ngắm cảm ứng (`drawAimCue`), minimap (`setMinimapTop` cho chế độ điện thoại) |
 | `skills.js` | 16 skill (`SKILLS`) |
 | `dash.js` | chiêu lướt né mặc định — không tính vào 3 slot |
 | `foe-abil.js` | chiêu quái + vùng cảnh báo vẽ trên sàn |
 | `boss.js` | 3 boss: grid vẽ tay (bản dự phòng, art ảnh thắng), `bossCast`, cửa `bossGate` |
 | `boss-abil.js` | 12 chiêu boss + `BOSS_SHAPE` (vùng tô, và chính nó là vùng gây damage) |
+| `gate.js` | cánh cổng boss + phòng boss: `roomApply` (thu `BOUND`/`CAMB`), `openBossGate`, `stepGate`, `enterRoom`/`exitRoom`, `drawGate`/`drawRoom` |
 | `lab.js` | `globalThis.LAB`: cửa cho harness node, không cần DOM |
 | `icons.js` | icon 32×32 vẽ bằng canvas cho hotbar và bảng chọn |
 | `gpu.js` | `gpuMake`: tonemap + dither + phóng to bằng một fragment shader WebGL2, thay `resolve()` trên browser (`resolve()` vẫn là bản tham chiếu của harness) |
@@ -443,11 +445,24 @@ cứng hàng chục con số damage và máu, nên mọi hệ số của trang b
 `> 0`** để dòng rng không bị đẩy đi một bước. `+HP Regen/5s` vì thế không có nền: nền khác 0
 là mọi con số máu trong hai tool kia lệch đi.
 
-Cùng lý do đó, ba tool đều đặt `w.vary = 0` ngay sau khi dựng world (xem *Khoảng sát thương*
-dưới đây): một cú đánh nhân thêm ±15% thì không có con số nào chốt cứng được nữa. Bề rộng của
-khoảng dao động có mục kiểm riêng trong `check-gear.js`, và mục đó đo *tính chất* — 400 cú không
-ra cùng một con số, có cú gần sàn, có cú gần trần, trung bình vẫn là con số trong bảng — chứ
-không chốt một con số cụ thể nào.
+Cùng lý do đó, ba tool đều đặt `w.vary = 0` **và `w.crit = 0`** ngay sau khi dựng world (xem
+*Khoảng sát thương* dưới đây): một cú đánh nhân thêm ±15%, rồi lại có 15% cơ hội nhân tiếp 1,5
+lần, thì không có con số nào chốt cứng được nữa. Bề rộng của khoảng dao động và bản thân tỷ lệ nền
+đều có mục kiểm riêng trong `check-gear.js`, và các mục đó đo *tính chất* — 400 cú không ra cùng
+một con số, có cú gần sàn, có cú gần trần, trung bình vẫn là con số trong bảng; 4000 cú của nhân
+vật trần cho tỷ lệ chí mạng quanh 15% — chứ không chốt một con số cụ thể nào.
+
+Một mục riêng lo món nằm trên sàn (`w.orbs`), và nó là mục duy nhất trong `check-gear.js` phải
+**bước sim** để nói được câu của nó: món bật ra đúng chỗ con quái chứ không chỗ nhân vật, bay lên
+rồi đáp về `z = 0` trong vòng hai giây và không bao giờ ra ngoài `BOUND`, vừa đáp thì **chưa** nhặt
+được (nếu không thì cả chùm sáng chưa từng lên màn hình), đi tới thì tự vào túi mà không bấm gì
+thêm, túi đầy thì món **nằm im nguyên chỗ đó** rồi vào ngay khi dọn được một chỗ, `ORB_MAX` chặn
+sàn, hai world cùng seed cho đúng cùng một đường bay, và `stepOrb` không bốc **một con số nào** của
+cả ba dòng rng (đo bằng cách bọc `w.rng`/`w.grng`/`w.crng` lại rồi đếm). Bốn màu tia sáng phải đúng
+bằng `GEAR_RARITY[].col`, nhịp nhô lên hạ xuống phải đổi khi vẽ mà `o.y` trong sim thì không, và
+ánh sáng phải **thật sự sáng**: hai world cùng seed bước cùng số khung, một cái xoá `orbs` đi, rồi
+so số điểm sáng của hai khung — cùng seed nên phần trang trí y hệt và chênh lệch còn lại đúng là
+sáu quả sáng. Một mục "vẽ được, không ném lỗi" thì bỏ qua đúng cái lỗi mà mắt cũng bỏ qua.
 
 ## Khoảng sát thương, và con số chí mạng
 
@@ -456,15 +471,44 @@ gọn trong nó, theo đúng thứ tự này:
 
 1. cộng phẳng `+ATK` (cờ `phys`) hoặc `+Magic ATK`,
 2. nhân khoảng dao động `w.rng.range(1 - w.vary, 1 + w.vary)` với `DMG_VARY = 0.15`,
-3. nhân `+Crit damage` nếu cú này chí mạng.
+3. **quay chí mạng đúng một lần** theo `w.crit + gs.crit`, rồi nhân `w.critd + gs.critd` nếu trúng.
 
 Thứ tự ấy có ý: dao động nằm **sau** phần cộng của trang bị nên phần trang bị cũng dao động
 cùng nhát đánh nó thuộc về, và nằm **trước** phần chí mạng nên một cú chí mạng đúng bằng một cú
 thường được nhân lên — không phải một phép bốc thăm thứ hai. Bốc trên `w.rng` chứ không `w.crng`:
 sát thương là sim, và một world gieo cùng seed vẫn phải chạy ra cùng một chuỗi.
 
-`w.vary` là **trường của trận**, không phải hằng số đọc trực tiếp, chỉ để ba harness đặt được về
-0. Trong game nó không bao giờ đổi.
+### Một tỷ lệ chí mạng, không phải hai
+
+Bước 3 là **lần quay duy nhất trong cả game**. Trước đây không phải thế, và lỗi nó sinh ra là một
+lỗi người chơi thấy trước khi đọc code: *bảng trạng thái ghi 0% mà đánh thường vẫn nổ chí mạng*.
+Có sáu chỗ tự nhận là chí mạng mà không hỏi tỷ lệ nào:
+
+- `swingHit` trong `weapon.js` có một biến tên `crit` nhưng thật ra là **nhịp kết** của combo
+  (`last > 0 && i === last`), và nhịp kết thì *luôn* đúng. Nó đã đổi tên thành `fin`, giữ nguyên
+  bốn việc thật của nó (mở cửa sổ chuỗi, `wp.harvest`, `wp.exec`, `wp.cut`) và thôi nói gì về chí
+  mạng. Đây là chỗ dễ mất nhất khi sửa: xoá biến đó đi là im lặng gãy bốn cơ chế vũ khí mà
+  `check-weapons.js` đang chốt.
+- `arrowHit` tính mũi chính trúng đúng tầm ngọt là chí mạng.
+- bốn chiêu (`skills.js`) truyền `crit: true` thẳng vào `hitCircle`/`hurt`.
+
+Cả sáu đã tắt. Tham số `crit` của `hurt` **vẫn còn** nhưng không call site nào trong game dùng:
+nó là đường buộc chí mạng để harness đo riêng phần nhân sát thương mà không phải chờ xác suất.
+
+Nhân vật có sẵn `CRIT_BASE = 15` (%) và `CRIT_BASE_D = 50` (%). Phải có cả hai: một tỷ lệ nền mà
+không có mức sát thương nền thì cú chí mạng đầu tiên của người chơi chưa có trang bị chỉ đổi màu
+con số chứ không đau hơn một điểm nào. Trang bị cộng **lên trên** nền chứ không thay nền, và
+`shell.js` in ra đúng tổng đó (`world.crit + g.crit`) — nếu nó in riêng phần trang bị thì bảng lại
+nói 0% trong khi cú đánh vẫn nổ, đúng cái chỗ người chơi đọc ra là bảng đang nói dối.
+
+Quay trên `w.grng` (dòng của trang bị + rơi đồ), không `w.rng`: may mắn chí mạng không được xê
+dịch một trận dựng lại từ seed của nó.
+
+`w.vary`, `w.crit`, `w.critd` đều là **trường của trận**, không phải hằng số đọc trực tiếp, chỉ để
+bốn harness đặt được về 0 — `check-weapons.js` và `check-boss.js` chốt cứng vài chục con số dmg,
+nên 15% chí mạng để nguyên sẽ làm chúng đỏ khoảng một lần trong bảy. Trong game chúng không bao
+giờ đổi. Bù lại, `check-gear.js` đo chính tỷ lệ nền ấy bằng 4000 cú đánh của một nhân vật trần và
+đo riêng hai đường vũ khí / chiêu bằng cùng một seed để chắc chúng không lệch nhau.
 
 Hệ quả của "cộng theo số" phải nói rõ, vì nó không tránh được: phần cộng ăn vào **mỗi nhịp
 trúng**. Một chiêu ruộng đánh 4 nhịp nhận phần cộng bốn lần, một cú `judgment_beam` một nhịp
@@ -505,9 +549,10 @@ bao giờ có hai dòng trùng nhau. Phẩm chất quyết định số dòng đ
 | `weapon.js` (`w.wcd`) | `+Attack Speed` |
 
 Ba dòng rng, không phải hai: `w.rng` (sim, gieo theo seed), `w.crng` (trang trí) và **`w.grng`
-(rơi đồ + bốc chí mạng của trang bị)**. Dòng thứ ba tồn tại vì một món rơi ra không được phép
-đẩy lệch một kết quả đã gieo, mà số hạt bụi một khung sinh ra thì cũng không được phép quyết
-định một cú chí mạng.
+(rơi đồ + bốc chí mạng)**. Dòng thứ ba tồn tại vì một món rơi ra không được phép đẩy lệch một kết
+quả đã gieo, mà số hạt bụi một khung sinh ra thì cũng không được phép quyết định một cú chí mạng.
+Chí mạng nằm ở đây kể cả phần nền 15% của nhân vật trần, không riêng phần trang bị cộng thêm — một
+lần quay thì một dòng.
 
 Mana là cổng thật, nhưng chỉ ở `cast`: hết mana thì trả `false`, **không trừ gì và không đặt
 hồi chiêu** — một chiêu bị từ chối rồi vẫn phải chờ hồi là mất lượt hai lần cho một lỗi. Đánh
@@ -556,37 +601,335 @@ cũng chỉ khi con số đổi.
 
 Trong trận có phím `L` để rơi ngay một món theo bảng phẩm chất của boss — cùng lý do như `B`
 gọi boss: tỉ lệ rơi là 15% mỗi mạng, nên nhìn bốn màu khung và bốn số dòng bằng cách đi hạ quái
-là hàng chục mạng cho một món, mà thứ cần nhìn ở đó là cái bảng chứ không phải cái tỉ lệ.
+là hàng chục mạng cho một món, mà thứ cần nhìn ở đó là cái bảng chứ không phải cái tỉ lệ. Nó rơi
+cách nhân vật 30 px về phía đang nhìn, không rơi ngay dưới chân: rơi dưới chân thì món vào túi
+trước khi chùm sáng vẽ xong, tức là cái phím đó kiểm được mọi thứ *trừ* thứ nó cần kiểm.
+
+## Món rơi ra nằm trên sàn — `w.orbs`
+
+Món không vào thẳng túi. Nó **bật ra khỏi xác con quái**, bay một đường vòng, nảy một lần, nằm
+sáng trên sàn, và tự bay vào túi khi nhân vật đi tới gần. Ba lý do, không lý do nào là "cho đẹp":
+
+* một món vào túi trong im lặng là một món người chơi không biết mình vừa được. Badge "MÓN MỚI"
+  nói *có*, nhưng không nói *lúc nào* và *từ con nào*;
+* màu phẩm chất (xanh lá / xanh dương / tím / cam) là thứ đọc được từ xa nhất trong cả hệ trang
+  bị, mà từ trước tới giờ nó chỉ sống trong bảng trang bị — tức là ở chỗ trận đấu đã dừng. Cho nó
+  bật ra khỏi xác là chỗ **duy nhất** màu ấy xuất hiện trong lúc đang đánh;
+* một món nằm trên sàn là một lý do để bước tới chỗ đó, tức là một quyết định nhỏ giữa hai đợt
+  quái — ở một game mà từ trước tới giờ việc duy nhất là đứng đúng chỗ.
+
+Nó **không** nằm trong `w.fxs`. `fxs` là hiệu ứng của chiêu: chết theo `dur` của chính nó và không
+mang gì cả. Món rơi thì *mang một món thật*, sống tới khi có người nhặt, và là thứ `step` đọc —
+nên nó là một danh sách riêng, `w.orbs`, bước trong `step` như quái và như số bay.
+
+| hằng số | trị | vì sao |
+| --- | --- | --- |
+| `ORB_MAX` | 32 | trần số món nằm trên sàn cùng lúc, đúng lối của `BAG_MAX`. Đây là cái chặn thật của `dropLoot` |
+| `ORB_MAG` | 34 | trong bán kính này thì món tự bay về phía nhân vật |
+| `ORB_TAKE` | 9 | và trong bán kính này thì vào túi |
+| `ORB_WAIT` | 0,22 s | đã nằm xuống bấy nhiêu lâu mới cho hút |
+| `ORB_GRAV` | 260 px/s² | trọng lực của đường bay |
+
+Ba hàm: `spawnOrb` (bật ra), `stepOrb` (bay, đáp, bị hút, vào túi), `takeOrb` (vào túi + nháy sáng).
+
+**`z` tách khỏi `y`.** `y` là *chỗ đứng* — cái mà bóng và thứ tự vẽ đọc — còn `z` là độ cao trên
+sàn. Nếu độ cao cộng thẳng vào `y` thì một món bay lên sẽ trôi ra *sau* con quái nó vừa rời khỏi
+rồi lại trôi ra trước lúc rơi xuống, và mỗi món rơi là một lần thứ tự vẽ nhảy.
+
+**Nhịp nhô lên hạ xuống của món đã nằm im sống chỉ trong render** (`orbY`), không trong sim. Cùng
+một lý do như trên, và một lý do nữa: một nhịp trang trí nằm trong sim là một nhịp harness phải
+pin số.
+
+**Bán kính hút rộng gấp gần bốn bán kính nhặt**, và `pull` lên dần trong khoảng một phần ba giây
+chứ không bật 0→1. Người chơi đang nhìn con quái tiếp theo, không nhìn xuống chân, nên "đi *gần*"
+phải là đủ; còn cái ramp là để món không giật một cái vào người ở đúng khung vừa vào tầm.
+
+**Túi đầy không còn chặn `dropLoot`.** Trước kia nó chặn — một món không vào được túi thì không
+còn chỗ nào để đi. Giờ nó có sàn để nằm, nên nó cứ rơi ra và **chờ**: người chơi thấy nó sáng ở
+đó, thấy dòng `<< TÚI ĐẦY, KHÔNG NHẶT ĐƯỢC >>` trên HUD gỡ lỗi, và đi dọn túi. Dọn xong thì đúng
+món đang chờ ấy vào ngay. Đường còn lại là lặng lẽ xoá một món Huyền Thoại của người chơi.
+
+`newGear` (badge "MÓN MỚI") vì thế **nhảy lúc nhặt, không lúc rơi**, còn `w.loot` vẫn đếm số lần
+rơi — từ khi món nằm ngoài túi thì hai con số ấy là hai con số khác nhau.
+
+Mọi phép bốc của một món — góc bật, lực đẩy, hạt lấp lánh riêng của nó — đều trên **`w.grng`**,
+cùng dòng đã bốc ra chính món ấy. Nên hai trận cùng seed rơi cùng những món ở cùng những chỗ, mà
+số hạt bụi một khung sinh ra vẫn không đổi được đường bay nào. `stepOrb` thì **không bốc gì cả**:
+đó là câu duy nhất khiến "có rơi đồ" không đổi được một con số sát thương nào.
+
+Render có bốn lớp, `ORB_C[rar]` cho màu (`c` = màu phẩm chất, `h` = bậc sáng nhất của cùng ramp
+giáp — nên vệt sáng bay ra là *đúng* cái màu của miếng giáp sắp mặc vào): chùm tia + ngôi sao ở
+chỗ bật ra trong 0,42 s đầu, vệt đuôi lúc còn bay, vũng sáng + vòng dưới sàn lúc đã nằm, rồi quả
+sáng với ba hạt trôi lên. Cú nháy lúc nhặt là `w.got`/`w.gotR` — **một trường, không phải một danh
+sách**: nhặt hai món trong một phần tư giây thì cú nháy thứ hai chỉ nên bắt đầu lại, không xếp hàng.
+
+### Bốn phẩm chất không sáng bằng nhau
+
+Bốn màu nói *món này thuộc bậc nào*, nhưng chỉ khi người chơi đã dừng lại nhìn. Thứ phải làm cho
+người chơi dừng lại là **lượng ánh sáng**, không phải sắc màu — thị giác ngoại vi đọc được độ sáng
+và chuyển động, chứ không đọc được "tím khác xanh". Nên hai bậc trên không chỉ khác màu; chúng
+được nhiều hơn ở bốn chỗ cùng lúc:
+
+| | Thường | Hiếm | Sử Thi | Huyền Thoại |
+| --- | --- | --- | --- | --- |
+| `ORB_P` (nhân cỡ cho mọi lớp) | 0,94 | 1,10 | 1,42 | 1,72 |
+| vòng ngoài dưới sàn | — | — | có | có, rộng hơn |
+| cột sáng dựng lên | — | — | có | có, sáng gấp 1,35 |
+| số cánh tia loé / số hạt trôi lên | 4 / 3 | 4 / 4 | 6 / 5 | 6 / 6 |
+| nhịp loé (`2,3 + k·0,26`) | 2,30 | 2,56 | 2,82 | 3,08 |
+
+`ORB_P` là **một bảng, không phải bốn nhánh `if`**: mọi lớp trong `drawOrbFloor`/`drawOrb` nhân cỡ
+với nó, nên đổi một con số ở đó là đổi cả quả sáng, và không có lớp nào bị bỏ sót lại ở cỡ cũ.
+
+**Cột sáng** (`C.k >= 2`) là cái duy nhất vươn ra khỏi tầm mắt hướng xuống sàn: nó cao hơn thân
+quái, nên một món cam nằm sau đàn quái vẫn tự chỉ chỗ nó. Mờ dần ở đầu trên để nó là một vệt, không
+phải một cây cột.
+
+Chênh lệch này **đo được**, và `tools/check-gear.js` chốt nó bằng cách dựng hai thế giới cùng seed
+— một có món, một không — rồi trừ hai khung cho nhau qua 24 pha thời gian (một khung đơn lẻ có thể
+bắt đúng lúc một bậc đang ở đáy nhịp loé của nó):
+
+| | điểm sáng | tổng năng lượng | vươn cao hơn Thường |
+| --- | --- | --- | --- |
+| Thường | 36 | 3 875 | 0 px |
+| Hiếm | 64 | 6 478 | 1 px |
+| Sử Thi | 156 | 15 158 | 9 px |
+| Huyền Thoại | 205 | 18 709 | 15 px |
+
+Mốc trong harness là **tỷ lệ**, không phải dấu lớn hơn: Sử Thi rộng hơn Hiếm ít nhất 1,25 lần và
+sáng hơn Thường ít nhất 1,6 lần; Huyền Thoại rộng hơn Sử Thi 1,1 lần và sáng hơn Thường 2,2 lần.
+"Rõ hơn" mà chỉ hơn một điểm sáng thì trên màn hình là không hơn gì.
+
+Xem bằng mắt: `node tools/shot-gate.js orbs` → `tools/out/orbs.png`, bốn phẩm chất cạnh nhau, cùng
+seed, cùng chỗ, cùng một pha loé chốt cứng — nên mọi chênh lệch nhìn thấy được trong tấm đó là
+chênh lệch cố ý.
+
+Món trên sàn cũng có một điểm màu phẩm chất **nhấp nháy trên minimap**, vì một món rơi lúc đang
+chạy — hoặc rơi lúc túi đầy — là một món bị bỏ lại, và không có cái điểm đó thì cách duy nhất tìm
+lại nó là đi rà cả sân. Nhấp nháy chứ không sáng đều: nó là thứ tạm, không phải một cái mốc như
+`LANDMARKS`.
+
+Hai giọng SFX mới, khác nhau ở **chiều**: `SFX.loot` là một chuỗi nốt đi *xuống* (món rời khỏi con
+quái và rơi), `SFX.pick` là một chuỗi đi *lên* rồi đọng lại một nốt (món vào túi). Phẩm chất chỉ
+thêm nốt, không đổi cao độ gốc — nên "món tốt" nghe ra là *dài hơn*, và bốn phẩm chất không thành
+bốn âm thanh khác nhau phải học.
 
 ## Hình nhân vật — `doll.js`
 
-Cột NGOẠI HÌNH của bảng trạng thái là **cùng một sprite `HERO`** mà trận đấu đang vẽ, cộng một
-lớp phủ cho mỗi ô đang mặc, in ra một `<canvas>` phóng to bằng `fillRect` từng ô (không
-`drawImage`, nên không có phép nội suy nào chen vào giữa).
+Một bộ hình, hai chỗ dùng. Cột NGOẠI HÌNH của bảng trạng thái là **cùng một sprite `HERO`** mà
+trận đấu đang vẽ, cộng một lớp phủ cho mỗi ô đang mặc; bảng in nó ra một `<canvas>` phóng to bằng
+`fillRect` từng ô (không `drawImage`, nên không có phép nội suy nào chen vào giữa), còn **màn chơi
+lấy đúng cái lưới ký tự ấy**, cho `anim.js` bóp thành cả bộ khung đi/đứng/đánh rồi vẽ ra buffer.
+Nhờ vậy "mặc vào rồi ra màn chơi vẫn thấy đang mặc" không phải một bản vẽ thứ hai đi lệch dần khỏi
+cái trong bảng: nó *là* cái trong bảng. `check-gear.js` chốt câu đó bằng một mục đo
+`wearFrames(equip).idle[0].g === wearBase(equip)` — hai bên không thể trôi khỏi nhau.
 
 Không có art mới cho việc này. Mỗi ô góp một *hình dạng* viết bằng lưới ký tự trong `DOLL_ART`,
 đúng như `sprites.js` viết `HERO`, và phẩm chất chỉ đổi *màu* — cùng cái luật mà `gear.js` đã
-dùng cho hai mươi file PNG: **ô chọn hình, phẩm chất chọn màu**. Bốn màu của một món suy ra từ
+dùng cho hai mươi file PNG: **ô chọn hình, phẩm chất chọn màu**. Năm màu của một món suy ra từ
 đúng hai màu mà `GEAR_RARITY` đã có (`dollRamp`), nên miếng giáp trên hình và cái khung quanh ảnh
 món đó là *cùng một màu*, và thêm một phẩm chất thứ năm không cần vẽ thêm gì.
 
-Ba lựa chọn đáng ghi lại:
+Đường đi của dữ liệu, năm hàm, mỗi hàm một việc:
 
-- **`dollPixels` trả về một mảng *màu*, không phải một lưới ký tự.** Năm ô có thể mang năm phẩm
-  chất khác nhau cùng lúc, nên `'1'` ở vai và `'1'` ở giày không cùng một màu; một lưới ký tự sẽ
-  cần năm bộ ký tự riêng.
-- **Bảng vẽ 13×17, `HERO` đặt lệch vào `(+1, +2)`.** Chừa chỗ cho chóp mũ ở trên và cho hai miếng
-  vai / hai cái găng thò ra ngoài thân — một bộ giáp không làm nhân vật to ra thì không đọc ra là
-  giáp.
+| | |
+|---|---|
+| `wearBase(equip)` | lưới **13×16 ký tự**: `HERO` dán vào `(+1, +2)`, rồi từng ô dán lên theo `DOLL_ORDER`, mỗi ô đổi `'0'..'4'` sang năm ký tự riêng của nó |
+| `wearPal(equip)` | bảng màu cho lưới trên — `Object.create(PAL)` rồi thêm hai lăm ký tự trang bị lên **trên** |
+| `wearSig(equip)` | chữ ký "ô nào, phẩm chất nào"; rỗng nghĩa là không mặc gì |
+| `wearFrames(equip)` | cả bộ khung, dựng bằng `heroSet` một lần cho mỗi chữ ký |
+| `wornFrame(w, h)` | khung mà `render.js` vẽ, kèm `dx`/`dy`/`pal` |
+
+Những lựa chọn đáng ghi lại:
+
+- **Lưới ký tự, không phải lưới màu.** Bản trước trả về một mảng màu và in ra được, nhưng không
+  *bóp* được: `anim.js` làm việc trên ký tự. Cái giá của lưới ký tự là năm ô mang năm phẩm chất
+  khác nhau cùng lúc thì `'1'` của mũ và `'1'` của giày phải là hai ký tự khác nhau — nên
+  `WEAR_CH` là **hai lăm ký tự số và dấu riêng của từng ô**, chọn số/dấu vì cả 26 chữ in hoa đã
+  có chủ trong `PAL` (xem *Bảng màu*). Chúng không bao giờ vào `PAL` toàn cục; `wearPal` *kế thừa*
+  `PAL` bằng prototype chứ không sao chép, nên một arena đổi tám ký tự vật liệu của nó lúc chạy
+  thì thân người vẫn đổi màu theo, còn `blit` chỉ đọc `P[ch]` nên chuỗi prototype là đủ.
+- **Năm bậc, không phải bốn**: `'0'` viền, `'1'` tối nhất, `'2'` thân, `'3'` sáng, `'4'` điểm nhấn.
+  Bốn bậc chỉ đủ một cái viền và một mảng đặc, nên mọi miếng giáp đọc ra là một phiến; bậc thứ năm
+  là chỗ để miếng vai có mép hắt sáng và mũi giày có chóp bóng — cùng lý do `boss.js` dùng ba bậc
+  cho mỗi vật liệu.
+- **`DOLL_TONE` lệch sáng theo chiều dọc** (mũ +0,12 … giày −0,24, chỉ ăn vào bậc 1..4, không
+  chạm bậc viền). Mặc cả bộ cùng một phẩm chất thì năm món ra năm cái ramp giống hệt nhau và cả
+  hình đọc thành **một khối một màu** — đúng cái "nhìn xấu quá". Một chút lệch sáng là cách rẻ nhất
+  để mắt tách được đâu là mũ, đâu là thân, đâu là chân: nó chính là ánh sáng từ trên xuống.
+  `dollRamp(rar)` không truyền ô vẫn cho ramp gốc của phẩm chất, nên câu "phẩm chất nào ra màu
+  nào" kiểm được một mình, không lẫn với chuyện ô nào sáng hơn ô nào.
+- **Bảng vẽ 13×16, `HERO` đặt lệch vào `(+1, +2)`.** Chừa chỗ cho chóp mũ ở trên và cho hai miếng
+  vai / hai cái găng / hai chiếc giày thò ra ngoài thân — một bộ giáp không làm nhân vật to ra thì
+  không đọc ra là giáp. 16 chứ không 17 để hai hàng giày rơi **đúng trong** khối chân của rig.
 - **`DOLL_ORDER` không phải thứ tự của `GEAR_SLOTS`**: `pants → armor → gloves → boots → helmet`,
   vì giáp phủ lên quần ở hông còn găng phủ lên tay áo của giáp. Vẽ ngược lại thì cái găng biến
   mất dưới ống tay.
 
-`dollPixels` là toàn bộ phần tính toán và không chạm vào canvas nào, nên `check-gear.js` kiểm
-được không cần DOM: không mặc gì thì ra đúng `HERO`, mặc từng ô thì đổi ≥ 5 ô và **không** đổi ô
-nào ngoài dải hàng của ô đó, bốn phẩm chất ra bốn hình khác màu, mọi hàng của `DOLL_ART` đúng 13
-ký tự (thiếu một ký tự thì lệch cả nửa bộ giáp sang trái mà vẫn trông "gần đúng"), và một cái
-găng thường vẫn thấy được dưới một bộ giáp Huyền Thoại.
+Hai lằn ranh trong `DOLL_ART` không được bước qua, cả hai đến từ rig trong `anim.js`: **cột 6** là
+viền chung giữa hai chân và không bao giờ bị bóp sang bên, nên hàng nào của quần và giày cũng phải
+để `'0'` ở đó (không thì hai chân dính thành một khối khi bước); và **hàng 12-15 là khối chân,
+hàng 7-11 là khối thân** — một món vắt qua hai khối sẽ bị xé làm hai vào đúng khung có bóp.
+
+Không mặc gì là một trường hợp riêng thật sự: `wornFrame` trả về thẳng khung của `ANIM.hero` với
+`dx = 0` và `pal = null`, tức là nhân vật trần vẽ ra đúng từng điểm ảnh như trước khi có hệ trang
+bị — không phải để nhanh hơn, mà là bản art của câu "không mặc gì thì mọi con số y như cũ". Có mặc
+thì lưới rộng ra hai cột và cao thêm hai hàng ở trên, nên `wornFrame` kéo lại `(-1, -2)`: hitbox
+không đổi khi mặc giáp, chỉ có hình là to ra.
+
+Phần `anim.js` phải mở ra ba chỗ cho việc này (xem `heroSet(base, dx, dy, arm, out, reach)`):
+
+- `base` + `dx`/`dy`: bộ khung dựng lại được từ **một dáng đứng khác**, không chỉ từ `HERO`.
+- `arm`/`out`: hai ký tự vẽ bàn tay đang vung. Mặc găng thì bàn tay phải là màu găng, không phải
+  màu áo — `wearFrames` truyền ký tự của găng, hoặc của giáp khi chỉ có giáp.
+- `reach`: hai khung đánh đẩy cánh tay ra thêm một cột khi có trang bị. Với nhân vật trần cánh tay
+  vươn tới cột 9-10, và cái cột ngoài silhouette ấy *là* cú đánh — nhưng hai miếng vai của giáp đã
+  chiếm đúng chỗ đó, nên không đẩy ra thì cú vung chỉ tô lại miếng vai bằng màu khác và người chơi
+  mặc giáp vào là mất luôn dấu hiệu duy nhất cho biết mình đang đánh. Hộp chân cũng nới rộng một
+  cột mỗi bên: với `HERO` đó là phép không đổi gì (hai cột thêm vào toàn `'.'`, mà `slideBox` và
+  `liftPart` bỏ qua ô trống), nhưng một chiếc giày nặng rộng hơn bàn chân, và cột ngoài cùng nằm
+  ngoài hộp thì bàn chân bước đi mà miếng giày đứng lại.
+
+Cả `wearBase`, `wearPal`, `dollRamp`, `wearFrames`, `wornFrame` đều là phần tính toán thuần và
+không chạm canvas nào, nên `check-gear.js` kiểm được không cần DOM: không mặc gì thì ra đúng `HERO`
+(và `wornFrame` khớp `heroFrame` từng ký tự), mặc từng ô thì đổi ≥ 5 ô và **không** đổi ô nào
+ngoài dải hàng của ô đó, bốn phẩm chất ra bốn hình khác màu, mọi hàng của `DOLL_ART` đúng 13 ký tự
+(thiếu một ký tự thì lệch cả nửa bộ giáp sang trái mà vẫn trông "gần đúng"), món nào có hàng ở
+khối chân thì còn giữ viền cột 6, một cái găng thường vẫn thấy được dưới một bộ giáp Huyền Thoại,
+hai lăm ký tự riêng không trùng gì trong `PAL` và mọi ký tự trong mọi khung đều tra ra màu, bốn
+khung đi là bốn khối chân khác nhau, khung đánh **rộng hơn** dáng đứng ở cả bộ trần và bộ có giáp,
+và đổi phẩm chất thì cache vỡ còn tháo hết ra thì về đúng lưới trần.
+
+## Cánh cổng boss và phòng boss — `gate.js`
+
+Đủ mốc kill thì **không** có boss nào hiện ra giữa sân nữa. Mở ra một **cánh cổng** cạnh người chơi;
+đứng vào miệng cổng nửa giây thì vào **phòng boss**; đánh xong boss thì một cánh cổng thứ hai mở ra
+ở chỗ nó nằm xuống, đưa về đúng chỗ đã bước vào.
+
+Cái cũ — mốc kill gọi thẳng boss ra — sai ở một chỗ không sửa được bằng cách chỉnh số: nó xảy ra
+*trong lúc* người chơi đang xử một đợt quái, nên trận boss bắt đầu ở một tình huống ngẫu nhiên,
+và cái duy nhất người chơi làm được là chịu. Cổng thì để trận đấu bắt đầu **khi người chơi quyết
+định**: dọn nốt đợt quái, nhặt đồ, rồi mới bước vào.
+
+### "Vẫn là map này nhưng thu nhỏ lại" = thu hai cái hình chữ nhật
+
+`WW`/`WH` là `const`, và cái sàn đã bake sẵn `WW*WH` ô tone trong `TID`. Đổi cỡ thế giới nghĩa là
+bake lại 3,6 triệu ô mỗi lần ra vào cổng. Thay vào đó thu hai hình chữ nhật:
+
+* **`BOUND`** (`world.js`) — hơn ba mươi chỗ kẹp vị trí đọc nó: bước đi, dash, cú lao của vũ khí,
+  chùm tia, mọi skill, cú hút của boss, cả chỗ món rơi xuống. Thu nó lại là *một* phép gán, và tất
+  cả những chỗ đó thu theo, không phải sửa chỗ nào;
+* **`CAMB`** (`core.js`) — mọi phép kẹp camera đi qua `camClampX`/`camClampY`, nên thu nó lại là đủ
+  để khung nhìn không bao giờ trôi ra ngoài phòng.
+
+Thu khung đúng nghĩa hơn *và* rẻ hơn: sàn trong phòng là đúng miếng sàn người chơi vừa đứng, cùng
+props, cùng thời tiết, cùng ánh sáng. Đúng cái map ấy, nhỏ lại.
+
+`roomApply(w)` đồng bộ hai bảng ấy ở **đầu mỗi tick** (`stepGate`), không phải chỉ lúc ra vào cổng:
+hai bảng là toàn cục, còn `w.room` là của từng trận, nên hai world sống cùng lúc — các harness trong
+`tools/` tạo cả chục — sẽ kế thừa cái sân hẹp của nhau nếu chỉ gán một lần.
+
+| hằng số | trị | vì sao |
+| --- | --- | --- |
+| `GATE_OPEN` | 0,72 s | cổng nở ra hết; trong lúc đó **chưa** cho vào |
+| `GATE_HOLD` | 0,5 s | phải đứng trong miệng bấy nhiêu lâu |
+| `GATE_RX`/`GATE_RY` | 11 / 6 | bàn chân phải nằm trong hình ê-líp này |
+| `GATE_DIST` | 104 px | cổng mở cách người chơi bấy nhiêu: thấy được mà không đè lên |
+| `ROOM_W`/`ROOM_H` | 640 / 420 | **rộng hơn khung nhìn** ở cả hai chiều |
+| `ROOM_PAD` | 24 px | camera được nhìn quá tường bấy nhiêu |
+| `ROOM_FADE` | 7 px game | bề dày dải chuyển tiếp ngoài tường |
+
+`ROOM_W` phải lớn hơn `W`, và `W` lên tới 480 trên điện thoại (xem `FRAME_W`) — 640 là mức thấp
+nhất còn dư. Phòng hẹp hơn khung nhìn thì hai đầu kẹp camera **đảo nhau** và camera nhảy loạn;
+`roomApply` vẫn bắt trường hợp đó và cho camera đứng giữa, vì ai đó sẽ sửa hai hằng ấy.
+
+`ROOM_PAD` là lý do phòng *có tường để nhìn*: kẹp camera đúng vào mép phòng thì mép phòng luôn nằm
+ngoài khung, người chơi chỉ thấy mình dừng lại mà không thấy vì sao.
+
+### Đứng vào rồi đứng yên, không phải một nút
+
+Vào cổng bằng cách đứng vào miệng rồi đứng yên nửa giây. Hai lý do, và cả hai đều nặng hơn cái
+tiện của một phím:
+
+* bàn phím đã hết phím rảnh — `h i m space f t r c b x l g` đều có chủ (xem `shell.js`);
+* bản cảm ứng **không có nút tương tác nào cả**.
+
+Đứng-để-vào thì cùng một cử chỉ chạy được trên cả hai, và nó còn tự chống cái tình huống tệ nhất
+của cơ chế này: lỡ chạy qua miệng cổng lúc đang tránh đòn mà bị hút vào phòng boss. Đồng hồ chạy
+ngược **nhanh gấp 2,2 lần** lúc bước ra, nên nhấp nhô một bước không mất hết tiến độ nhưng bỏ đi
+hẳn thì mất — và cái vành tiến độ vẽ ở *chân người chơi*, không ở giữa cổng: nó trả lời câu "tôi
+đã đứng đủ chưa", và câu ấy nói về chỗ đôi chân đang ở.
+
+### Ra vào phòng
+
+`enterRoom` / `exitRoom` làm sáu việc, và năm trong số đó là dọn dẹp:
+
+* **`sweepOrbs`** — đồ còn nằm trên sàn thì quét hết vào túi trước khi đổi sàn, vì phòng boss là
+  một khoanh khác của map và món sẽ nằm ngoài tường. Túi đầy thì dừng và để lại, y hệt `stepOrb`:
+  đường còn lại là lặng lẽ xoá một món Huyền Thoại của người chơi;
+* **`w.ret`** giữ đúng chỗ đã đứng lúc bước vào. Trả về chỗ khác thì người chơi mất phương hướng
+  trên một cái map rộng 8×8 khung — và cái minimap vừa đổi tỷ lệ hai lần trong ba giây;
+* **`w.foes`/`w.tels` xoá sạch** cả hai chiều: quái đang đuổi theo ở ngoài sẽ nằm ngoài tường, và
+  một vòng cảnh báo còn sót của một con quái không còn tồn tại là một cái bẫy không ai đặt;
+* **`snapCam` + `setCam`** ngay trong cùng khung, không để camera trôi tới: một cú pan 900 px qua
+  vùng hư không đọc ra là lỗi;
+* **`w.spawnT`** — trong phòng thì `1e9` (không quái phụ nào chen vào trận boss), lúc ra thì **1,5
+  giây** và năm con quái sinh ngay. Về một cái map trống rỗng thì cảm giác là trận đấu đã xoá mất
+  sân chơi.
+
+Nhân vật rơi xuống **nửa dưới** phòng, không rơi vào giữa: `spawnBoss` đặt boss cách nhân vật
+khoảng một phần ba khung, và nếu nhân vật đứng giữa thì một nửa số lần boss xuất hiện ngay sau
+lưng. Đứng dưới thì boss gần như luôn ở phía trên, tức là trong tầm mắt lúc trận bắt đầu.
+
+### Vẽ: cộng sáng, và một mặt nạ
+
+Art cổng đi qua **`blitLight`** — cộng vào buffer HDR chứ không vẽ chồng lên. Đó là quyết định gốc
+của cả file: cái ảnh này là một vòng lửa lạnh, không phải một tấm bìa. Nhờ vậy viền mờ của art tự
+thành quầng sáng, và cái lỗ giữa vòng cộng 0 — tức là **sàn hiện qua miệng cổng**, đúng như một cái
+miệng phải hiện. Không có tầng glow nào vẽ tay, không có ngưỡng alpha nào để lại răng cưa. Cổng nở
+ra bằng cách sáng dần cộng một vành sáng bung ra, vì art là một lưới cố định không co giãn được.
+
+`tintPal` đổi màu bảng màu đã premultiply mà **không** làm mất lõi trắng. Nhân thẳng cả bảng với
+một màu thì hỏng: art gần như không có kênh đỏ, nên nhân kiểu gì cũng không ra hổ phách. Cách ở
+đây tách mỗi màu thành "sáng bao nhiêu" (kênh lớn nhất) và "nhạt bao nhiêu" (`min/max`), rồi chỉ
+nhuộm phần *đậm màu* — sợi lửa trắng nóng có `min ≈ max` nên nó ở lại trắng, còn cả vòng lam đổi
+hẳn sang màu mới. Độ sáng giữ nguyên, nên cổng ra không tự dưng chói hơn cổng vào.
+
+**Hai màu là toàn bộ phần giao diện của cơ chế này**: lam lạnh là "đi vào chỗ nguy hiểm", hổ phách
+ấm là "về nhà". Không có chữ nào — bảng `GLYPHS` trong `sprites.js` chỉ có chữ số với `N` và `É`,
+nên một cái nhãn là bất khả — và cũng không cần: hai màu ngược nhau ở cùng một hình dáng nói đủ.
+
+`drawRoom` che chỗ ngoài phòng bằng **một mặt nạ vẽ sau cùng**, không phải một phép ghi vào `TID`.
+Không phải để tiết kiệm: ghi tone tường vào `TID` nghĩa là phải nhớ rồi hoàn nguyên hơn hai chục
+nghìn ô mỗi lần ra vào, và mọi lỗi trong đoạn hoàn nguyên đó là một vết tường **vĩnh viễn** nằm
+giữa map. Mặt nạ thì hết khung là hết. Chỉ quét bốn dải thật sự nằm ngoài phòng, không quét cả
+khung rồi `continue`. Khoảng cách dùng **Chebyshev**, nên dải chuyển tiếp là một hình chữ nhật đồng
+đều — kể cả ở bốn góc. `ROOM_FADE` tính bằng điểm ảnh *game* rồi nhân `RENDER_SCALE`: ghi thẳng
+bằng điểm ảnh render thì bề dày cái tường đổi theo độ phân giải, và hai bản dựng cùng một cảnh sẽ
+trông khác nhau.
+
+### Kiểm
+
+`node tools/check-boss.js` chốt cả đường đi, và cố tình đi qua `bossGate`/`stepGate` + input thật
+chứ không gọi `enterRoom`/`exitRoom` trực tiếp — một cánh cổng mở ở chỗ không đứng vào được vẫn là
+một cánh cổng hỏng:
+
+* đủ mốc thì mở cổng và **`w.foes.length` vẫn là 0**, `w.bossN` vẫn là 0 — mốc kill không còn thả
+  boss xuống đầu người chơi nữa;
+* cổng nằm trong `BOUND` và trong nửa khung hình ở cả hai trục; 120 lần gọi `bossGate` nữa không
+  mở cổng thứ hai;
+* đứng vào trước lúc cổng nở hết thì không được tính; 8 lần vào-ra mỗi lần `HOLD*0,3` thì không
+  bao giờ vào được;
+* phòng hẹp hơn `BOUND0` mà rộng hơn `W`/`H`; `BOUND` **bằng đúng** phòng; `CAMB` không đảo hai
+  đầu; 1800 khung đi vòng trong phòng không ai ra ngoài tường;
+* boss chết thì cổng `'out'` mở đúng ở chỗ cái xác; ra khỏi phòng thì `BOUND` về `BOUND0` và `CAMB`
+  về `{0, 0, WW-W, WH-H}` — hai bảng ấy là toàn cục, nên một chỗ rò là mọi trận sau đều chơi trong
+  một cái sân hẹp mà không có gì trên màn hình giải thích tại sao;
+* nhân vật về trong 1 px so với `w.ret`, quái sinh lại, `w.boss` là null, và mốc sau mở cổng `'in'`.
+
+Xem bằng mắt: `node tools/shot-gate.js gate` → `tools/out/gate.png`, sáu ô, và sáu ô ấy là sáu câu
+người chơi phải đọc được mà không cần một chữ nào: cổng đang mở / cổng đứng chờ / mình đang bước
+vào / trận đấu bắt đầu / đây là tường phòng / đây là đường về.
 
 ## Xem hiệu ứng mà không cần browser
 
@@ -674,3 +1017,32 @@ Bốn bộ trong art không khớp một-một với trạng thái `world.js` đ
 `hit ← f.flash`, `walk` thì art không có nên là bộ đứng cộng nhịp nhấp. Không thêm trường trạng
 thái nào vào foe. Thứ tự ưu tiên death > cast > hit > walk/idle, và cast **trên** hit là có chủ
 ý: boss đang tung chiêu mà bị đánh thì thứ người chơi cần đọc vẫn là chiêu đó.
+
+## Sinh lại khung cổng từ ảnh
+
+```bash
+node tools/gen-gate-frames.js
+```
+
+`images/gates/gate-1.png` → `js/gate-frames.js`. Cùng đường đi với `gen-boss-frames.js` — cắt bbox
+alpha, box filter xuống cỡ thật, lượng hoá màu bằng median cut, ghi ra lưới ký tự mà `blit` đã biết
+đọc — nhưng khác đúng một quyết định, và đó là quyết định quan trọng nhất:
+
+**ảnh này là ánh sáng, không phải vật chất.** Con boss là một khối thịt: nó che sàn, nên vẽ
+alpha-over và alpha bị cắt thành nhị phân. Cánh cổng thì *cộng* vào buffer HDR, nên ở đây alpha
+được **nhân thẳng vào màu** (premultiply) rồi bỏ đi, và cái grid mang ra là cường độ sáng sẵn sàng
+để cộng. Ba thứ có được miễn phí từ đó:
+
+* viền mờ dần của art tự thành quầng sáng yếu — không cần một tầng glow vẽ tay nào;
+* cái lỗ đen giữa vòng premultiply ra 0, tức là *không cộng gì*, nên sàn hiện qua miệng cổng đúng
+  như nó phải hiện: một cái miệng, không phải một miếng sơn đen;
+* không có ngưỡng alpha nhị phân, nên vòng sáng không bị răng cưa cứng như sprite.
+
+Neo là (giữa lưới theo chiều ngang, đáy lưới), y như bộ khung boss: cổng *đứng trên sàn*. Nhưng
+file sinh ra còn mang thêm **`mx`/`my`** — tâm khối sáng, tính bằng pixel thế giới từ góc trên-trái
+của lưới. Vòng sáng này **không đối xứng** (lệch phải một pixel, thấp hơn giữa hình), nên `gate.js`
+lấy `mx`/`my` làm miệng cổng thật thay vì lấy tâm khung: chỗ người chơi phải đứng vào, chỗ vẽ xoáy,
+chỗ bắn hạt. Lấy giữa hình thì cái vành tiến độ nằm lệch khỏi cái lỗ, và người chơi đứng đúng vào
+lỗ lại không được tính.
+
+Và như bộ khung boss: **đừng sửa tay `js/gate-frames.js`** — lần sinh sau ghi đè sạch.

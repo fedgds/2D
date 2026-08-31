@@ -41,6 +41,15 @@ const buf = new Float32Array(NP * 3);
 const WW = 2560, WH = 1440;
 let CAMX = 0, CAMY = 0;
 
+// Khung mà camera bị kẹp vào. Mặc định là cả thế giới, nhưng nó **mutable** vì phòng boss cần
+// thu cái khung ấy lại (js/gate.js). WW/WH là `const` và sàn thì bake sẵn cả WW*WH ô tone, nên
+// "map thu nhỏ" không thể là đổi cỡ thế giới -- nó là thu hai cái khung: khung camera ở đây, và
+// `BOUND` bên js/world.js mà mọi chỗ kẹp vị trí đều đọc. Mọi chỗ kẹp camera đi qua hai hàm này,
+// nên chỉ cần sửa CAMB là cả pha lerp, snapCam, camInt và setCam đổi theo cùng một lúc.
+const CAMB = { x0: 0, y0: 0, x1: WW - W, y1: WH - H };
+function camClampX(v) { return v < CAMB.x0 ? CAMB.x0 : (v > CAMB.x1 ? CAMB.x1 : v); }
+function camClampY(v) { return v < CAMB.y0 ? CAMB.y0 : (v > CAMB.y1 ? CAMB.y1 : v); }
+
 const BAYER = new Float32Array(16);
 {
   const b = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];

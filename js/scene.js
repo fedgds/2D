@@ -141,8 +141,8 @@ function syncFloor(force) {
   }
 }
 function setCam(x, y) {
-  CAMX = clamp(Math.round(x), 0, WW - W);
-  CAMY = clamp(Math.round(y), 0, WH - H);
+  CAMX = camClampX(Math.round(x));
+  CAMY = camClampY(Math.round(y));
   syncFloor();
 }
 setCam(0, 0);

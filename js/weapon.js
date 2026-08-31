@@ -470,12 +470,16 @@ function swingHit(w, e) {
     // Later beats of a combo hit harder: the fifth punch of a gauntlet flurry is the one
     // that should feel like it finished the job.
     const step = last > 0 ? 1 + 0.5 * (i / last) : 1;
-    const crit = last > 0 && i === last;
+    // `fin` là *nhịp kết*, không phải chí mạng. Hai thứ này từng là một biến, và đó chính là
+    // chỗ sinh ra "tỷ lệ chí mạng 0% mà đánh thường vẫn nổ chí mạng": nhịp cuối của mọi combo
+    // luôn true. Nhịp kết vẫn còn nguyên việc của nó -- mở cửa sổ chuỗi, hút máu, xử trảm, cắt
+    // -- còn chí mạng thì `hurt` quay một lần duy nhất theo tỷ lệ thật của nhân vật.
+    const fin = last > 0 && i === last;
     // `e.momo` was decided once, by `swing`, so the bonus covers the whole chain rather than
     // flickering on and off between beats as the window ticks down underneath it.
     const amount = wp.dmg * step * (e.momo ? wp.momentum.dmg : 1);
     const n = hitCone(w, o.x, o.y, e.ang, wp.range, wp.arc, amount,
-      wp.col, crit, wp.push + i * wp.pushStep, swingRiders(w, wp, crit));
+      wp.col, false, wp.push + i * wp.pushStep, swingRiders(w, wp, fin));
     if (!n) continue;
     w.shake = Math.max(w.shake, wp.shake * 0.8);
     // Paid in blood rather than in damage, and only on the finisher: the earlier beats are
@@ -484,21 +488,21 @@ function swingHit(w, e) {
     // would turn a crowd into a fountain -- three foes would out-heal the contact drain by
     // a factor of two -- and would pay the scythe for swinging rather than for gathering.
     // The second foe onward, so one target is a hit and only a crowd is a meal.
-    if (crit && wp.harvest && n > 1) healHero(w, wp.harvest * (n - 1));
+    if (fin && wp.harvest && n > 1) healHero(w, wp.harvest * (n - 1));
     // Landing the finisher is what opens the sword's window. Whiffing it leaves the window
     // shut -- `swing` already spent whatever was there -- which is the whole bargain.
-    if (crit && wp.momentum) w.momo = wp.momentum.win;
+    if (fin && wp.momentum) w.momo = wp.momentum.win;
   }
 }
 
 // Per-target riders for the finisher, built only when there is one to build: the cone knows
 // distance and angle, and neither of these can be expressed in those terms. The saber's
 // bonus reads how wounded the target already is; the gauntlet's reads whether it is casting.
-function swingRiders(w, wp, crit) {
+function swingRiders(w, wp, fin) {
   // `phys` is unconditional: a swing is the physical path, so gear scales it by +ATK rather
   // than +Magic ATK. The other two riders only exist on the finisher beat.
   const r = { phys: true };
-  if (!crit || (!wp.exec && !wp.cut)) return r;
+  if (!fin || (!wp.exec && !wp.cut)) return r;
   if (wp.exec) r.amp = f => wp.dmg * wp.exec * c01(1 - f.hp / f.maxhp);
   if (wp.cut) r.onHit = f => cutCast(w, f, wp.cut);
   return r;
@@ -599,11 +603,11 @@ function arrowHit(w, e) {
     // hit stops it scoring the same foe twice. A line of monsters is the payoff for kiting.
     d.hit.push(f);
     const k = c01(Math.max(t, 0) / s.ramp);
-    // `mul` là của riêng mũi này, nên hai mũi biên vừa đau ít hơn vừa đẩy nhẹ hơn, và không
-    // được tính là đòn chí mạng: một con số 25 nhảy lên với viền chí mạng thì bảng số đọc ra
-    // là mũi chính đã trúng, trong khi mũi chính vừa bay trượt.
+    // `mul` là của riêng mũi này, nên hai mũi biên vừa đau ít hơn vừa đẩy nhẹ hơn. Mũi chính
+    // trúng đúng tầm ngọt *không* còn tự tính là chí mạng: một tỷ lệ duy nhất trong `hurt`
+    // quyết định điều đó, cho cả cung, cả kiếm, cả mười sáu chiêu.
     const amt = (s.near + (s.far - s.near) * k) * d.mul;
-    hurt(w, f, amt, wp.col, k > 0.85 && d.mul >= 1,
+    hurt(w, f, amt, wp.col, false,
       ca * s.push * k * d.mul, sa * s.push * k * 0.5 * d.mul, true);
   }
 }

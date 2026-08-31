@@ -480,7 +480,11 @@ if (typeof document !== 'undefined') {
       statRow('Sát thương vũ khí', '+' + g.atk + ' mỗi hit', g.atk > 0),
       statRow('Sát thương phép', '+' + g.mag + ' mỗi hit', g.mag > 0),
       statRow('Giáp (DEF)', g.def + ' · giảm ' + Math.round((1 - 100 / (100 + g.def)) * 100) + '%', g.def > 0),
-      statRow('Chí mạng', g.crit + '% · +' + g.critd + '% sát thương', g.crit > 0),
+      // Tỷ lệ *thật*: nền của nhân vật cộng phần trang bị, một con số duy nhất dùng cho cả
+      // đánh thường lẫn chiêu. Ghi riêng phần trang bị thì bảng nói 0% trong khi cú đánh vẫn
+      // nổ chí mạng -- đúng cái chỗ người chơi đọc ra là bảng đang nói dối.
+      statRow('Chí mạng', (world.crit + g.crit) + '% · +' + (world.critd + g.critd) + '% sát thương',
+              g.crit > 0 || g.critd > 0),
       statRow('Tốc đánh', '+' + g.aspd + '%', g.aspd > 0),
       statRow('Tốc chạy', '+' + g.mspd + '%', g.mspd > 0),
       statRow('Hồi máu', g.hpr + ' / 5s', g.hpr > 0),
@@ -1532,7 +1536,17 @@ if (typeof document !== 'undefined') {
     // Một món rơi ra ngay, theo bảng phẩm chất của boss. Cùng lý do như 'b': tỉ lệ rơi là 15%
     // mỗi mạng, nên xem bốn màu khung và bốn số dòng chỉ số bằng cách đi hạ quái là hàng chục
     // mạng cho một món -- và cái cần nhìn ở đây là bảng trang bị, không phải cái tỉ lệ.
-    if (low === 'l') { if (!ev.repeat) { dropLoot(world, true) ? SFX.ui('click') : SFX.blocked(); } return; }
+    //
+    // Rơi cách nhân vật 30px về phía đang nhìn, không rơi vào chân: 30 nằm trong bán kính hút
+    // (`ORB_MAG` = 34) nên món tự bay về túi, mà vẫn đủ xa để nhìn hết cả chùm tia bật ra, đường
+    // vòng cung và cú nháy lúc nhặt -- tức là phím này kiểm được cả hiệu ứng, không chỉ cái bảng.
+    if (low === 'l') {
+      if (!ev.repeat) {
+        const h = world.hero;
+        dropLoot(world, true, h.x + (h.flip ? -30 : 30), h.y) ? SFX.ui('click') : SFX.blocked();
+      }
+      return;
+    }
     if (low === 'g') { if (!ev.repeat) world.god = !world.god; return; }
     if (low === 'h') { toggleGuide(); eatKey = low; return; }
     if (low === 'i') { toggleStat(); eatKey = low; return; }
@@ -1632,6 +1646,8 @@ if (typeof document !== 'undefined') {
       '   MP ' + Math.round(world.hero.mp) + '/' + world.hero.maxmp +
       (world.god ? ' (bất tử)' : '') +
       '\ntúi ' + world.bag.length + '/' + BAG_MAX + ' · rơi ' + world.loot +
+      (world.orbs.length ? ' · trên sàn ' + world.orbs.length : '') +
+      (world.bag.length >= BAG_MAX && world.orbs.length ? '   << TÚI ĐẦY, KHÔNG NHẶT ĐƯỢC >>' : '') +
       (world.newGear > 0 ? '   << ' + world.newGear + ' MÓN MỚI (I) >>' : '') +
       '\nsân ' + MAPDEF.label +
       '\nvị trí ' + Math.round(world.hero.x) + ',' + Math.round(world.hero.y) +

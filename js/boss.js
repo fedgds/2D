@@ -368,7 +368,24 @@ function spawnBoss(w, kind) {
 // Called once a frame from step(). Two rules: never two bosses at once -- four telegraphs
 // from one caster is already as much as the floor can say -- and the counter only moves
 // forward, so a boss you killed does not walk back in on the next kill.
+//
+// Đủ mốc kill thì **không** gọi boss ra giữa sân nữa: nó mở một cánh cổng (js/gate.js), và trận
+// boss diễn ra trong một căn phòng nhỏ mà người chơi tự chọn lúc nào bước vào. Ba việc đổi theo, và
+// cả ba đều là lý do làm thế:
+//
+//   * Người chơi được quyền chuẩn bị. Trước đây boss rơi xuống đúng lúc đang có sáu con quái vây
+//     quanh và một thanh máu còn một phần tư; giờ cánh cổng đứng đó chờ.
+//   * `bossN` lên ở `spawnBoss`, tức là lúc *vào phòng*, không phải lúc đủ kill. Nên bỏ qua cổng
+//     thì mốc không nhích, và cánh cổng vẫn là cánh cổng ấy.
+//   * Boss chết trong phòng thì mở cánh cổng thứ hai ở đúng chỗ nó nằm xuống -- phần thưởng và
+//     đường về ở cùng một chỗ, nên không ai phải đi tìm.
 function bossGate(w) {
-  if (w.boss && (w.boss.dying || w.boss.hp <= 0 || w.foes.indexOf(w.boss) < 0)) w.boss = null;
-  if (!w.boss && w.kills >= BOSS_AT * ((w.bossN || 0) + 1)) spawnBoss(w);
+  if (w.boss && (w.boss.dying || w.boss.hp <= 0 || w.foes.indexOf(w.boss) < 0)) {
+    const bx = w.boss.x, by = w.boss.y;
+    w.boss = null;
+    if (w.room && !w.gate) openGate(w, 'out', bx, by);
+  }
+  // Trong phòng thì không mở cổng vào: đường duy nhất ra là cánh cổng hổ phách ở trên.
+  if (w.room || w.gate || w.boss) return;
+  if (w.kills >= BOSS_AT * ((w.bossN || 0) + 1)) openBossGate(w);
 }

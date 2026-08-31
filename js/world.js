@@ -5,6 +5,13 @@
 //    sprite's feet are the sort key and the shadow anchor.
 // ===========================================================================
 const BOUND = { x0: 26, x1: WW - 26, y0: 40, y1: WH - 26 };
+// Kích thước gốc của sân, giữ riêng ra vì `BOUND` bị **sửa tại chỗ** khi vào phòng boss
+// (js/gate.js). Hơn ba mươi chỗ đọc `BOUND` -- bước đi, dash, lao vũ khí, chùm tia, mọi skill, cả
+// cú hút của boss -- nên thu cái hình chữ nhật này lại là cách duy nhất làm "map nhỏ hơn" mà không
+// phải sờ vào một chỗ nào trong số đó. Đổi lại, nó là trạng thái toàn cục: `roomApply` bên gate.js
+// đồng bộ lại nó theo `w.room` ở đầu mỗi tick, nên hai world sống cùng lúc (các harness trong
+// tools/ có làm thế) không thể kế thừa cái sân hẹp của nhau.
+const BOUND0 = { x0: BOUND.x0, x1: BOUND.x1, y0: BOUND.y0, y1: BOUND.y1 };
 // `cyc` is how many world pixels one animation frame lasts, so the cycle is driven by
 // distance covered rather than by time: a slime at 17 px/s hopping on the same 4.2 px cadence
 // as the wraith took a full second per hop and read as gliding.
@@ -62,11 +69,11 @@ const midY = f => f.y - f.h * 0.5;
 // renderWorld does -- otherwise the mouse would aim half a pixel off the picture.
 function camTarget(w) { return { x: w.hero.x - W * 0.5, y: (w.hero.y - 6) - H * 0.5 }; }
 function camInt(w) {
-  return { x: clamp(Math.round(w.cam.x), 0, WW - W), y: clamp(Math.round(w.cam.y), 0, WH - H) };
+  return { x: camClampX(Math.round(w.cam.x)), y: camClampY(Math.round(w.cam.y)) };
 }
 function snapCam(w) {
   const t = camTarget(w);
-  w.cam.x = clamp(t.x, 0, WW - W); w.cam.y = clamp(t.y, 0, WH - H);
+  w.cam.x = camClampX(t.x); w.cam.y = camClampY(t.y);
 }
 
 // A run is defined by its loadout: one weapon and three of the sixteen skills. `slots`
@@ -121,15 +128,113 @@ function trashGear(w, i) {
   return true;
 }
 // What a kill hands out. Rolled on `w.grng`, so this is invisible to every seeded outcome
-// in the sim. A full bag drops nothing at all rather than silently binning the item: the
-// player is told by the count on the button, and can make room.
-function dropLoot(w, boss) {
-  if (w.bag.length >= BAG_MAX) return null;
+// in the sim. Món không vào thẳng túi nữa: nó bật ra khỏi xác con quái và nằm trên sàn cho tới
+// khi người chơi đi ngang qua (xem `spawnOrb`). `x`/`y` là chỗ nó bật ra, mặc định là chỗ nhân
+// vật đứng -- đó là đường của phím gỡ lỗi 'L' trong shell.js, và một món debug thì nên rơi ngay
+// dưới chân chứ không ở giữa bản đồ.
+//
+// Túi đầy **không** còn chặn ở đây. Trước kia nó chặn, vì một món không vào được túi thì không
+// còn chỗ nào để đi; giờ nó có sàn để nằm, nên nó cứ rơi ra và chờ -- người chơi thấy nó sáng ở
+// đó, biết mình đang bỏ lỡ cái gì, và đi dọn túi. Cái chặn thật nằm ở `ORB_MAX`.
+function dropLoot(w, boss, x, y) {
+  if (w.orbs.length >= ORB_MAX) return null;
   const it = rollDrop(w.grng, boss ? 1 : GEAR_DROP, boss ? GEAR_BOSS_BOOST : 0);
   if (!it) return null;
-  w.bag.push(it); w.newGear++; w.loot++;
+  w.loot++;
+  spawnOrb(w, it, x == null ? w.hero.x : x, y == null ? w.hero.y : y);
   return it;
 }
+
+// ---- Món rơi ra, nằm trên sàn, tự nhặt ------------------------------------------------------
+// Ba lý do để nó là một vật trên sàn chứ không phải một dòng cộng vào túi, và không lý do nào
+// trong ba cái là "cho đẹp":
+//
+//   * một món vào túi trong im lặng là một món người chơi không biết mình vừa được. Cái badge
+//     "MÓN MỚI" nói *có*, nhưng không nói *lúc nào* và *từ con nào*;
+//   * màu phẩm chất là thứ đọc được từ xa nhất trong cả hệ trang bị (xanh lá / xanh dương / tím /
+//     cam), mà từ trước tới giờ nó chỉ sống trong bảng trang bị -- tức là ở chỗ trận đấu đã dừng.
+//     Cho nó bật ra khỏi xác là chỗ duy nhất màu ấy xuất hiện *trong lúc đánh*, và một vệt cam
+//     bay ra khỏi con quái vừa chết là thứ người chơi nhìn thấy trước khi kịp đọc chữ nào;
+//   * một món nằm trên sàn là một lý do để bước tới chỗ đó, tức là một quyết định nhỏ giữa hai
+//     đợt quái -- ở một game mà từ trước tới giờ việc duy nhất là đứng đúng chỗ.
+//
+// Nó không nằm trong `w.fxs`: `fxs` là hiệu ứng của chiêu, chết theo `dur` của chính nó và không
+// mang gì cả. Món rơi thì *mang một món*, sống tới khi có người nhặt, và là thứ sim đọc -- nên
+// nó là danh sách riêng, `w.orbs`, bước trong `step` như quái và số bay.
+const ORB_MAX = 32;      // trần số món nằm trên sàn cùng lúc, đúng lối của BAG_MAX
+const ORB_MAG = 34;      // trong bán kính này thì món tự bay về phía nhân vật
+const ORB_TAKE = 9;      // và trong bán kính này thì vào túi
+const ORB_WAIT = 0.22;   // đã nằm xuống bấy nhiêu giây mới cho hút: món phải *hiện ra* trước
+const ORB_GRAV = 260;    // trọng lực của đường bay, px/s^2
+
+// Bật ra khỏi xác: một góc bất kỳ trên mặt phẳng sàn, cộng một cú đẩy lên. Bốc trên `w.grng`
+// -- cùng dòng đã bốc ra chính món này -- nên hai trận cùng seed rơi ra cùng những món ở cùng
+// những chỗ, mà số hạt bụi một khung sinh ra vẫn không đổi được đường bay nào.
+//
+// `z` là độ cao trên sàn, tách khỏi `y`: `y` là *chỗ đứng* (cái mà bóng và thứ tự vẽ đọc), nên
+// một món bay lên không được phép trôi ra trước hay ra sau con quái nó vừa rời khỏi.
+function spawnOrb(w, it, x, y) {
+  const ang = w.grng.range(0, TAU), sp = w.grng.range(15, 34);
+  w.orbs.push({
+    it: it, rar: it.rar,
+    x: x, y: clamp(y, BOUND.y0, BOUND.y1), z: 7,
+    vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * 0.55, vz: w.grng.range(52, 78),
+    t: 0, land: 0, bounce: 0, pull: 0,
+    sx: x, sy: y,                                   // chỗ bật ra: chùm tia đầu tiên vẽ từ đây
+    seed: w.grng.int(0, 0x7fffffff) >>> 0,          // hạt của mọi tia lấp lánh của riêng món này
+  });
+  SFX.loot(RAR_IX[it.rar] || 0, clamp((x - w.cam.x - W * 0.5) / (W * 0.5), -1, 1));
+}
+const RAR_IX = {};
+for (let i = 0; i < GEAR_RARITY.length; i++) RAR_IX[GEAR_RARITY[i].id] = i;
+
+// Vào túi. Túi đầy thì **không** nhặt và món ở lại nguyên chỗ đó -- không phải để phạt, mà vì
+// đường còn lại là lặng lẽ xoá một món Huyền Thoại của người chơi. `w.got` là cú nháy sáng ở
+// người nhân vật, đọc bởi render: một trường chứ không phải một danh sách, vì nhặt hai món trong
+// một phần tư giây thì cú nháy thứ hai chỉ nên bắt đầu lại, không xếp hàng.
+function takeOrb(w, o, i) {
+  w.bag.push(o.it); w.newGear++;
+  w.got = 0.34; w.gotR = o.rar;
+  w.orbs.splice(i, 1);
+  SFX.pick(RAR_IX[o.rar] || 0);
+}
+
+function stepOrb(w, o, dt, i) {
+  o.t += dt;
+  if (o.land <= 0) {
+    o.x = clamp(o.x + o.vx * dt, BOUND.x0, BOUND.x1);
+    o.y = clamp(o.y + o.vy * dt, BOUND.y0, BOUND.y1);
+    o.z += o.vz * dt; o.vz -= ORB_GRAV * dt;
+    // Cản không khí, để cú đẩy quyết định *hướng* mà không quyết định món bay bao xa: không có
+    // nó thì một góc thuận sẽ ném món ra ngoài màn hình và người chơi mất luôn cái vừa rơi.
+    const k = 1 - dt * 2.4;
+    o.vx *= k; o.vy *= k;
+    if (o.z <= 0) {
+      o.z = 0;
+      // Một cú nảy, không hai: nảy một lần là một vật có trọng lượng, nảy nhiều lần là một quả
+      // bóng cao su -- và cái thứ hai kéo dài đúng cái khoảng người chơi đang chờ để nhặt.
+      if (o.vz < -46 && o.bounce < 1) { o.bounce++; o.vz = -o.vz * 0.44; o.vx *= 0.5; o.vy *= 0.5; }
+      else { o.vz = 0; o.vx = 0; o.vy = 0; o.land = 1e-4; }
+    }
+    return;
+  }
+  o.land += dt;
+  if (o.land < ORB_WAIT) return;
+  // Túi đầy: không hút, không nhặt. Món cứ nằm đó sáng, và cái sàn đầy đồ *là* lời nhắc dọn túi.
+  if (w.bag.length >= BAG_MAX) { o.pull = 0; return; }
+  const h = w.hero, dx = h.x - o.x, dy = (h.y - 5) - o.y;
+  const d = Math.hypot(dx, dy) || 1e-4;
+  if (d < ORB_TAKE) { takeOrb(w, o, i); return; }
+  if (d > ORB_MAG) { o.pull = Math.max(0, o.pull - dt * 4); return; }
+  // Hút, chứ không phải chạm là được. Bán kính hút rộng gấp bốn bán kính nhặt vì người chơi đang
+  // nhìn con quái tiếp theo, không nhìn xuống chân: đi *gần* món là đủ. `pull` lên dần trong một
+  // phần ba giây nên món không giật một cái vào người ngay khoảnh khắc vào tầm.
+  o.pull = Math.min(1, o.pull + dt * 3.4);
+  const sp = (58 - 22 * (d / ORB_MAG)) * o.pull;
+  o.x += dx / d * sp * dt; o.y += dy / d * sp * dt;
+  o.z += (6 - o.z) * Math.min(1, dt * 7);          // dâng lên tầm ngực trên đường bay tới
+}
+
 
 function newWorld(seed, loadout) {
   const s = seed || 20260827;
@@ -148,6 +253,9 @@ function newWorld(seed, loadout) {
     // Bề rộng khoảng ngẫu nhiên của sát thương, xem `hurt`. Là một trường của trận chứ không
     // phải một hằng đọc trực tiếp, để hai harness pin số cứng đặt được về 0.
     vary: DMG_VARY,
+    // Chí mạng của nhân vật, trước trang bị: một tỷ lệ duy nhất dùng cho cả vũ khí và chiêu.
+    // Cũng là trường của trận, cùng lý do -- xem `hurt`.
+    crit: CRIT_BASE, critd: CRIT_BASE_D,
     shake: 0, spawnT: 0,
     hero: { x: WW * 0.5, y: WH * 0.5, w: 11, h: 14, vx: 0, vy: 0, flash: 0, flip: false,
             hp: HERO_HP, maxhp: HERO_HP, mp: HERO_MP, maxmp: HERO_MP,
@@ -173,7 +281,16 @@ function newWorld(seed, loadout) {
     // for the shell, not state the sim reads.
     equip: { helmet: null, armor: null, gloves: null, pants: null, boots: null },
     bag: [], newGear: 0, loot: 0, gs: gearSum(null),
+    // Món đang nằm trên sàn, và cú nháy sáng của lần nhặt gần nhất (xem `spawnOrb`). `orbs` là
+    // danh sách của sim -- nó mang món thật, không phải hiệu ứng -- nên nó ở đây chứ không trong
+    // `fxs`; `got`/`gotR` chỉ là một cái đồng hồ đếm ngược cho render.
+    orbs: [], got: 0, gotR: null,
+    // Cánh cổng boss và phòng boss (xem js/gate.js). `gate` là cánh cổng đang mở -- có đúng một
+    // cái hoặc không có cái nào; `room` là hình chữ nhật của phòng đấu khi đang ở trong, và
+    // `null` khi đang ở ngoài map lớn; `ret` giữ chỗ đứng cũ để lúc ra còn biết trả về đâu.
+    gate: null, room: null, ret: null, flash: 0,
   };
+  roomApply(w);
   snapCam(w);
   w.aim.x = w.hero.x + 60; w.aim.y = w.hero.y - 20;
   for (let i = 0; i < 7; i++) spawnFoe(w, true);
@@ -214,6 +331,16 @@ function spawnFoe(w, near) {
 // con số nhân bốn. Quay trên `w.rng` -- dòng của sim, không phải dòng trang trí -- vì sát
 // thương quyết định ai chết, và một trận phải dựng lại được từ seed của nó.
 const DMG_VARY = 0.15;
+// Chí mạng: *một* tỷ lệ, cho tất cả. Vũ khí, mười sáu chiêu, mỗi nhịp của mỗi vùng -- tất cả
+// đi qua đúng một lần quay ở đây, nên con số trong bảng trạng thái là con số thật của mọi cú
+// đánh. Trước đây không phải thế: nhịp kết của một combo *luôn* được tính là chí mạng, nên tỷ
+// lệ ghi 0% mà đánh thường vẫn nổ chí mạng. Nhịp kết giờ chỉ còn là nhịp kết (`fin` trong
+// js/weapon.js: nó mở cửa sổ chuỗi, nó hút máu, nó xử trảm) và chí mạng là chuyện của con số.
+//
+// Nhân vật có sẵn 15% chí mạng và +50% sát thương chí mạng. Phải có cả hai: một tỷ lệ nền mà
+// không có mức sát thương nền thì cú chí mạng đầu tiên của một người chơi chưa có trang bị chỉ
+// đổi màu con số chứ không đau hơn một điểm nào, và đó là một lời hứa suông.
+const CRIT_BASE = 15, CRIT_BASE_D = 50;
 // Màu của con số chí mạng. Cố định, không theo màu chiêu: "đây là chí mạng" phải đọc được mà
 // không cần biết chiêu nào vừa đánh, nên lõi luôn là trắng-vàng nóng và viền luôn là đỏ sẫm.
 // Màu của chiêu vẫn còn, ở quầng sáng phía sau (xem drawCritNum trong js/render.js).
@@ -227,14 +354,17 @@ function hurt(w, f, amount, col, crit, kx, ky, phys) {
   // đánh nó thuộc về, chứ không thành một cục cứng gắn thêm ở cuối. Trước hệ số chí mạng, để
   // một cú chí mạng vẫn đúng là cú thường nhân lên.
   if (w.vary > 0) amount *= w.rng.range(1 - w.vary, 1 + w.vary);
-  if (gs) {
-    // A weapon's `crit` is the finisher beat -- decided by the swing, not rolled -- and it
-    // prints the `!`. Gear crit rate is the separate thing: a chance on any hit at all. The
-    // roll is on `grng` so the sim stream never sees it, and it is skipped outright at 0%,
-    // so a run with no gear does not advance that stream either.
-    if (!crit && gs.crit > 0 && w.grng() * 100 < gs.crit) crit = true;
-    if (crit && gs.critd > 0) amount *= 1 + gs.critd / 100;
-  }
+  // Đúng một lần quay chí mạng, cho mọi đường sát thương. `crit` truyền vào là đường *buộc*
+  // chí mạng: không call site nào trong game dùng nó nữa, nó còn lại để harness đo được riêng
+  // phần nhân sát thương mà không phải chờ xác suất. Quay trên `grng` -- dòng của trang bị và
+  // rơi đồ -- nên may mắn chí mạng không xê dịch một trận dựng lại từ seed của nó.
+  //
+  // `w.crit`/`w.critd` là hai trường của trận chứ không phải hai hằng đọc trực tiếp, đúng theo
+  // lối của `w.vary`: ba harness pin số cứng đặt chúng về 0 rồi đo lại phần của trang bị.
+  const rate = w.crit + (gs ? gs.crit : 0);
+  if (!crit && rate > 0 && w.grng() * 100 < rate) crit = true;
+  const cdm = w.critd + (gs ? gs.critd : 0);
+  if (crit && cdm > 0) amount *= 1 + cdm / 100;
   amount = Math.round(amount);
   f.hp -= amount;
   f.flash = Math.min(0.55, f.flash + (crit ? 0.55 : 0.45));
@@ -462,8 +592,10 @@ function step(w, dt, inp) {
         w.foes.splice(i, 1); w.kills++;
         // Loot lands on the frame the body is cleared, so a foe cannot pay out twice. A boss
         // always drops and bends the rarity weights up: `bossGate` has usually already let
-        // go of `w.boss` by now, so the kind list is what identifies one.
-        dropLoot(w, BOSS_KINDS.indexOf(f.kind) >= 0);
+        // go of `w.boss` by now, so the kind list is what identifies one. Chỗ rơi là *giữa
+        // người* con quái, không phải chân nó: món bật ra từ trong xác, nên nó phải bắt đầu ở
+        // chỗ cái xác vừa đứng.
+        dropLoot(w, BOSS_KINDS.indexOf(f.kind) >= 0, f.x, f.y - f.h * 0.34);
       }
       continue;
     }
@@ -481,11 +613,20 @@ function step(w, dt, inp) {
     p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += dt * 6;
     if (p.t >= p.life) w.puffs.splice(i, 1);
   }
+  // Món trên sàn. Sau `nums` và `puffs` vì nó cùng loại việc (một danh sách tự bước rồi tự dọn),
+  // nhưng *sau* khối quái ở trên: một con vừa chết ở khung này thì món của nó bay ngay khung này,
+  // không phải khung sau.
+  for (let i = w.orbs.length - 1; i >= 0; i--) stepOrb(w, w.orbs[i], dt, i);
+  if (w.got > 0) w.got = Math.max(0, w.got - dt);
   w.spawnT -= dt;
   // The crowd thins out while a boss is up. Four overlapping telegraphs plus a full spawn rate
   // is not a harder fight, it is an unreadable one -- and the boss is the thing worth reading.
-  if (w.spawnT <= 0) { spawnFoe(w); w.spawnT = w.boss ? 3.6 : 1.05; }
+  //
+  // Inside the boss room nothing spawns at all: the room is a duel, and a trickle of trash
+  // walking in through a wall the hero cannot walk through would read as a bug.
+  if (w.spawnT <= 0) { if (!w.room) spawnFoe(w); w.spawnT = w.boss ? 3.6 : 1.05; }
   bossGate(w);
+  stepGate(w, dt);
   w.shake = Math.max(0, w.shake - dt * 22);
   // Weather. Stepped on the cosmetic stream and around the *current* camera, before the
   // camera moves below -- one frame of lag on a snowflake is not a thing anyone can see,
@@ -495,8 +636,8 @@ function step(w, dt, inp) {
   // Camera last, so it follows where the hero actually ended up. Exponential lerp
   // (frame-rate independent) with a clamp, so the view never leaves the world.
   const ct = camTarget(w), k = 1 - Math.exp(-dt * 11);
-  w.cam.x = clamp(w.cam.x + (ct.x - w.cam.x) * k, 0, WW - W);
-  w.cam.y = clamp(w.cam.y + (ct.y - w.cam.y) * k, 0, WH - H);
+  w.cam.x = camClampX(w.cam.x + (ct.x - w.cam.x) * k);
+  w.cam.y = camClampY(w.cam.y + (ct.y - w.cam.y) * k);
 }
 // Footfall dust: 20 particles maximum, on the cosmetic RNG stream so it can never
 // shift a seeded outcome. `quiet` is the dash trail -- same dust, no footstep voice,

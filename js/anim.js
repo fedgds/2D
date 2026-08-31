@@ -65,41 +65,63 @@ function remapCols(rs, c0, c1, s0, s1) {
 // would eat the top outline row of the head.
 function fr(g, dy) { return { g: g, dy: dy || 0 }; }
 const ANIM = {};
-{
+// Bộ khung của nhân vật, dựng từ *một* dáng đứng -- và dựng được nhiều lần, vì mặc trang bị là
+// một dáng đứng khác. `base` là dáng đó; `dx`/`dy` là chỗ nó nằm trong bảng vẽ (0,0 cho sprite
+// 11x14 của trận, 1,2 cho bảng 13x16 mà js/doll.js dùng khi có trang bị -- chóp mũ ở trên và
+// hai miếng vai thò ra ngoài thân cần đúng chỗ đó). `arm`/`out` là hai ký tự vẽ bàn tay đang
+// vung: mặc găng thì bàn tay phải là màu găng chứ không phải màu áo.
+//
+// `reach` đẩy cánh tay của hai khung đánh ra xa thêm mấy cột. Với nhân vật trần nó là 0: cánh
+// tay vươn tới cột 9-10, tức là một cột lấn vào viền và một cột hẳn ra ngoài silhouette, và cái
+// cột ngoài ấy *là* cú đánh. Mặc giáp thì hai miếng vai đã chiếm đúng chỗ đó, nên nếu không đẩy
+// ra thì cú vung chỉ tô lại miếng vai bằng màu khác -- silhouette không đổi, và người chơi mặc
+// giáp vào thì mất luôn dấu hiệu duy nhất cho biết mình đang đánh.
+//
+// Hộp chân rộng hơn phần chân của HERO một cột mỗi bên (cột 1-4 và 6-9 thay vì 2-4 và 6-8).
+// Với nhân vật trần đó là một phép không đổi gì -- hai cột thêm vào toàn '.', mà slideBox và
+// liftPart bỏ qua ô trống -- nhưng một chiếc giày nặng thì rộng hơn bàn chân, và nếu cột ngoài
+// cùng của nó nằm ngoài hộp thì cả bàn chân bước đi mà miếng giày đứng lại.
+function heroSet(base, dx, dy, arm, out, reach) {
+  dx = dx || 0; dy = dy || 0; arm = arm || 'C'; out = out || 'K'; reach = reach || 0;
+  const R = n => n + dy, C = n => n + dx;
+  const A = C(9 + reach), O = C(10 + reach);   // cột cánh tay và cột bàn tay của hai khung đánh
   // Hero legs: left foot cols 2-4, right foot cols 6-8, col 5 is the shared outline.
   const contact = right => {
-    const rs = rows(HERO);
-    slideBox(rs, 12, 13, right ? 6 : 2, right ? 8 : 4, right ? 1 : -1);   // foot forward
-    slideBox(rs, 12, 13, right ? 2 : 6, right ? 4 : 8, right ? -1 : 1);   // other one back
-    const hc = right ? 1 : 9, ho = right ? 0 : 10;      // the hand that swings forward
-    rs[10][hc] = 'C'; rs[10][ho] = 'K';
+    const rs = rows(base);
+    slideBox(rs, R(12), R(13), C(right ? 6 : 1), C(right ? 9 : 4), right ? 1 : -1);   // foot forward
+    slideBox(rs, R(12), R(13), C(right ? 1 : 6), C(right ? 4 : 9), right ? -1 : 1);   // other one back
+    const hc = C(right ? 1 : 9), ho = C(right ? 0 : 10);   // the hand that swings forward
+    rs[R(10)][hc] = arm; rs[R(10)][ho] = out;
     return grid(rs);
   };
   const pass = right => {
-    const rs = rows(HERO);
-    liftPart(rs, 10, 13, right ? 6 : 2, right ? 8 : 4);                   // foot off the floor
+    const rs = rows(base);
+    liftPart(rs, R(10), R(13), C(right ? 6 : 1), C(right ? 9 : 4));                   // foot off the floor
     return grid(rs);
   };
-  const breathe = () => { const rs = rows(HERO); liftRows(rs, 5, 9, -1); return grid(rs); };
+  const breathe = () => { const rs = rows(base); liftRows(rs, R(5), R(9), -1); return grid(rs); };
   // Attack poses. Only the right-hand version exists: the hero is blitted with `flip` when
   // it swings leftward, which mirrors the reach for free. Row 5-7 cols 9-10 are the arm --
   // cocked up for the wind-up, thrown out to shoulder height for the strike -- and the
   // strike frame also drops the body 1px so the whole sprite leans into the blow.
   const cock = () => {
-    const rs = rows(HERO);
-    rs[5][9] = 'C'; rs[5][10] = 'K'; rs[6][9] = 'C';
+    const rs = rows(base);
+    rs[R(5)][A] = arm; rs[R(5)][O] = out; rs[R(6)][A] = arm;
     return grid(rs);
   };
   const strike = () => {
-    const rs = rows(HERO);
-    rs[6][9] = 'C'; rs[6][10] = 'K'; rs[7][9] = 'C'; rs[7][10] = 'C';
+    const rs = rows(base);
+    rs[R(6)][A] = arm; rs[R(6)][O] = out; rs[R(7)][A] = arm; rs[R(7)][O] = arm;
     return grid(rs);
   };
-  ANIM.hero = {
+  return {
     walk: [fr(contact(true), 0), fr(pass(true), -1), fr(contact(false), 0), fr(pass(false), -1)],
-    idle: [fr(HERO, 0), fr(breathe(), 0)],
+    idle: [fr(base, 0), fr(breathe(), 0)],
     atk: [fr(cock(), -1), fr(strike(), 0)],
   };
+}
+{
+  ANIM.hero = heroSet(HERO);
   const wtail = dx => { const rs = rows(WRAITH); slideBox(rs, 8, 9, 3, 7, dx); return grid(rs); };
   // A slime is a blob, so its walk is squash and stretch, not legs: land flat (rows 0-1
   // cleared, the body resampled into what is left), rise, hop narrow, land soft. Four
@@ -159,14 +181,16 @@ const ANIM = {};
   ANIM.sentinel = { walk: [fr(slook(1), 0), fr(SENTINEL, -1), fr(slook(-1), -2), fr(SENTINEL, -1)],
                     idle: [fr(SENTINEL, 0), fr(slook(1), -1), fr(SENTINEL, -2), fr(slook(-1), -1)] };
 }
-function heroFrame(h) {
-  const a = ANIM.hero;
+// Chọn khung, tách khỏi bộ khung: `wornFrame` trong js/doll.js phải chọn *đúng khung ấy* trong
+// bộ khung có trang bị, nên phép chọn không được nằm chung với việc đọc ANIM.hero.
+function heroPick(a, h) {
   // A swing overrides the locomotion cycle: `h.atk` is the beat-local 0..1 that `step`
   // copies off the live swing, so a four-beat sword shows four wind-up/strike pairs and a
   // gauntlet flurry shows five, without the pose ever drifting out of sync with the hits.
   if (h.atk >= 0) return a.atk[h.atk < 0.34 ? 0 : 1];
   return h.mv > 0 ? a.walk[Math.floor(h.ph) & 3] : a.idle[Math.floor(h.it * 1.7) & 1];
 }
+function heroFrame(h) { return heroPick(ANIM.hero, h); }
 function foeFrame(f) {
   const a = ANIM[f.kind];
   // Bosses are the only things with authored cast poses, and they override locomotion outright:
