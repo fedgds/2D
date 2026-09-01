@@ -98,11 +98,16 @@ const HERO_HP = 400, HERO_MP = 120, MP_REGEN = 7.5;
 // Extra max HP arrives as extra *current* HP and leaves the same way, so swapping a piece
 // in and straight back out is a no-op rather than a slow bleed or a free heal. The floor of
 // 1 is what stops a big +HP piece being a suicide button when it comes off at low health.
+// Hệ số mana của cả trận (`w.mpx`, mặc định 1). Chế độ solo hạ nó xuống để trận đấu tay đôi dồn về
+// phía đánh thường -- xem `DUEL_MPX` trong js/duel.js. Nó nhân vào **cả** phần trang bị, không chỉ
+// phần gốc: bằng không một cái nhẫn +mana là một lối lách ra khỏi đúng cái luật của chế độ ấy. Và nó
+// phải ở đây chứ không phải một phép trừ một lần trong `startDuel`, vì đổi trang bị giữa trận gọi lại
+// hàm này -- một phép trừ một lần sẽ bị chính lần gọi ấy hoàn lại nguyên pool.
 function syncGear(w) {
-  const h = w.hero, was = h.maxhp;
+  const h = w.hero, was = h.maxhp, mx = w.mpx || 1;
   w.gs = gearSum(w.equip);
   h.maxhp = HERO_HP + w.gs.hp;
-  h.maxmp = HERO_MP + w.gs.mp;
+  h.maxmp = Math.round((HERO_MP + w.gs.mp) * mx);
   h.hp = clamp(h.hp + (h.maxhp - was), 1, h.maxhp);
   h.mp = clamp(h.mp, 0, h.maxmp);
 }
@@ -293,6 +298,8 @@ function newWorld(seed, loadout) {
     // cái hoặc không có cái nào; `room` là hình chữ nhật của phòng đấu khi đang ở trong, và
     // `null` khi đang ở ngoài map lớn; `ret` giữ chỗ đứng cũ để lúc ra còn biết trả về đâu.
     gate: null, room: null, ret: null, flash: 0,
+    // Hệ số mana của cả hai bên (xem `syncGear`). 1 là trận thường; chế độ solo hạ nó xuống.
+    mpx: 1,
   };
   roomApply(w);
   snapCam(w);
@@ -503,6 +510,12 @@ function cast(w, i, tx, ty) {
   h.flip = e.x < h.x;
   return true;
 }
+// Ai là *người* của một hiệu ứng. Mười sáu chiêu trong js/skills.js đều đọc `w.hero` để biết vẽ từ
+// đâu, vì cả game gốc chỉ có một người thả chiêu. Đối thủ solo (js/duel.js) thả **đúng những hiệu ứng
+// ấy** để hai bên nhìn giống nhau, nên nó gắn `e.by` lên bản của mình và mọi chỗ neo vào người thả
+// đều hỏi qua hàm này. An toàn vì `GRIDS.rival` cùng khổ với `HERO` (11x14): mọi khoảng lệch viết tay
+// theo thân nhân vật (`h.y - 7`, `h.y - h.h * 0.5`) chuyển sang thân đối thủ không lệch một điểm ảnh.
+function fxWho(w, e) { return e && e.by ? e.by : w.hero; }
 
 function step(w, dt, inp) {
   w.t += dt; w.frame++;
@@ -513,8 +526,13 @@ function step(w, dt, inp) {
   // him has to plant him on the very frame the swing starts, and `swing()` pushed that entry
   // before this step ran -- `w.sw` further down is only refreshed after the fx are advanced,
   // which is one frame too late to hold the legs still.
+  //
+  // `!e.by` là chỗ loại nhát vung của đối thủ solo ra: nó nằm cùng một danh sách `w.fxs` (cùng art,
+  // cùng đường vẽ) nhưng nó là nhát của *người khác*. Không loại thì đối thủ vung một cây rìu là
+  // chân nhân vật bị khoá tại chỗ -- và ngay dưới đây, `w.sw` sẽ nói với `hitHero` rằng nhân vật
+  // đang đỡ khiên trong lúc tay nó chẳng có gì.
   let live = null;
-  for (const e of w.fxs) if (e.wp) live = e;
+  for (const e of w.fxs) if (e.wp && !e.by) live = e;
   const plant = live && live.wp.plant !== undefined ? live.wp.plant : 1;
   if (h.dsh > 0) {
     // A dash owns the hero while it runs: WASD is read but not obeyed, and the clamp is
@@ -563,12 +581,21 @@ function step(w, dt, inp) {
   // HP regen is gear-only and starts at zero, so a bare run heals exactly as much as it
   // always did -- nothing, unless the scythe harvests it. The `/5` is the spec's unit:
   // the stat lines read "per 5s" but the bars have to move every frame.
-  if (h.mp < h.maxmp) h.mp = Math.min(h.maxmp, h.mp + (MP_REGEN + w.gs.mpr / 5) * dt);
+  // `w.mpx` nhân vào cả tốc độ hồi, không riêng dung lượng bình: chế độ solo hạ mana xuống là để
+  // đẩy trận đấu về phía đánh thường, mà một cái bình nhỏ hồi nhanh thì vẫn đủ chiêu như cũ.
+  if (h.mp < h.maxmp) h.mp = Math.min(h.maxmp, h.mp + (MP_REGEN + w.gs.mpr / 5) * (w.mpx || 1) * dt);
   if (w.gs.hpr > 0 && h.hp > 0) h.hp = Math.min(h.maxhp, h.hp + w.gs.hpr / 5 * dt);
 
+  // `e.mute` là hiệu ứng chỉ để *nhìn*: bản sao chiêu của đối thủ solo (js/duel.js) dùng đúng mười
+  // sáu hiệu ứng của người chơi để hai bên trông giống nhau, còn sát thương thì đã do vệt cảnh báo
+  // `w.tels` của nó lo. Cho nó gọi `hit` nữa là đánh hai lần -- và tệ hơn, `shadow_dash` cùng
+  // `void_collapse` sẽ *dịch chân nhân vật* theo ý bản sao.
+  //
+  // Riêng hiệu ứng vũ khí (`e.wp`) vẫn được vào `swingHit`: cây cung cần chính hàm ấy bắn ra mũi
+  // tên để mà nhìn, nên chỗ chặn sát thương của nó nằm bên trong (xem js/weapon.js).
   for (const e of w.fxs) {
     e.pt = e.p; e.t += dt; e.p = c01(e.t / e.dur);
-    if (e.sk.hit) e.sk.hit(w, e);
+    if (e.sk.hit && !(e.mute && !e.wp)) e.sk.hit(w, e);
   }
   for (let i = w.fxs.length - 1; i >= 0; i--) if (w.fxs[i].t >= w.fxs[i].dur) w.fxs.splice(i, 1);
   // Monster casts advance before the monsters do, so a telegraph that has just fired
@@ -581,8 +608,11 @@ function step(w, dt, inp) {
   // need it, and neither wants to walk `fxs` looking for the one entry that has a weapon.
   // Gauntlets recover (0.46s) just before their sheet ends (0.47s), so two can briefly
   // overlap -- the newest wins, which is the one the player just asked for.
+  // `!e.by`: nhát vung của đối thủ solo cũng là một `e.wp`, nhưng nó không phải tay của nhân vật.
+  // Lấy nó vào đây là nhân vật đổi tư thế theo vũ khí của đối thủ, và `hitHero` sẽ cộng cho nhân
+  // vật hệ số đỡ đòn (`w.sw.wp.guard`) của một cây khiên mà anh ta không cầm.
   w.sw = null;
-  for (const e of w.fxs) if (e.wp) w.sw = e;
+  for (const e of w.fxs) if (e.wp && !e.by) w.sw = e;
   h.atk = w.sw ? heldPose(w.sw.wp, w.sw.p).t : -1;
 
   for (let i = w.foes.length - 1; i >= 0; i--) {
@@ -635,6 +665,9 @@ function step(w, dt, inp) {
   if (w.spawnT <= 0) { if (!w.room) spawnFoe(w); w.spawnT = w.boss ? 3.6 : 1.05; }
   bossGate(w);
   stepGate(w, dt);
+  // Máy vòng đấu của chế độ solo. Sau `stepGate` vì nó đọc `BOUND` -- mà `BOUND` chỉ đúng sau khi
+  // `roomApply` trong đó vừa đồng bộ lại theo `w.room`. Không có `w.duel` thì thoát ngay ở dòng đầu.
+  if (w.duel) stepDuel(w, dt);
   w.shake = Math.max(0, w.shake - dt * 22);
   // Weather. Stepped on the cosmetic stream and around the *current* camera, before the
   // camera moves below -- one frame of lag on a snowflake is not a thing anyone can see,
@@ -658,6 +691,10 @@ function footPuff(w, h, quiet) {
                  t: 0, life: w.crng.range(0.20, 0.34), r: w.crng.range(0.7, 1.5) });
 }
 function stepFoe(w, f, dt) {
+  // Đối thủ solo có bộ não riêng (js/duel.js). Nó thay cả hàm này chứ không chỉ phần chọn đòn: cách
+  // đi của một con quái là "lao thẳng vào" hoặc "giữ đúng một băng cố định", và cả hai đều không phải
+  // cách một đối thủ đi. Đổi lại nó phải tự làm lại bốn dòng vật lý ở cuối hàm này.
+  if (f.kind === 'rival') { stepRival(w, f, dt); return; }
   const h = w.hero;
   const K = KIND[f.kind];
   if (f.acd > 0) f.acd = Math.max(0, f.acd - dt);

@@ -124,7 +124,10 @@ function bladeSweep(cx, cy, lead, r, sq, a, hot, tail, thick, seed) {
 SKILLS.push({
   id: 'whirl_slash', name: 'Lốc Chém', mode: 'self', dur: 0.48, cd: 0.90, mp: 8, shake: 1.6,
   under(w, e, p) {
-    const h = w.hero, fy = h.y - 1;
+    // `fxWho` chứ không phải `w.hero`: đối thủ solo (js/duel.js) thả **đúng những hiệu ứng này** để
+    // hai bên nhìn giống nhau, và bản của nó gắn `e.by` là chính nó. Mọi chỗ trong tệp này neo hình
+    // vào thân người thả đều phải hỏi qua đó -- bằng không chiêu của đối thủ nổ trên đầu nhân vật.
+    const h = fxWho(w, e), fy = h.y - 1;
     // Lấy đà: bụi bị *kéo vào* trước khi lưỡi thứ nhất tới. Không có nhịp này thì chiêu
     // bắt đầu ở giữa chính nó.
     const wind = 1 - c01(p / 0.24);
@@ -153,7 +156,7 @@ SKILLS.push({
           C.pale, 0.44 * (1 - bl) * (1 - bl), 0.40);
   },
   mid(w, e, p) {
-    const h = w.hero;
+    const h = fxWho(w, e);
     for (const s of WHIRL) {
       const a = whirlAt(e, s, p);
       if (!a.on || a.liv <= 0.02) continue;
@@ -185,7 +188,7 @@ SKILLS.push({
   over(w, e, p) {
     // Bụi bay trước mặt hero: hero được vẽ sau `mid`, nên đây là lớp duy nhất bán được
     // cảm giác vòng xoáy đi *quanh* người chứ chỉ ở sau lưng.
-    const h = w.hero, fd = fade(p, 0.34);
+    const h = fxWho(w, e), fd = fade(p, 0.34);
     sparks(h.x, h.y - 8, 12, 14, 34, C.pale, 0.55 * fd, e.seed + 3, 0.9, 0.5,
            0, TAU, 6 * (1 - p));
   },
@@ -325,10 +328,13 @@ SKILLS.push({
 SKILLS.push({
   id: 'chain_bolt', name: 'Sấm Chuỗi', mode: 'point', dur: 0.60, cd: 2.50, mp: 18, shake: 2.2,
   init(w, e) {
-    const h = w.hero, picked = [];
+    const h = fxWho(w, e), picked = [];
     e.data.nodes = [[h.x + (h.flip ? -9 : 9), h.y - 15]];
     let cx = e.x, cy = e.y - 8;
-    for (let i = 0; i < 3; i++) {
+    // Bản sao của đối thủ solo thì không nhảy sang ai cả: `nearest` chỉ quét `w.foes`, mà trong danh
+    // sách ấy đối thủ là *chính nó* -- để nguyên thì tia sét bắn ra rồi vòng lại chính người thả. Một
+    // tia thẳng tới điểm nhắm (đang là chỗ nhân vật) đúng bằng vệt cảnh báo của nó, không thiếu.
+    if (!e.by) for (let i = 0; i < 3; i++) {
       const c = nearest(w, cx, cy, 5, 120).find(f => picked.indexOf(f) < 0);
       if (!c) break;
       picked.push(c); cx = c.x; cy = midY(c);
@@ -364,7 +370,7 @@ SKILLS.push({
 SKILLS.push({
   id: 'blood_rend', name: 'Xé Máu', mode: 'dir', dur: 0.50, cd: 1.30, mp: 12, shake: 2.4,
   init(w, e) {
-    const h = w.hero;
+    const h = fxWho(w, e);
     e.data.cx = h.x + Math.cos(e.ang) * 26;
     e.data.cy = h.y - 7 + Math.sin(e.ang) * 26 * 0.6;
     // Ba vệt cào lần lượt hiện ra rồi một nhát ngược cắt qua cả ba. Trước đây đây là
@@ -648,9 +654,11 @@ function alongPath(pts, seg, tot, p) {
 SKILLS.push({
   id: 'ricochet_shot', name: 'Đạn Nảy', mode: 'point', dur: 0.62, cd: 2.10, mp: 16, shake: 1.8,
   init(w, e) {
-    const h = w.hero, picked = [];
+    const h = fxWho(w, e), picked = [];
     let cx = e.x, cy = e.y - 8;
-    for (let i = 0; i < 3; i++) {
+    // Như `chain_bolt`: bản sao của đối thủ solo không nảy sang ai, vì con duy nhất `nearest` thấy
+    // trong `w.foes` lại là chính người thả.
+    if (!e.by) for (let i = 0; i < 3; i++) {
       const c = nearest(w, cx, cy, 5, 150).find(f => picked.indexOf(f) < 0);
       if (!c) break;
       picked.push(c); cx = c.x; cy = midY(c);
@@ -746,7 +754,7 @@ const sdLiv = p => 1 - 0.78 * fpow(c01((p - 0.18) / 0.82), 1.6);
 SKILLS.push({
   id: 'shadow_dash', name: 'Bóng Lướt', mode: 'point', dur: 0.55, cd: 3.00, mp: 18, shake: 1.2,
   init(w, e) {
-    const h = w.hero;
+    const h = fxWho(w, e);
     e.data.from = [h.x, h.y];
     e.data.to = [clamp(e.x, BOUND.x0, BOUND.x1), clamp(e.y, BOUND.y0, BOUND.y1)];
   },
@@ -781,12 +789,16 @@ SKILLS.push({
     // khối chữ nhật -- ba cái bóng chồng nhau không phải là ba cái bóng.
     const dist = Math.hypot(d.to[0] - d.from[0], d.to[1] - d.from[1]);
     const gn = clamp(Math.round(dist / 15), 1, 3);
+    // Bóng phải là hình của *người thả*. `GRIDS.rival` cùng khổ 11x14 với `HERO`, nên hai khoảng
+    // lệch viết tay dưới đây (-5, -14) dùng chung được cho cả hai; chỉ tấm sprite và hướng mặt là
+    // khác. Không đổi thì cú lướt của đối thủ để lại ba cái bóng mang hình nhân vật.
+    const who = fxWho(w, e), grid = who.kind ? GRIDS[who.kind] : HERO;
     for (let k = 0; k < gn; k++) {
       const t = (k + 0.5) / gn;
       const gx = d.from[0] + (d.to[0] - d.from[0]) * t;
       const gy = d.from[1] + (d.to[1] - d.from[1]) * t;
-      ghost(HERO, Math.round(gx - 5), Math.round(gy - 14), C.indigop,
-            (0.13 + 0.26 * t) * liv, w.hero.flip, 2.2);
+      ghost(grid, Math.round(gx - 5), Math.round(gy - 14), C.indigop,
+            (0.13 + 0.26 * t) * liv, who.flip, 2.2);
     }
     for (const t of [0.35, 0.68])
       chevron(d.from[0] + (d.to[0] - d.from[0]) * t, d.from[1] - 7 + (d.to[1] - d.from[1]) * t,
@@ -1020,12 +1032,12 @@ const agBk = p => c01((p - 0.62) / 0.38);
 SKILLS.push({
   id: 'aegis_reflect', name: 'Khiên Phản', mode: 'self', dur: 0.85, cd: 4.60, mp: 26, shake: 1.8,
   under(w, e, p) {
-    const h = w.hero, g = pop(p, 0.15), bk = agBk(p), liv = 1 - bk * bk;
+    const h = fxWho(w, e), g = pop(p, 0.15), bk = agBk(p), liv = 1 - bk * bk;
     ring(h.x, h.y - 1, 30 * g * (1 + 0.22 * bk), 2.2, C.gold, 0.45 * liv, 0.38);
     dial(h.x, h.y - 1, 27 * g, 12, C.holyp, 0.38 * liv, 0.38, 2, 1.0);
   },
   mid(w, e, p) {
-    const h = w.hero, g = pop(p, 0.12), bk = agBk(p), liv = 1 - bk * bk;
+    const h = fxWho(w, e), g = pop(p, 0.12), bk = agBk(p), liv = 1 - bk * bk;
     const cx = h.x, cy = h.y - 7, r = 24 * g * (1 - 0.16 * bk);
     // Khiên là *hai* lớp, và chúng phải khác nhau ở bề dày chứ không chỉ ở bán kính: khung
     // ngoài dày, sáng, đứng yên; lưới trong mảnh, lệch 30° và quay chậm liên tục. Vẽ cùng một
@@ -1284,7 +1296,8 @@ SKILLS.push({
     for (const f of w.foes) {                        // where each one *would* have been
       if (f.frozen <= 0 || f.dying) continue;
       if (Math.hypot(f.x - e.x, f.y - e.y) > 95) continue;
-      const dx = w.hero.x - f.x, dy = (w.hero.y - 1) - f.y;
+      const who = fxWho(w, e);                       // bóng nghiêng về phía *người thả*
+      const dx = who.x - f.x, dy = (who.y - 1) - f.y;
       const d = Math.max(Math.hypot(dx, dy), 1e-3);
       const gx = f.x + dx / d * 16, gy = f.y + dy / d * 10;
       blit(GRIDS[f.kind], Math.round(gx - (f.w >> 1)), Math.round(gy - f.h),

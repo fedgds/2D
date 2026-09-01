@@ -140,6 +140,13 @@ function trail(w, e, n, dx, dy) {
   }
 }
 const BOSSES = LAB.BOSS_KINDS;
+// "Quái thường" ở đây là *đàn quái sinh ra trong sân*, tức là đúng những loại `pickKind` rút được
+// -- không phải mọi hàng không-boss trong `KIND`. Kể từ chế độ solo, `KIND` còn có `rival`: nó
+// không nằm trong `SPAWN_W` nên không con nào tự sinh ra, và nó dùng đúng bộ khung xương của nhân
+// vật. Lấy nó làm mốc "quái cao nhất" là bắt boss phải to hơn *người chơi* -- một phép đo không nói
+// lên điều gì về đàn quái, và là phép đo sai nếu ai đó thêm một đối thủ soi gương thứ hai.
+const SPAWNED = LAB.SPAWN_W.map(r => r[0]);
+const NORMAL = Object.keys(LAB.KIND).filter(k => !LAB.KIND[k].boss && SPAWNED.indexOf(k) >= 0);
 // Mười hai chiêu và chủ của chúng, đọc từ bảng KIND chứ không chép lại: thêm một chiêu cho
 // boss là tự động thêm vào mọi mục dưới đây.
 const ALL = [], OWNER = {};
@@ -147,7 +154,7 @@ for (const k of BOSSES) for (const a of LAB.KIND[k].abil) { ALL.push(a); OWNER[a
 
 sec('ngoại hình: boss phải to hơn mọi quái thường');
 {
-  const normal = Object.keys(LAB.KIND).filter(k => !LAB.KIND[k].boss);
+  const normal = NORMAL;
   let maxW = 0, maxH = 0, maxPx = 0;
   for (const k of normal) {
     const g = LAB.GRIDS[k];
@@ -236,7 +243,7 @@ const IMG = LAB.ANIM_IMG || {};
     }
     return n ? s / n : 0;
   };
-  const normal = Object.keys(LAB.KIND).filter(k => !LAB.KIND[k].boss);
+  const normal = NORMAL;
   let maxW = 0, maxH = 0;
   for (const k of normal) {
     maxW = Math.max(maxW, LAB.GRIDS[k][0].length);

@@ -397,13 +397,48 @@ if (typeof document !== 'undefined') {
     touch: document.getElementById('pnTouch'),
     stat: document.getElementById('pnStat'),
   };
+  const pzDuel = document.getElementById('pzDuel');
+  // Ba chỗ chữ của bảng tạm dừng, và một bản chụp nguyên văn gốc của chúng. Chụp ở đây, lúc nạp, chứ
+  // không viết lại chuỗi tiếng Việt trong mã: bảng này là bảng tạm dừng *trước*, màn hình kết trận
+  // solo là việc thứ hai của nó -- nên chữ mặc định phải là chữ nằm trong index.html, và sửa nó ở đó
+  // là đủ. Viết cứng "TẠM DỪNG" lần thứ hai vào đây là hai nguồn sự thật cho một dòng chữ.
+  const pzHead = document.getElementById('pzHead');
+  const pzSub = document.getElementById('pzSub');
+  const pzHint = document.getElementById('pzHint');
+  const btnResume = document.getElementById('btnResume');
+  const PZ0 = { head: pzHead.textContent, sub: pzSub.textContent,
+                hint: pzHint.textContent, resume: btnResume.textContent };
   let scene = 'menu', backTo = 'menu';
+  // Chế độ đang chọn. Một cờ chứ không phải một scene riêng: cả hai chế độ dùng đúng một màn hình
+  // chọn đồ, đúng một `startRun`, đúng một vòng khung. Thứ duy nhất khác nhau là một lời gọi
+  // `startDuel` sau `newWorld`, nên một biến boolean đúng là kích cỡ của sự khác nhau ấy.
+  let duelMode = false;
+  function setMode(on) { duelMode = !!on; }
   function setScene(s) {
     // Hướng dẫn, bảng sắp xếp phím và bảng trạng thái đều là chỗ *ghé qua*: mở từ đâu thì ESC trả
     // về đúng đó, và mở giữa trận thì trả về trận đang đánh chứ không quẳng vào bảng tạm dừng --
     // bảng trang bị mở ra để đổi một món rồi đánh tiếp.
     if ((s === 'guide' || s === 'touch') && scene !== s) backTo = scene === 'play' ? 'pause' : scene;
     if (s === 'stat' && scene !== s) { backTo = scene; world.newGear = 0; paintStat(); paintStatBadge(); }
+    // Bảng tạm dừng là chỗ duy nhất đọc được bộ kit của đối thủ mà không phải né trong lúc đọc.
+    // HUD in ra cùng một dòng, nhưng ở đó nó cạnh tranh chỗ với mười một dòng khác và người đọc
+    // thì đang bị một con mang búa đuổi. Trận nào không phải solo thì `duelKitText` trả về chuỗi
+    // rỗng, nên dòng này tự ẩn -- không cần hỏi `duelMode`, vốn là ý *định* chứ không phải hiện tại.
+    if (s === 'pause') {
+      const kt = duelKitText(world);
+      pzDuel.hidden = !kt;
+      if (kt) pzDuel.textContent = 'ĐỐI THỦ · ' + kt;
+      // Trận solo đã kết thì chính bảng này là màn hình kết trận: đổi ba dòng chữ và cái nút đầu.
+      // `duelResult` trả `null` khi còn đang đánh (hay khi đây không phải trận solo), và lúc ấy mọi
+      // thứ trả về nguyên văn của index.html -- kể cả sau khi vừa đánh xong một trận rồi bấm đánh
+      // lại, vì lần tạm dừng sau đó phải đọc ra là tạm dừng.
+      const r = duelResult(world);
+      pzHead.textContent = r ? r.head : PZ0.head;
+      pzSub.textContent = r ? r.sub : PZ0.sub;
+      pzHint.textContent = r ? 'ESC đánh lại' : PZ0.hint;
+      btnResume.textContent = r ? r.again : PZ0.resume;
+      pzHead.classList.toggle('lose', !!r && !r.win);
+    }
     if (s === 'select') {
       selectFrom = scene === 'pause' ? 'pause' : 'menu';
       // The picker edits `loadout` in place, so backing out has to be able to undo it:
@@ -464,8 +499,23 @@ if (typeof document !== 'undefined') {
     world = newWorld((Math.random() * 1e9) | 0, loadout);
     sel = 0; buildBar(); paused = false; slow = false;
     bagSel = -1;
+    // Chế độ solo dựng *trên* một world bình thường, không thay `newWorld`: `startDuel` dọn sân,
+    // tắt `god`, đặt `w.room` rồi thả đối thủ vào. Nên mọi thứ của trận thường -- trang bị, mana,
+    // thời tiết, sàn, minimap -- vào chế độ này y nguyên, và một ngày nào đó bỏ chế độ đi thì cũng
+    // chỉ là bỏ đúng dòng này.
+    if (duelMode) startDuel(world);
     setScene('play');
     SFX.fanfare();
+  }
+  // Rời bảng tạm dừng. Một trận solo đã kết thì "tiếp tục" không có nghĩa gì -- một trong hai bên đang
+  // nằm trên sàn và `duelEnd` đã dọn hết vệt đòn -- nên cùng cái nút ấy dựng một trận mới với một bộ
+  // kit rút thăm lại. Bốn chỗ trong file này từng gọi thẳng `setScene('play')` từ bảng tạm dừng (nút,
+  // `toggleMenu`, ESC, Enter/Space) và cả bốn phải đi qua đây: bỏ sót một chỗ là một đường trả người
+  // chơi về đứng nhìn một cái xác.
+  function resumeRun() {
+    const d = world && world.duel;
+    if (d && d.done) { startRun(); return; }
+    setScene('play');
   }
 
   // ---- Bảng trạng thái: chỉ số, trang bị, hành trang -----------------------
@@ -773,6 +823,8 @@ if (typeof document !== 'undefined') {
   const wpNote = document.getElementById('wpNote');
   const skHead = document.getElementById('skHead');
   const btnEnter = document.getElementById('btnEnter');
+  const pkTitle = document.getElementById('pkTitle');
+  const pkMode = document.getElementById('pkMode');
   function pickTile(theme, key, name, meta, aria) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'pick';
@@ -862,10 +914,20 @@ if (typeof document !== 'undefined') {
     mpHead.textContent = '1 · CHỌN SÂN ĐẤU  (' + MAPDEF.label + ')';
     skHead.textContent = `3 · CHỌN 3 SKILL  (${n}/3)`;
     btnEnter.disabled = n !== 3;
+    // Chế độ solo phải nói ra ngay ở đây, chứ không để người chơi phát hiện lúc màn hình đã tối:
+    // ba skill chọn ở bảng này là *cả bộ đồ* cho một trận một-đấu-một, và biết trước điều đó thì
+    // người chơi chọn khác hẳn -- một bộ ba chỉ đánh diện rộng là một bộ ba vô dụng khi chỉ có một
+    // mục tiêu. Tên bộ kit của đối thủ thì không in ra ở đây được: nó chỉ tồn tại sau `spawnRival`,
+    // và mỗi vòng một bộ khác. Nó nằm ở bảng tạm dừng và trên HUD.
+    pkTitle.textContent = duelMode ? 'CHUẨN BỊ SOLO 1 ĐẤU 1' : 'CHUẨN BỊ VÀO TRẬN';
+    pkMode.hidden = !duelMode;
+    if (duelMode) pkMode.textContent = DUEL_TXT.head
+      + '. Thắng một vòng thì hồi máu và đổi đối thủ; hết máu thì về vòng 1.';
     // From the pause menu this button starts a *new* run, so it says so rather than
     // letting you believe the change is being dropped into the fight you were in.
     btnEnter.textContent = n !== 3 ? `CHỌN THÊM ${3 - n} SKILL`
-      : (selectFrom === 'pause' ? 'VÀO TRẬN MỚI (ENTER)' : 'VÀO TRẬN (ENTER)');
+      : (duelMode ? DUEL_TXT.enter + ' (ENTER)'
+                  : (selectFrom === 'pause' ? 'VÀO TRẬN MỚI (ENTER)' : 'VÀO TRẬN (ENTER)'));
   }
   paintPick();
 
@@ -945,10 +1007,11 @@ if (typeof document !== 'undefined') {
     const b = ev.target.closest('[data-act]');
     if (!b || b.disabled) return;
     switch (b.dataset.act) {
-      case 'start': SFX.ui('click'); setScene('select'); break;
+      case 'start': SFX.ui('click'); setMode(false); setScene('select'); break;
+      case 'solo': SFX.ui('click'); setMode(true); setScene('select'); break;
       case 'loadout': SFX.ui('click'); setScene('select'); break;
       case 'enter': case 'restart': startRun(); break;
-      case 'resume': SFX.ui('click'); setScene('play'); break;
+      case 'resume': SFX.ui('click'); resumeRun(); break;
       case 'guide': SFX.ui('click'); setScene('guide'); break;
       case 'mobile': SFX.ui('click'); setMob(!mobOn); break;
       case 'sharp': SFX.ui('click'); setSharp(!sharpOn); break;
@@ -967,7 +1030,7 @@ if (typeof document !== 'undefined') {
   function toggleMenu() {
     if (scene === 'play') { SFX.ui('back'); setScene('pause'); }
     else if (scene === 'guide' || scene === 'touch' || scene === 'stat') { SFX.ui('back'); setScene(backTo); }
-    else if (scene === 'pause') { SFX.ui('click'); setScene('play'); }
+    else if (scene === 'pause') { SFX.ui('click'); resumeRun(); }
     else SFX.ui('hover');
   }
   function toggleGuide() {
@@ -1063,6 +1126,11 @@ if (typeof document !== 'undefined') {
   // để trống và lấy `aimWorld()`, nên vẫn chỉ có một chỗ suy ra điểm ngắm.
   function fire(n, at) {
     if (scene !== 'play') return;
+    // Trận solo đã có kết quả: khoá tay lại trong quãng `DUEL_END` giữa lúc một bên gục và lúc bảng kết
+    // trận mở ra. Chặn ở đây, một chỗ, vì bốn đường đều đổ vào hàm này -- phím số, Shift, chuột, và
+    // nút cảm ứng. Không chặn thì người chơi thả được một chiêu vào một cái xác, hoặc tệ hơn: một cái
+    // xác thả chiêu, vì `cast` không hỏi máu nhân vật.
+    if (world.duel && world.duel.done) { SFX.blocked(); return; }
     sel = n; paint();
     const a = at || aimWorld();
     const c = camInt(world);
@@ -1682,14 +1750,19 @@ if (typeof document !== 'undefined') {
     }
     if (k === 'Escape') {
       if (scene === 'guide' || scene === 'touch' || scene === 'stat') { SFX.ui('back'); setScene(backTo); }
-      else if (scene === 'pause') { SFX.ui('click'); setScene('play'); }
+      else if (scene === 'pause') { SFX.ui('click'); resumeRun(); }
       ev.preventDefault(); return;
     }
     if (k === 'Enter' || k === ' ') {
-      if (scene === 'menu') { SFX.ui('click'); setScene('select'); }
-      else if (scene === 'pause') { SFX.ui('click'); setScene('play'); }
+      if (scene === 'menu') { SFX.ui('click'); setMode(false); setScene('select'); }
+      else if (scene === 'pause') { SFX.ui('click'); resumeRun(); }
       else { SFX.ui('back'); setScene(backTo); }
       ev.preventDefault(); return;
+    }
+    // S mở chế độ solo, và chỉ ở màn hình đầu: trong lúc chơi thì S là bước xuống (WASD), nên nhánh
+    // này nằm sau tất cả các nhánh gameplay và chỉ chạy khi `scene === 'menu'`.
+    if (scene === 'menu' && low === 's') {
+      SFX.ui('click'); setMode(true); setScene('select'); ev.preventDefault(); return;
     }
     // I mở bảng trang bị từ bảng tạm dừng, và đóng lại từ chính nó -- cùng một phím cả hai
     // chiều, như H với hướng dẫn. Ở menu/chọn đồ thì `toggleStat` tự từ chối: chưa có world
@@ -1782,6 +1855,13 @@ if (typeof document !== 'undefined') {
       dy: (keys.has('s') ? 1 : 0) - (keys.has('w') ? 1 : 0) + stick.dy,
       ax: aw.x, ay: aw.y,
     };
+    // Trận solo đã có kết quả. `DUEL_END` giây kể từ lúc một bên gục là quãng để *nhìn* cú đánh kết
+    // liễu: máu bay lên, xác gục, sân sáng lên một cái. Không bỏ tay người chơi ra thì quãng ấy là một
+    // nhân vật vẫn chạy vòng quanh một cái xác -- hoặc, nếu bên gục là nhân vật, một cái xác vẫn đi
+    // theo phím WASD. Ngắm (`ax`/`ay`) thì giữ nguyên: nó không dịch được ai.
+    const dl = world.duel;
+    const dover = !!(dl && dl.done);
+    if (dover) { inp.dx = 0; inp.dy = 0; }
     // Ngắm *trong lúc nhát đánh đang chạy*: cú chạm ra đòn ngay, nhưng cung mới bật dây ở 0,29 s
     // và khiên còn đang lao, nên ngón kéo phải sửa được chính nhát đó. Không có dòng này thì nhát
     // đầu của mỗi lần bấm luôn bay vào con quái gần nhất của `touchAim()`, và một cú bấm-kéo-nhả
@@ -1793,13 +1873,21 @@ if (typeof document !== 'undefined') {
     // Giữ nút đánh thường thì đánh tiếp ngay khi hết hồi. `swing` tự chối lúc còn hồi, nhưng
     // gọi nó mỗi khung vẫn sai: mỗi lần chối là một tiếng "blocked" -- nên chỉ gọi khi `wcd`
     // đã cạn. Đúng thứ mà trên desktop người chơi làm bằng cách bấm chuột liên tục.
-    if (atkHeld && scene === 'play' && !paused && world.wcd <= 0) fire(0);
+    if (atkHeld && scene === 'play' && !paused && !dover && world.wcd <= 0) fire(0);
     if (sim > 0) {
       step(world, sim, inp);
       titleT = Math.max(0, titleT - sim);
       if (titleT <= 0) titleEl.style.opacity = 0;
     } else {
       world.aim.x = aw.x; world.aim.y = aw.y;
+    }
+    // Bảng kết trận mở ra ở đây, và **đúng một lần**: `d.shown` là cái cờ ấy. Ở trong `frame` chứ không
+    // trong `duelEnd`, vì `duelEnd` sống trong sim -- một hàm của sim đi gọi `setScene` là sim biết về
+    // DOM, và lúc ấy harness không dựng nổi một trận solo nào nữa. Đây là chỗ hai bên gặp nhau: sim ghi
+    // một kết quả với một cái đồng hồ, vỏ ngoài đọc nó.
+    if (dl && dl.done && dl.hold <= 0 && !dl.shown && scene === 'play') {
+      dl.shown = 1;
+      setScene('pause');
     }
     // Đường hiện khung được hỏi lại **mỗi khung**, không chỉ lúc nạp: một ngữ cảnh WebGL chết
     // giữa trận là một canvas đen vĩnh viễn nếu vẫn cứ đẩy `buf` vào nó (xem js/gpu.js). Hỏi ở
@@ -1850,6 +1938,7 @@ if (typeof document !== 'undefined') {
     // hỏng ở `buf` hay ở đoạn đưa lên màn -- hai chỗ đó cần hai cách sửa khác nhau hẳn.
     const pathLbl = useGpu ? ' (gpu)' : !gpu ? ' (cpu)'
                   : gpu.state() === 'dead' ? ' (cpu · GPU ĐÃ CHẾT)' : ' (cpu · GPU MẤT NGỮ CẢNH)';
+    const dLine = duelLine(world);
     hud.textContent =
       'FPS ' + fps.toFixed(0) + '   vẽ ' + ms.toFixed(1) + 'ms   hiện ' + pms.toFixed(1) + 'ms'
       + pathLbl + '   fx ' + world.fxs.length
@@ -1872,6 +1961,11 @@ if (typeof document !== 'undefined') {
       (world.bag.length >= BAG_MAX && world.orbs.length ? '   << TÚI ĐẦY, KHÔNG NHẶT ĐƯỢC >>' : '') +
       (world.newGear > 0 ? '   << ' + world.newGear + ' MÓN MỚI (I) >>' : '') +
       '\nsân ' + MAPDEF.label +
+      // Dòng solo: bộ kit đối thủ, máu và mana của nó. Nó nằm sau tên sân vì trong trận solo dòng
+      // "quái" ở trên chỉ đếm một đơn vị và không nói gì -- cái đáng đọc là *nó mang gì*, và mana của
+      // nó là thứ duy nhất báo trước được một chiêu đắt sắp tới. Ngoài chế độ solo thì `duelLine` trả
+      // về chuỗi rỗng và HUD giữ nguyên đúng mười hai dòng như trước.
+      (dLine ? '\n' + dLine : '') +
       '\nvị trí ' + Math.round(world.hero.x) + ',' + Math.round(world.hero.y) +
       ' / map ' + WW + 'x' + WH +
       (paused ? '\n== ĐỨNG HÌNH (F: 1 khung) ==' : (slow ? '\n== SLOW-MO 0.22x ==' : ''));

@@ -208,6 +208,10 @@
     font-size: 24px; letter-spacing: .22em; color: #eaf6ff;
     text-shadow: 0 0 18px #8fd6ff44, 0 2px 0 #000;
   }
+  /* Chữ THUA của bảng kết trận solo. Đỏ nhạt chứ không đỏ tươi: cùng dòng chữ ấy còn là "TẠM DỪNG"
+     và "THẮNG" trong hai trạng thái khác, nên nó phải đọc ra là cùng một chỗ trên bảng đã đổi màu,
+     không phải một lời cảnh báo mới nhảy ra. */
+  .brand.lose { color: #ffbcc4; text-shadow: 0 0 18px #ff5f7355, 0 2px 0 #000 }
   .tagline { font-size: 9px; letter-spacing: .3em; color: #6f7f9c; margin: 5px 0 16px }
   .mbtn {
     display: block; width: 100%; margin: 6px 0; padding: 10px 12px; font: inherit; font-size: 12px;
@@ -543,15 +547,17 @@
         <div class="brand">SKILL LAB</div>
         <div class="tagline">ARENA PIXEL 2D</div>
         <button type="button" class="mbtn primary" data-act="start">BẮT ĐẦU CHƠI</button>
+        <button type="button" class="mbtn" data-act="solo">SOLO 1 ĐẤU 1 (S)</button>
         <button type="button" class="mbtn" data-act="guide">HƯỚNG DẪN</button>
         <button type="button" class="mbtn" data-act="mobile" id="btnMob" aria-pressed="false">CHẾ ĐỘ ĐIỆN THOẠI: TẮT</button>
         <button type="button" class="mbtn" data-act="sharp" id="btnSharp" aria-pressed="true">ĐỘ NÉT: CAO</button>
         <button type="button" class="mbtn" data-act="touch">SẮP XẾP PHÍM CẢM ỨNG</button>
         <div class="sblock" id="soundBox"></div>
-        <div class="hint">ENTER bắt đầu · H hướng dẫn · M tắt/bật âm</div>
+        <div class="hint">ENTER bắt đầu · S solo 1v1 · H hướng dẫn · M tắt/bật âm</div>
       </div>
       <div class="panel wide" id="pnSelect" hidden>
-        <div class="gtitle">CHUẨN BỊ VÀO TRẬN</div>
+        <div class="gtitle" id="pkTitle">CHUẨN BỊ VÀO TRẬN</div>
+        <p class="pnote" id="pkMode" hidden></p>
         <div class="gsec" id="mpHead">1 · CHỌN SÂN ĐẤU</div>
         <div class="pgrid" id="mpGrid" role="group" aria-label="Chọn sân đấu"></div>
         <p class="pnote">Sân đổi ngay lập tức — arena sau lưng bảng này là bản xem trước. <b>Tab</b> để lật sân.</p>
@@ -565,17 +571,24 @@
         <button type="button" class="mbtn primary" data-act="enter" id="btnEnter" style="margin-top:12px">VÀO TRẬN</button>
         <button type="button" class="mbtn" data-act="home">← QUAY LẠI (ESC)</button>
       </div>
+      <!-- Bảng này gánh hai việc: tạm dừng giữa trận, và **màn hình kết trận** của chế độ solo. Đó là
+           một quyết định có ý thức, không phải một chỗ tiết kiệm: một scene 'dead' riêng thì phải thêm
+           một nhánh vào setScene, một nhánh vào menuKey cho ESC, một nhánh cho Enter/Space, và một
+           bảng nút gần như trùng khớp -- để nói đúng cái câu mà bảng này đã nói được. Nên ba chỗ chữ
+           dưới đây có id: js/shell.js viết lại chúng khi `duelResult(world)` trả về một kết quả, và
+           trả nguyên văn gốc về khi không. -->
       <div class="panel" id="pnPause" hidden>
-        <div class="brand">TẠM DỪNG</div>
-        <div class="tagline">ARENA ĐANG ĐỢI</div>
-        <button type="button" class="mbtn primary" data-act="resume">TIẾP TỤC</button>
+        <div class="brand" id="pzHead">TẠM DỪNG</div>
+        <div class="tagline" id="pzSub">ARENA ĐANG ĐỢI</div>
+        <p class="pnote" id="pzDuel" hidden></p>
+        <button type="button" class="mbtn primary" data-act="resume" id="btnResume">TIẾP TỤC</button>
         <button type="button" class="mbtn" data-act="stat">TRẠNG THÁI &amp; TRANG BỊ (I)</button>
         <button type="button" class="mbtn" data-act="loadout">ĐỔI VŨ KHÍ / SKILL</button>
         <button type="button" class="mbtn" data-act="touch">SẮP XẾP PHÍM CẢM ỨNG</button>
         <button type="button" class="mbtn" data-act="guide">HƯỚNG DẪN</button>
         <button type="button" class="mbtn" data-act="restart">CHƠI LẠI</button>
         <button type="button" class="mbtn" data-act="home">VỀ MENU CHÍNH</button>
-        <div class="hint">ESC tiếp tục</div>
+        <div class="hint" id="pzHint">ESC tiếp tục</div>
       </div>
       <!-- Trạng thái nhân vật: mở giữa trận (I), nên nó cũng là một chỗ *ghé qua* -- ESC trả về
            đúng nơi vừa mở nó, hệt hướng dẫn. Ảnh trang bị là <img> thật lấy từ images/gear, không
@@ -857,6 +870,7 @@
 <script src="js/boss.js"></script>
 <script src="js/boss-abil.js"></script>
 <script src="js/gate.js"></script>
+<script src="js/duel.js"></script>
 <script src="js/lab.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/gpu.js"></script>

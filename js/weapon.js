@@ -498,9 +498,14 @@ function stampFrame(fr, x, y, rot, squash, a, col, gain, flip) {
 
 // Where the swing is anchored this frame. Melee follows the hero (walk while swinging and
 // the arc walks with you, as in test.html); a shot stays at the origin it was fired from.
+//
+// `e.by` là nhát của người khác -- bản sao vũ khí của đối thủ solo (js/duel.js). Nó *không* đi theo
+// người thả: vệt cảnh báo `w.tels` sinh ra nó đã đóng đinh vùng sát thương xuống sàn từ lúc ra đòn,
+// mà đối thủ thì được đi lại trong lúc thu đòn, nên nếu hình vẽ đi theo chân nó thì hình và vùng
+// trúng sẽ rời nhau. Neo vào `e.ox/e.oy` là chỗ duy nhất giữ hai cái ấy trùng nhau.
 function swingOrigin(w, e) {
   const wp = e.wp;
-  if (wp.anchor === 'cast') return { x: e.ox, y: e.oy };
+  if (e.by || wp.anchor === 'cast') return { x: e.ox, y: e.oy };
   const h = w.hero;
   return { x: h.x, y: h.y - h.h * 0.5 };
 }
@@ -704,6 +709,10 @@ function swingHit(w, e) {
     // A bow has no cone at all: its one beat is the release, and everything after that
     // belongs to the arrow.
     if (wp.shot) { fireArrow(w, e, o); continue; }
+    // Bản sao vũ khí của đối thủ solo (js/duel.js) chỉ để *nhìn*: sát thương của nó là việc của vệt
+    // cảnh báo đã sinh ra nó. Chốt này đứng **sau** nhánh cung vì mũi tên do chính hàm này thả ra --
+    // chặn sớm hơn một dòng là cú bắn của đối thủ không còn gì để thấy.
+    if (e.mute) continue;
     // Later beats of a combo hit harder: the fifth punch of a gauntlet flurry is the one
     // that should feel like it finished the job.
     const step = last > 0 ? 1 + 0.5 * (i / last) : 1;
@@ -833,7 +842,10 @@ function cutCast(w, f, hold) {
 const ARR_C = hexc('#d9fdff'), ARR_H = hexc('#ffffff'), ARR_T = hexc('#6fb4d6');
 const ARROW_SK = {
   id: 'arrow', name: 'Mũi Tên', mode: 'dir', dur: 1, cd: 0, shake: 0,
-  mid(w, e, p) { drawArrow(w, e); },
+  // Mũi tên chỉ để nhìn (bản sao của đối thủ solo) không được gọi `hit`, mà chính `arrowHit` là chỗ
+  // dồn `trav` lên mỗi khung. Nên khi bị chặn thì phải tự tính ở đây, bằng không mũi tên của đối thủ
+  // đứng nguyên tại cây cung suốt cả đường bay.
+  mid(w, e, p) { if (e.mute) e.data.trav = p * e.data.max; drawArrow(w, e); },
   hit(w, e) { arrowHit(w, e); },
 };
 // One release, `fan` arrows. The offsets are symmetric about the aim, so the middle arrow of
@@ -854,7 +866,12 @@ function looseArrow(w, e, o, i, ang, mul) {
   // thing anyone can see, and a slab test here would be exact about nothing that matters.
   const ca = Math.cos(ang), cy = Math.sin(ang) * wp.squash;
   let max = s.max;
-  for (let d = 8; d <= s.max; d += 8) {
+  // `e.cap` là hạn bay do người gọi đặt: bản sao vũ khí của đối thủ solo chỉ được bay đúng bằng vệt
+  // cảnh báo `line` đã vạch ra, vì đó mới là đoạn thật sự có sát thương. Không chặn thì mũi tên nhìn
+  // thấy bay quá chỗ ăn đòn và người chơi học sai khoảng an toàn.
+  if (e.cap > 0) max = Math.min(max, e.cap);
+  const lim = max;
+  for (let d = 8; d <= lim; d += 8) {
     const px = o.x + ca * d, py = o.y + cy * d;
     if (px < BOUND.x0 || px > BOUND.x1 || py < BOUND.y0 - 20 || py > BOUND.y1) { max = d; break; }
   }
@@ -866,6 +883,8 @@ function looseArrow(w, e, o, i, ang, mul) {
   w.fxs.push({
     sk: ARROW_SK, i: -1, t: 0, dur: max / s.spd, p: 0, pt: 0,
     seed: (e.seed * 7 + 13 + i * 1013) | 0, ox: o.x, oy: o.y, x: e.x, y: e.y,
+    // Mũi tên thừa hưởng cả người thả lẫn chốt "chỉ để nhìn" của nhát bắn sinh ra nó.
+    by: e.by || null, mute: e.mute || 0,
     ang, data: { wp, s, max, mul, trav: 0, was: 0, hit: [] }
   });
 }

@@ -25,7 +25,11 @@ const LAB = { W, H, SCALE, SKILLS, buf, newWorld, spawnFoe, unit, cast, step,
               swingHit, swingRiders, weaponStat, fireArrow, ARROW_SK, CUT_SK, cutCast,
               hurt, healHero, pullToward, hitCircle, hitLine,
               KIND, FOE_ABIL, GSQ, HERO_R, pickKind, tryCast, startCast, stepTel,
-              heroIn, hitHero, SPAWN_W, REL_HOLD,
+              heroIn, hitHero, SPAWN_W, REL_HOLD, telEnd,
+              // `fxWho` là bản lề của hiệu ứng soi gương ở chế độ solo: một hàng `w.fxs` mang `e.by`
+              // thì mọi đường vẽ neo vào *người thả* thay vì vào nhân vật. Harness phải kiểm được
+              // đúng câu đó, vì nó là thứ duy nhất giữ cho art của đối thủ không dán lên người chơi.
+              fxWho,
               // Bosses. `BOSS_SHAPE` is exported because the two things worth asserting about
               // a boss move -- that the marked ground is the damaging ground, and that its
               // hitbox travels -- both live in that table rather than in the ability entry.
@@ -54,6 +58,18 @@ const LAB = { W, H, SCALE, SKILLS, buf, newWorld, spawnFoe, unit, cast, step,
               GATE_W, GATE_H, GATE_OPEN, GATE_HOLD, GATE_RX, GATE_RY, GATE_DIST,
               ROOM_W, ROOM_H, ROOM_PAD, GATE_ART, GATE_PAL, BOUND0, CAMB,
               openGate, openBossGate, stepGate, enterRoom, exitRoom, sweepOrbs, roomApply,
+              // Chế độ solo. Bốn bảng dữ liệu ra đây vì cả "AI thông minh" quy về chúng: `SK_THREAT`
+              // là thứ duy nhất cho nó biết chiêu người chơi ăn tới đâu (bán kính bị nướng trong thân
+              // hàm `hit()` của js/skills.js, không đọc ra được lúc chạy), nên một hàng lệch bán kính
+              // là một AI đứng trong lửa mà tưởng mình đứng ngoài -- kiểm được bằng cách so với đúng
+              // cái `hitCircle` mà chiêu ấy gọi. `RIVAL_SK`/`RIVAL_WP` phải chứng minh được là mọi
+              // hàng đều hợp lệ với `startCast` và `range` nằm trong tầm hình của chính nó, và
+              // `rollRival` phải chứng minh được cùng seed ra cùng bộ kit.
+              SK_THREAT, RIVAL_SK, RIVAL_WP, rollRival, duelBand,
+              DUEL_W, DUEL_H, DUEL_MP, DUEL_MPR, DUEL_MPX, DUEL_END, RIV_REL, RIV_WP_BIAS,
+              DUEL_INTRO, DUEL_TXT, drawFoeHeld, SK_BY_ID, mirLead, mirLeadWp, rivalMirror,
+              startDuel, spawnRival, stepDuel, duelEnd, duelThreat, stepRival, rivalPick, rivalScore,
+              rivalLead, rivalHeroBusy, rivalCast, duelKitText, duelLine, duelResult, DTH,
               // Khoảng ngẫu nhiên của sát thương, và con số chí mạng. `DMG_VARY` ra đây vì hai
               // harness pin số cứng phải *tắt* được nó (`w.vary = 0`) mới đo được cái chúng đo,
               // nên "mức mặc định là bao nhiêu" là một câu cần kiểm chứ không phải một con số ẩn.

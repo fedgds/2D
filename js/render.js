@@ -48,10 +48,15 @@ function drawFoe(f) {
   const gw = fr.g[0].length / sourceScale, gh = fr.g.length / sourceScale;
   const gx = f.x - (fr.g[0].length - 1) / (2 * sourceScale);
   const gy = f.y - gh + fr.dy;
+  // Đối thủ solo cầm một cây vũ khí thật, và nó vẽ hai lượt quanh thân đúng như cây vũ khí trong tay
+  // nhân vật: nửa vòng ngắm chỉ ra xa camera đi trước, nửa còn lại đi sau. Chỉ nó dùng đường này --
+  // `drawFoeHeld` (js/duel.js) tự thoát ở dòng đầu với mọi `f.kind` khác.
+  if (typeof drawFoeHeld === 'function') drawFoeHeld(f, true);
   if (im && sourceScale > 1)
     blitFine(fr.g, gx, gy, sourceScale, flash, f.flip, alpha, dim, im.pal);
   else
     blit(fr.g, Math.round(gx), Math.round(gy), flash, f.flip, alpha, dim, im ? im.pal : null);
+  if (typeof drawFoeHeld === 'function') drawFoeHeld(f, false);
   if (f.dying) return;
   // Vết xé, một điểm sáng mỗi vết, xếp thành cột bên phải thanh máu. Đếm điểm chứ không viết số:
   // bảng GLYPHS chỉ có chữ số và hai chữ cái, mà một chữ số cao 5 px đặt cạnh một con quái cao

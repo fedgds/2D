@@ -32,6 +32,7 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `boss.js` | 3 boss: grid vẽ tay (bản dự phòng, art ảnh thắng), `bossCast`, cửa `bossGate` |
 | `boss-abil.js` | 12 chiêu boss + `BOSS_SHAPE` (vùng tô, và chính nó là vùng gây damage) |
 | `gate.js` | cánh cổng boss + phòng boss: `roomApply` (thu `BOUND`/`CAMB`), `openBossGate`, `stepGate`, `enterRoom`/`exitRoom`, `drawGate`/`drawRoom` |
+| `duel.js` | chế độ solo 1v1: đối thủ dùng chiêu + vũ khí của người chơi (`RIVAL_SK`/`RIVAL_WP` gán vào `FOE_ABIL`), hiệu ứng soi gương `rivalMirror`, bảng đọc nguy hiểm `SK_THREAT`, bộ não `stepRival`, sân đấu một trận (`startDuel`/`stepDuel`/`duelEnd`) |
 | `lab.js` | `globalThis.LAB`: cửa cho harness node, không cần DOM |
 | `icons.js` | icon 32×32 vẽ bằng canvas cho hotbar và bảng chọn, cộng `drawBagIcon` cho nút `#btnBag` |
 | `gpu.js` | `gpuMake`: tonemap + dither + phóng to bằng một fragment shader WebGL2, thay `resolve()` trên browser (`resolve()` vẫn là bản tham chiếu của harness); tự phát hiện mất ngữ cảnh và dựng lại |
@@ -461,6 +462,10 @@ node tools/check-gear.js
 ```
 
 ```bash
+node tools/check-duel.js
+```
+
+```bash
 node tools/hunt-nan.js
 ```
 
@@ -548,6 +553,16 @@ bằng `GEAR_RARITY[].col`, nhịp nhô lên hạ xuống phải đổi khi vẽ
 ánh sáng phải **thật sự sáng**: hai world cùng seed bước cùng số khung, một cái xoá `orbs` đi, rồi
 so số điểm sáng của hai khung — cùng seed nên phần trang trí y hệt và chênh lệch còn lại đúng là
 sáu quả sáng. Một mục "vẽ được, không ném lỗi" thì bỏ qua đúng cái lỗi mà mắt cũng bỏ qua.
+
+`check-duel.js` kiểm chế độ solo 1v1, và nó là harness duy nhất phải chứng minh một câu về **một bộ
+não** chứ không phải về một công thức: bảng `SK_THREAT` được đo lại bằng chính `hitCircle` mà từng
+chiêu gọi, rồi mỗi lời hứa của AI đi kèm một lần chạy đối chứng *phải* mất máu. Ba lỗi thật nó tìm ra
+(`blood_rend` ghi bán kính 40 cho một vùng với tới 53, `r_ricochet_shot` mở đòn từ ngoài mép của
+chính nó, `aegis_reflect` thiếu cờ `fast`) đều là lỗi mà mắt không thấy được trong trận. Nó cũng là
+harness duy nhất **đo nhịp một trận** thay vì đo một hàm: sáu bộ kit, hai mươi giây mỗi bộ, rồi đếm
+xem đối thủ vung bao nhiêu nhát, thả bao nhiêu chiêu và đứng im bao nhiêu phần trăm thời gian — ba con
+số ấy là ba yêu cầu về *cảm giác*, và không có cách nào khác để giữ chúng khỏi trôi. Xem *Chế độ solo*
+để biết từng mục kiểm gì. Chạy hết khoảng 7 giây.
 
 ## Một điểm ảnh NaN không ném lỗi ở đâu cả
 
@@ -1256,6 +1271,287 @@ một cánh cổng hỏng:
 Xem bằng mắt: `node tools/shot-gate.js gate` → `tools/out/gate.png`, sáu ô, và sáu ô ấy là sáu câu
 người chơi phải đọc được mà không cần một chữ nào: cổng đang mở / cổng đứng chờ / mình đang bước
 vào / trận đấu bắt đầu / đây là tường phòng / đây là đường về.
+
+## Chế độ solo — `duel.js`
+
+Một đối thủ, một cây vũ khí, ba chiêu rút ngẫu nhiên, đánh tới lúc một trong hai gục. Không phải một
+loài quái thứ bảy: nó dùng **đúng mười sáu chiêu của người chơi và đúng chín cây vũ khí của người
+chơi** — cùng bảng số, và từ `rivalMirror` thì cùng cả hiệu ứng — nên trận đấu là một cuộc soi gương
+chứ không phải một bài kiểm tra phản xạ.
+
+Vào bằng nút *SOLO 1v1* ở panel chuẩn bị: cùng cái picker ấy — map, một vũ khí, ba trong mười sáu
+chiêu — rồi `startDuel(w)` thay vì `newWorld` thường.
+
+### Vì sao nó không phải một `KIND` mới có `abil`
+
+`KIND.rival.abil` là **mảng rỗng**, có chủ ý: đó là thứ làm `tryCast` (js/world.js) thoát ngay ở
+dòng đầu. Nếu để nó có chiêu thì hai bộ não cùng bấm nút trên một cái tay — `tryCast` chọn theo tầm
+như quái, `stepRival` chọn theo điểm như người — và không đọc ra được cái nào vừa thả đòn. `stepFoe`
+gọi `stepRival` ở dòng đầu rồi `return`, nên với `f.kind === 'rival'` thì **cả** phần chân và phần
+tay đều nằm trong `duel.js`.
+
+Mười sáu chiêu soi gương (`RIVAL_SK`) và chín cây vũ khí (`RIVAL_WP`) được **gán vào `FOE_ABIL`**
+lúc nạp file, với hai bộ khoá `r_*` và `w_*`. Nên chúng đi qua đúng `startCast`/`stepTel`/`heroIn`
+mà bảy chiêu quái gốc đi qua: một vệt trên sàn, một khung gồng, một khung phát, và `heroIn` quyết
+định ai đau. **Không có sát thương chạm** — `stepFoe` rút 22 máu/giây cho mọi thứ dán vào nhân vật,
+`stepRival` cố ý không có dòng ấy, vì một dòng máu chảy không báo trước là thứ duy nhất trong trận
+này người chơi không có câu trả lời, và nó phạt đúng cái việc *áp sát*, tức là phạt đúng câu trả lời
+cho một đối thủ tầm xa.
+
+### Ba chiêu rút trong mười sáu, mỗi trận một bộ
+
+`rollRival(seed)` rút **đều tay trong cả mười sáu chiêu**, không lọc theo tầm, không ép một đòn tầm
+gần: `RIVAL_SK` là mười sáu hàng và cả mười sáu đều rút được cho từng ô. Nên một trận có thể ra ba
+chiêu tầm xa — và đó là một bộ *đọc được*, người chơi áp sát là thắng, chứ không phải một bộ hỏng.
+Ép luật vào đây thì mười sáu chiêu co lại thành "vài bộ hợp lệ", và cái ngẫu nhiên mất nghĩa.
+
+Cùng hạt ra cùng bộ (`w.rng` là `mulberry32`), nên một trận kể lại được. Mục kiểm rút 24 000 bộ và
+đòi từng ô lệch không quá 22 % so với 1/16 — một cái lọc âm thầm (một hàng thiếu `range`, một chỗ
+`|0` sai) hiện ra ở đó chứ không hiện ra trong một trận chơi thử.
+
+### Hiệu ứng: `rivalMirror` — chiêu của nó *là* chiêu của người chơi
+
+Bản đầu của chế độ này chỉ có **vệt cảnh báo**: một vòng sáng dưới sàn rồi tắt. Đặt cạnh chiêu người
+chơi — lốc chém hai lưỡi, trụ phán xét, mưa ma thuật chín ổ — nó đọc ra như hai game khác nhau đang
+đánh nhau, và nhát đánh thường thì tệ hơn: cây vũ khí nằm im trong tay đối thủ suốt cả đòn.
+
+`rivalMirror(w, f, T)` sửa chuyện đó bằng cách đẩy **đúng cái hàng `w.fxs` mà `cast()`/`swing()` của
+người chơi đẩy** — cùng `sk`, cùng `dur`, cùng `seed` ngẫu nhiên — nhưng gắn hai cờ:
+
+| cờ | ai đọc | để làm gì |
+| --- | --- | --- |
+| `e.by` | `fxWho` (js/world.js), `duelThreat` | mọi nét vẽ neo vào **người thả**, không vào nhân vật |
+| `e.mute` | `js/world.js:598`, `swingHit` | hàng này chỉ để nhìn: **không một chấm sát thương** |
+
+Sát thương vẫn đi nguyên đường cũ — `rivalCast` → `startCast` → `w.tels` → `stepTel` → `hitHero` —
+nên vùng ăn đòn vẫn là cái vệt trên sàn, tắt được bằng đóng băng, vẫn có tiếng tick trước 0,2 s. Hai
+đường tách nhau ở chỗ ấy, và đó là lý do 25 hàng `w_*`/`r_*` có một mục kiểm bước trọn đời hiệu ứng
+với nhân vật đứng đúng tâm mà **không mất một điểm máu nào**.
+
+Vì sao không làm ngược lại — cho đối thủ gọi thẳng `cast()` rồi bỏ `w.tels` đi? Vì sát thương của
+mười sáu chiêu đi qua `hitCircle`/`foesIn`, hai hàm chỉ quét `w.foes`: nó sẽ tự đánh chính nó và
+không đụng được nhân vật một chấm. Sửa được, nhưng cái giá là cả mười sáu hàm `hit()` phải biết mình
+thuộc về ai — lúc ấy chế độ này viết lại js/skills.js.
+
+**Cùng khung, không chỉ cùng hình.** Hiệu ứng phải nổ đúng lúc cái vệt nổ, nên `rivalCast` hẹn một
+mốc `a.mir = { at: A.tell − lead }`: `lead` là *nhịp đầu* của hiệu ứng — giây từ lúc nó bắt đầu tới
+lúc nó gây sát thương. Với chiêu thì `SK_THREAT.t0` đã là đúng con số ấy (ba hàng vắng mặt ghi tay ở
+`MIR_LEAD`); với nhát vung thì đọc thẳng tấm sheet: `hits[0] / frames * dur`. Thả ngay lúc mở đòn là
+một cú nổ không có hình; thả đúng khung nổ là hình bắt đầu sau khi đòn đã ăn. Mục kiểm đo cả 25 hàng
+và đòi lệch dưới 0,05 s.
+
+Ba chỗ phải chỉnh tay, và cả ba đều là chuyện *chỗ neo*:
+
+* **hệ nén.** Nhát vung có `wp.squash` riêng, không phải `GSQ` của vệt.
+* **cú nện của rìu.** `drawSlam` vẽ hố lệch khỏi gốc một quãng `slam.dist`, nên gốc phải lùi lại đúng
+  quãng ấy — bằng không cái lưỡi rơi cách chỗ đã đánh dấu 26 px và người chơi học sai chỗ phải bước ra.
+* **mũi tên.** `e.cap` chặn nó ở đúng chiều dài đoạn đã vạch trên sàn: đoạn ấy là chỗ thật sự có sát
+  thương, một mũi tên bay quá nó là một lời nói dối. (`ARROW_SK.mid` tự tính `trav` khi câm, vì
+  `arrowHit` không bao giờ chạy.)
+
+Và một chỗ **không** được gọi: `telEnd()`. Nó đọc `A.len`, thứ chỉ hàng `line` có — bảy hàng nón sẽ ra
+`NaN`, và một `NaN` ở đây không ném lỗi, không mất máu, chỉ *không vẽ ra gì cả*. Mục kiểm đòi cả năm
+số hình học của mỗi hàng là số thật.
+
+### `SK_THREAT` — chỗ "cực thông minh" thật sự nằm
+
+Không phải ở chỗ chọn chiêu, mà ở chỗ **biết mình đang đứng trong cái gì**. `duelThreat(w, f)` quét
+`w.fxs` — hiệu ứng của chiêu người chơi vừa thả — đối chiếu bảng `SK_THREAT` rồi trả một vector đẩy
+ra cùng quãng còn phải đi để thoát.
+
+Bảng ấy phải **ghi tay** vì trong js/skills.js bán kính và nhịp bị nướng vào thân từng hàm `hit()`
+(`if (crossed(e, 0.30)) hitCircle(w, h.x, h.y - 7, 32, …)`), không đọc ra được lúc chạy. Ghi tay
+nghĩa là sai được, nên mỗi ô có một mục kiểm **đo lại bằng chính `hitCircle`**:
+
+| ô | nghĩa | sai thì sao |
+| --- | --- | --- |
+| `r` | tầm với **xa nhất**, tính từ tâm neo | ghi non là đối thủ tưởng mình đã ra ngoài |
+| `oy` | tâm lệch lên bao nhiêu so với neo | né sai chiều dọc, mà dọc thì nén `GSQ` |
+| `an` | neo vào `e`ffect / `h`ero / `m`arks (mưa) | neo sai là chạy sai hướng ngay từ đầu |
+| `t0`/`t1` | nhịp đau đầu và cuối, giây | `t1` non là **quay vào** một vùng còn đánh |
+| `fast` | nhịp đầu dưới 0,15 s | thiếu cờ là một AI né thứ người không né được |
+| `pull` | có lực hút | thiếu là đi bộ ngược chiều một lực |
+
+Ba con số trong bảng viết tới ba chữ số thập phân (`0.144`, `0.228`, `0.136`/`0.442`) và đó không
+phải sự cầu kỳ: nhịp thật là `crossed(e, p)` nhân `e.dur`, nên làm tròn về hai số là ghi `t1` **sớm
+hơn** nhịp cuối bốn phần nghìn giây — nhỏ, nhưng ở đúng phía sai.
+
+`t0`/`t1` đo bằng khung **không nén**? Không — chỗ này là chỗ dễ sai nhất cả file: `duelThreat` so
+khoảng cách **trên màn hình**, không chia `GSQ`. `GSQ` là hệ của `heroIn`, tức là hệ của vùng cảnh
+báo do *quái* vẽ; còn vùng sát thương của mười sáu chiêu người chơi đi qua `hitCircle` → `foesIn`,
+và hai hàm ấy so `Math.hypot(f.x - x, midY(f) - y) <= r + f.w * 0.35` — một vòng tròn thật. Chia dọc
+cho 0,5 ở đây là đối thủ tưởng mình cách xa gấp đôi mỗi khi nó đứng trên hay dưới tâm vùng.
+
+**Ba chiêu cố ý không có trong bảng**, và đó là một quyết định cân bằng chứ không phải ba hàng bị
+quên: Sấm Chuỗi và Đạn Nảy khoá mục tiêu ngay lúc bấm (`nearest` trong `init`), nên "né" chúng là vô
+nghĩa; Bóng Lướt thì đi theo nhân vật. Ba chiêu ấy là **câu trả lời chắc chắn của người chơi** cho
+một đối thủ né giỏi — bỏ cửa đó đi thì trận đấu không còn cửa nào.
+
+Cùng lý do, hai thứ `duelThreat` **không** đọc: `w.tels` (vệt của chính nó — một AI né đòn của mình
+thì không bao giờ đánh trúng ai) và phần né của hàng `fast` (thời gian phản ứng người thật là
+0,2–0,25 giây, nên né được cú nổ 0,07 giây là gian lận). Hàng `fast` vẫn đọc được, chỉ ở chỗ khác:
+`DTH.near` nâng băng khoảng cách lên — nó đề phòng bằng **chỗ đứng**, đúng cách người giỏi đề phòng.
+
+### Thứ tự ưu tiên của `stepRival`, và thứ tự này *là* cái AI
+
+1. **Ra khỏi vùng sắp nổ** — tuyệt đối, trên mọi thứ khác. Lao (`RIV_DASH` 292 px/s, 0,19 s) khi đi
+   bộ không kịp: `DTH.need / spd` ra thời gian cần, `DTH.hot` là nghịch đảo thời gian còn lại. Cú lao
+   **không có i-frame** — nó phải rời vùng bằng chân, để chiêu người chơi không bao giờ trượt một
+   cách vô hình.
+2. **Thả đòn** — và chỉ khi đang đứng ở chỗ an toàn. Một đối thủ thả đòn từ trong một vũng độc là
+   một đối thủ đổi máu lấy sát thương, tức là người chơi không cần đọc gì cả.
+3. **Giữ băng khoảng cách của cây vũ khí, và đi ngang.** `duelBand(wp)` cho chín con số từ 26 (găng)
+   tới 96 (cung); đứng yên trong băng là một cái bia, đảo chiều mỗi khung thì rung tại chỗ, nên nó
+   giữ một chiều `a.sT` giây mới đảo.
+
+`rivalScore` là chỗ chứa gần hết cái thông minh của việc *chọn*, và nguyên tắc là: đòn tốt không
+phải đòn to nhất mà là đòn **đối phương không kịp trả lời**. Sát thương chia cho thời gian đòn chiếm
+chỗ; sát mép tầm nhân 0,55; người chơi đang có i-frame thì đòn đắt gần như luôn nên chờ; và
+`rivalHeroBusy` — người chơi vừa vung một cây vũ khí khoá chân — nhân lên tới 1,95. Đọc được cửa sổ
+phạt ấy là khác biệt lớn nhất giữa một con quái và một đối thủ: quái đánh khi tầm cho phép, người
+đánh khi đối phương vừa vung xong.
+
+`rivalLead` đón **đà chạy, không đón ý định**: vận tốc người chơi lọc mũ (`RIV_MEM` 0,16 s) từ hiệu
+vị trí chứ không từ `h.vx` (`h.vx` là đẩy lùi), kẹp trần `RIV_LEAD` 112, rồi nhân `min(tell, 0.85) *
+0.55`. Đón đủ là đoán rằng người chơi sẽ đi thẳng suốt cả giây báo đòn, mà người chơi thì đang *nhìn*
+cái vệt ấy. Đón non thì đòn rơi giữa chỗ cũ và chỗ mới — vẫn chặn đường.
+
+Một thứ nó **không** làm: huỷ đòn đang lên khi thấy nguy hiểm tới. Không thể (`stepTel` chỉ huỷ khi
+đông cứng hoặc chết) và cũng không nên — "dụ nó lên đòn rồi phạt" là câu trả lời chính của người
+chơi cho một đối thủ né giỏi.
+
+### `wpTell` — vừa đi vừa vung, và vì sao cái vệt phải đi theo chân
+
+Luật của quái là: đang lên đòn thì **khoá chân**, vì cái vệt trên sàn là một lời hứa về chỗ đòn sẽ
+rơi. Đối thủ solo giữ luật ấy cho chiêu, nhưng **bỏ nó cho nhát vung** — và chỗ này là chỗ nó rời
+khỏi bộ não quái xa nhất.
+
+Lý do nằm ở phía bên kia sân: trong chín cây vũ khí chỉ `dao` đặt `plant`, tám cây còn lại cho nhân
+vật đi hết tốc độ suốt nhát vung. Mà nhát vung là *nhịp nền* của trận này (xem `RIV_WP_BIAS` và
+`DUEL_MPX`), nên khoá chân theo nó là khoá chân gần hết trận: đo được **30 %** thời gian còn đi lại.
+Hai yêu cầu "đánh thường nhiều hơn" và "di chuyển thường xuyên" khi ấy chống nhau — đánh dày hơn *là*
+đứng im nhiều hơn. Bỏ khoá chân thì chúng cùng hướng, và số đo lên **79 %**.
+
+Lời hứa không mất, vì cái vệt **đi theo chân**:
+
+```js
+if (wpTell) { f.tel.x += f.x - px; f.tel.y += f.y - py; }   // sau khi đã kẹp BOUND
+```
+
+`heroIn` và `drawTellUnder` đọc cùng một `e.x`/`e.y` (js/foe-abil.js), nên dời gốc là dời **cả hình
+lẫn vùng sát thương, trong cùng một khung** — cái nón luôn ở trước mặt nó, ở đâu cũng vậy. Ba chỗ
+không đi theo, và mỗi chỗ là một quyết định riêng:
+
+* **`e.ang`.** Hướng chốt lúc thả. Vừa đi vừa ngắm lại là một cú không đọc được, và cũng không phải
+  thứ tay người chơi làm được.
+* **cây rìu** (`aim: 'hero'`). Vệt của nó là một vòng chấm *xuống chỗ nhân vật*, không phải cái nón
+  trước mặt: dời theo chân là dời cái hố đi khỏi chỗ đã đánh dấu. Nó vẫn khoá chân, và nó *nên* nặng
+  nề như vậy.
+* **cả mười sáu chiêu.** Vệt của chúng vẫn đứng một chỗ, chân vẫn khoá.
+
+Hai chỗ khác phải sửa theo, và cả hai từng bị `held` che mất:
+
+* **`f.acd`** giờ đếm từ *lúc vệt nổ*: `A.tell + A.rec`. `A.rec` (0,22 s) ngắn hơn mọi quãng báo đòn,
+  nên nếu chỉ đặt `A.rec` thì nó đã về 0 từ giữa quãng ấy và đòn sau nổ ra ngay khung đòn trước ăn —
+  không một khung nào ở giữa. Đó là cách `rec` chết lặng lẽ.
+* **`f.aimAng`** suy từ `e.ang` chứ không từ `e.x`. Gốc của một vệt `dir` *chính là* chỗ nó đứng, nên
+  `tel.x - f.x` bằng đúng 0 và `atan2` trả về 90 độ: cây vũ khí chúc thẳng xuống đất suốt quãng báo
+  đòn.
+
+Và một dòng trong js/anim.js: `foeFrame` bỏ qua khung lên đòn khi `f.mv > 0.4`. Cửa ấy chỉ mở cho đối
+thủ solo — `stepFoe` đặt `f.mv = 0` cho mọi thứ đang lên đòn, nên với quái và boss điều kiện luôn
+đúng và không đổi một khung nào. Một khung "rút tay về" dán trên một cái thân đang trượt ngang đọc ra
+như lỗi vẽ; vòng chân mới là thứ nói thật. Đòn vẫn báo trước: vùng cảnh báo dưới sàn còn nguyên, ánh
+sáng dồn trong người (js/render.js đọc `f.chg`) còn nguyên, tiếng tick còn nguyên.
+
+### Sân đấu, và một trận một lần
+
+Dùng lại đúng bộ máy phòng boss: `w.room` + `roomApply(w)` thu `BOUND` và `CAMB`, `DUEL_W`/`DUEL_H`
+là 520×340 — hẹp hơn sân nhưng **rộng hơn khung nhìn** ở cả hai chiều kể cả khi `W` lên 480 (xem
+*Cánh cổng boss và phòng boss*). Không có cổng: `startDuel` gọi `enterRoom` thẳng, vì ở đây trận đấu
+*là* cả chế độ, không phải một cái mốc trong một trận dài.
+
+Cả game gốc **không có màn hình chết** — `god` mặc định bật, đây là phòng thí nghiệm skill. Chế độ
+này cần một kết cục thật, và kết cục là **một trận một lần**: đánh tới lúc một trong hai gục, rồi
+`DUEL_END` giây đứng nhìn, rồi **menu tạm dừng mở ra** với một dòng THẮNG hoặc THUA. Không có thang
+vòng để leo, không có ván mới tự bắt đầu — muốn đánh nữa thì rút bộ kit khác, và đó là chỗ cái ngẫu
+nhiên có nghĩa.
+
+`duelEnd(w, kind)` là cửa duy nhất, và nó **ghi một lần**: `d.done` đã có chữ thì lần gọi sau không
+đổi được nó. Cùng lúc ấy nó dọn sạch mọi vệt đang lên của cả hai bên (`w.tels`, `f.tel`, `f.acd = 99`)
+— một cú nổ rơi xuống sau khi trận đã xong là một cú nổ không có nghĩa gì, và với `'lose'` thì nó còn
+là một cú đánh vào một người đã hết máu. `w.god` thì vẫn thắng tất: bật `god` là nói "không có cái
+chết ở đây", nên `d.done` ở lại rỗng.
+
+| hằng số | trị | vì sao |
+| --- | --- | --- |
+| `DUEL_W`/`DUEL_H` | 520 / 340 | rộng hơn `W` ≤ 480 và `H` = 180, hẹp hơn `BOUND0` |
+| `DUEL_INTRO` | 1,30 s | khoảng lặng trước khi đối thủ bước vào |
+| `DUEL_END` | 1,35 s | đứng nhìn sau khi một bên gục, trước khi menu mở ra |
+| `KIND.rival.hp` | 1200 | 15–25 giây của một bộ kit khá: đủ để cả hai dùng hết một lượt hồi chiêu |
+| `DUEL_MPX` | 0,55 | nhân vào **cả bình lẫn tốc độ hồi** của nhân vật: 120 / 7,5 → 66 / 4,1 |
+| `DUEL_MP`/`DUEL_MPR` | 72 / 4,6 | mana của đối thủ, xấp xỉ nhân vật sau khi nhân `DUEL_MPX` |
+| `RIV_WP_BIAS` | 1,45 | điểm của nhát vung, để cây vũ khí là nhịp nền chứ không phải chỗ lấp |
+| `RIV_REL` | 0,22 s | trần `f.rel` (quái là `REL_HOLD` 0,42) — khung đánh đọc được mà không đứng im |
+| `RIV_DASH` | 292 px/s | nhanh hơn đi bộ (56), chậm hơn dash của nhân vật |
+| `RIV_LEAD` | 112 px/s | trần vận tốc dùng để bắn đón |
+
+**Ít mana, cho cả hai bên.** `DUEL_MPX` đi qua `w.mpx`, và `syncGear` nhân nó vào `h.maxmp` — nên nó
+cộng dồn đúng với trang bị thay vì đè lên: mặc một bộ +40 mana thì bình là `(120 + 40) × 0,55`. Vì sao
+hạ, và vì sao hạ cho *cả hai*: trận tay đôi ở mức mana cũ là hai bên thay nhau thả chiêu, và cái quyết
+định thắng thua là ai rút được bộ kit tốt hơn. Ít mana thì phần lớn thời gian cả hai chỉ có cây vũ khí
+trong tay — khoảng cách, hướng ngắm, cửa sổ sau một nhát vung — còn ba chiêu thành thứ để *dành*. Hạ
+một bên thôi thì đó không phải một luật của chế độ, đó là một cái điều chỉnh độ khó, và nó nói dối về
+chuyện hai bên đang chơi cùng một trò.
+
+### Kiểm
+
+`node tools/check-duel.js` kiểm *lời hứa*, không kiểm bảng, và ba mục trong đó là ba phép **đo lại
+bằng chính hàm gây sát thương** chứ không phải so số:
+
+* **vùng đã tô là vùng ăn đòn** cho cả 25 hàng (16 chiêu + 9 vũ khí): tâm vệt thì đau, ngoài mép
+  `len + thick*0.9 + HERO_R` thì không, và **mở đòn từ đúng `range` thì phải với tới** — mục cuối là
+  mục tìm ra `r_ricochet_shot` để `range: 130` trong khi mép thật là 128,5, tức là một phát đạn mà
+  người chơi chỉ cần đứng im là trượt;
+* **`SK_THREAT` khớp với `hitCircle`**: thả từng chiêu lên đúng chỗ nhân vật (chỗ duy nhất `mode:
+  'self'` và `mode: 'point'` trùng tâm), rải một mảng điểm đo 1 px thân 0×0 (để số hạng dung sai
+  `f.w * 0.35` co về 0), rồi đòi vòng của bảng **chứa hết** vùng đau *và* không phóng đại. Mục này
+  tìm ra `blood_rend` ghi 40 trong khi `hitCircle` của nó lệch 26 px về phía ngắm rồi mới nở 27;
+* **cửa sổ thời gian phủ trọn mọi nhịp**, đo ở 1/240 s: `t0` ≤ nhịp đầu, `t1` ≥ nhịp cuối, và cờ
+  `fast` phải **suy ra được** từ số đo. Mục này tìm ra `aegis_reflect` thiếu cờ `fast` (nhịp đầu
+  0,136 s) và ba chỗ làm tròn `t1` non.
+
+Rồi phần bộ não, và mỗi mục ở đó đi kèm một lần chạy **đối chứng phải mất máu**, vì "né được nên
+không mất máu" đạt quá dễ khi phép đo bị hỏng: xoá `ember_field` khỏi bảng thì nó đứng đó mà ăn đòn;
+bỏ cờ `fast` của `star_rupture` thì đúng cái vòng ấy thành một cú né. Cộng: nó không né vệt của chính
+mình, không bao giờ chọn một đòn ngoài tầm / đang hồi / thiếu mana (4000 mẫu ngẫu nhiên), dán vào
+người 4 giây thì nhân vật **không mất một điểm máu nào**, từ 210 px đi vào đúng băng của năm cây vũ
+khí khác nhau mà vẫn đi ngang (quãng đường > 200 px trong 8 giây), cú dịch chuyển của Bóng Lướt rơi
+đúng cuối cái vệt đã vẽ, và trong phòng đấu thì `spawnT = 0` với `kills = 9999` vẫn **không** mọc
+một con quái hay một cánh cổng nào.
+
+Bốn mục lo bốn cơ chế mới, và cả bốn đều đo bằng cách **bước sim**, không so bảng:
+
+* **hiệu ứng soi gương** — 25 hàng: bản soi gương mang `by`/`mute`, đúng `sk` của người chơi, hình học
+  ra số thật (không `NaN`), rồi chạy trọn đời hiệu ứng với nhân vật đứng đúng tâm mà không mất một
+  chấm máu — và đối thủ cũng không tự đánh mình bằng chính art của nó. Một mục nữa đo *khung*: hiệu ứng
+  phải gây sát thương đúng khung cái vệt nổ, lệch dưới 0,05 s;
+* **vừa đi vừa vung** — tám hàng `dir`: đôi chân đi được trong lúc lên đòn, gốc vệt dán vào chân **từng
+  khung** (không lệch 0,01 px), `e.ang` thì bất động, và tay chỉ theo hướng vệt chứ không chúc xuống
+  đất. Đối chứng: cây rìu và cả mười sáu chiêu vẫn khoá chân đúng như cũ;
+* **nhịp trận** — sáu bộ kit × hai mươi giây, nhân vật đứng im để cái được đếm là *lựa chọn của đối
+  thủ*: nhát vung phải nhiều hơn gấp đôi tổng ba chiêu, và phải đi lại trên 65 % thời gian. Hai con số
+  ấy từng chống nhau (xem `wpTell`), nên để chúng cạnh nhau trong một mục là có chủ ý;
+* **mana ít cho cả hai** — `DUEL_MPX` nhân vào bình *và* tốc độ hồi: bình đúng số sau khi mặc rồi tháo
+  cả một bộ trang bị, và tốc độ hồi đo bằng cách chạy 60 khung ở hai world rồi so tỷ lệ.
+
+Một mục lo cái kết: `duelEnd` **ghi một lần** (gọi `'lose'` sau `'win'` không đổi được gì), gục là mọi
+vệt đang lên của cả hai bên bị dọn sạch, `w.god` thì không ai gục cả, và `d.hold` đếm hết `DUEL_END`
+mới tới lượt menu.
+
+Một mục lo chỗ rò: `BOUND`/`CAMB` là toàn cục, nên một sân mới dựng sau trận solo phải về đúng
+`BOUND0` và `{0, 0, WW-W, WH-H}` — rò một lần là mọi trận sau đó chơi trong một cái sân 520×340 mà
+không có gì trên màn hình giải thích tại sao.
 
 ## Xem hiệu ứng mà không cần browser
 

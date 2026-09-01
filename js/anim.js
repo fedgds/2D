@@ -198,7 +198,13 @@ function foeFrame(f) {
   // release, which is held by `f.rel` past the frame the hit lands. A monster gets none of
   // this -- it glows from inside for 0.8 s and that is enough -- so `a.cast` is the whole test.
   if (a.cast) {
-    if (f.chg > 0) return a.cast[f.chg < 0.45 ? 0 : 1];
+    // `f.mv > 0.4` là cửa duy nhất bỏ qua khung lên đòn, và nó chỉ mở cho đối thủ solo: `stepFoe` đặt
+    // `f.mv = 0` cho mọi thứ đang lên đòn (quái và boss đều bị khoá chân), nên với chúng điều kiện này
+    // luôn đúng và không đổi một khung nào. Đối thủ solo thì vung mà vẫn đi được (xem `wpTell` trong
+    // js/duel.js), và một khung "rút tay về" dán trên một cái thân đang trượt ngang đọc ra như lỗi vẽ --
+    // vòng chân mới là thứ nói thật. Vùng cảnh báo dưới sàn và ánh sáng dồn trong người (js/render.js
+    // đọc chính `f.chg` này) vẫn còn nguyên, nên đòn vẫn báo trước.
+    if (f.chg > 0 && f.mv <= 0.4) return a.cast[f.chg < 0.45 ? 0 : 1];
     if (f.rel > 0) return a.cast[2];
   }
   const n = f.mv > 0.4 ? a.walk : a.idle;
