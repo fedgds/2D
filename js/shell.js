@@ -13,15 +13,32 @@ if (typeof document !== 'undefined') {
   let wantGpu = true;
   try { if (localStorage.getItem('sl.gpu') === '0') wantGpu = false; } catch (e) { /* đành chịu */ }
   const gpu = wantGpu && gpuMake ? gpuMake(screen, RW, RH, EXPO, LEVELS - 1) : null;
-  let ctx = null, off = null, octx = null, img = null;
-  if (!gpu) {
-    ctx = screen.getContext('2d');
+  let ctx = null, off = null, octx = null, img = null, cpuCv = null;
+  // Đường 2D, dựng theo yêu cầu. Lúc nạp trang nếu không có GPU -- nhưng cũng có thể *giữa trận*,
+  // khi ngữ cảnh WebGL chết và không dựng lại được (xem `live()`/`state()` trong js/gpu.js). Lúc
+  // đó `screen` đã cấp context webgl2 rồi và một canvas chỉ cấp được một loại, nên đường về không
+  // phải là xin lại context 2D của nó: là một canvas *mới* đặt phủ lên nó. Đổi kiểu ấy thì mọi
+  // listener chuột/ngón đang cắm trên `screen` còn nguyên (joystick, ngắm, kéo nút cảm ứng) và
+  // người chơi không mất trận đang đánh -- thứ mà cách cũ (`sl.gpu = 0` rồi nạp lại trang) lấy đi.
+  function cpuMake() {
+    if (ctx) return true;
+    let cv = screen;
+    if (gpu) {
+      cv = cpuCv = document.createElement('canvas');
+      cv.id = 'screen2';
+      cv.width = screen.width || RW; cv.height = screen.height || RH;
+      screen.parentNode.insertBefore(cv, screen.nextSibling);
+    }
+    ctx = cv.getContext('2d');
+    if (!ctx) { cpuCv = null; return false; }
     ctx.imageSmoothingEnabled = false;
     off = document.createElement('canvas');
     off.width = RW; off.height = RH;
     octx = off.getContext('2d');
     img = octx.createImageData(RW, RH);
+    return true;
   }
+  if (!gpu) cpuMake();
   // Bậc nhảy nhỏ nhất của bộ đệm canvas mà vẫn giữ **đúng** tỉ lệ W/H, nên điểm ảnh game luôn
   // vuông: (W/g, H/g) với g = gcd(W, H). Tính một lần ở đây vì W chốt lúc nạp trang (xem FRAME_W
   // trong index.html) và layout() chạy lại mỗi lần đổi cỡ cửa sổ.
@@ -36,6 +53,36 @@ if (typeof document !== 'undefined') {
   const hud = document.getElementById('hud');
   const titleEl = document.getElementById('title');
   let titleT = 0;
+
+  // ---- một khung đen không được phép im lặng -------------------------------
+  // Điểm sáng ở góc trên trái khung thanh máu. `hudFrame` (js/render.js) ghi FR_GLINT vào đúng ô
+  // màn hình (3,3) với alpha 1, mỗi khung, *sau* mọi lớp khác -- kể cả tường phòng boss và cú
+  // loé trắng lúc qua cổng. Nên nó là một chốt kiểm rẻ đến mức chạy được mỗi khung: đọc đúng thì
+  // `buf` lành, và một màn hình đen chỉ có thể là lỗi ở đoạn đưa `buf` lên màn.
+  //
+  // Đọc *sai* thì hỏng nằm trong `buf`, và gần như chắc chắn là NaN hoặc Infinity: `setPixS` trộn
+  // bằng `buf[i] * (1 - a) + col * a`, mà NaN * 0 vẫn là NaN -- tức một điểm ảnh đã nhiễm thì
+  // *không* ghi đục lên được nữa, và cả hai đường tonemap (`resolve` và shader) đều cho ra 0. Một
+  // ô NaN là một ô đen vĩnh viễn, nên câu hỏi "buf có lành không" phải trả lời được từ ảnh chụp.
+  const BUF_PROBE = ((3 * RENDER_SCALE) * RW + 3 * RENDER_SCALE) * 3;
+  function bufOK() {
+    const v = buf[BUF_PROBE];
+    return v > 0.01 && v < 64;              // NaN và Infinity đều rơi ra khỏi khoảng này
+  }
+  // Nói một lần cho mỗi trạng thái, ở giữa khung, bằng DOM -- vì thứ vừa hỏng đúng là cái vẽ ra
+  // pixel. Nói lại khi trạng thái xấu đi (mất ngữ cảnh -> chết hẳn), vì hai câu đó khác nhau:
+  // một cái tự lành sau vài khung, cái kia là chạy bằng CPU cho tới hết phiên.
+  let fellSaid = '';
+  function gpuFell() {
+    const st = gpu ? gpu.state() : 'dead';
+    if (fellSaid === st) return;
+    fellSaid = st;
+    titleEl.textContent = st === 'dead' ? 'GPU LỖI · ĐANG CHẠY BẰNG CPU'
+                                        : 'GPU MẤT NGỮ CẢNH · ĐANG DỰNG LẠI';
+    titleEl.style.opacity = 1;
+    titleT = 3.5;
+    console.warn('shell: đường GPU không dùng được (' + st + '), vẽ bằng đường CPU');
+  }
 
   // ---- Fixed frame ---------------------------------------------------------
   // Header, arena và hotbar được tính lại mỗi lần cửa sổ đổi, nên trang không bao giờ phải
@@ -148,6 +195,13 @@ if (typeof document !== 'undefined') {
     const bw = u * FQW, bh = u * FQH;
     if (screen.width !== bw) screen.width = bw;
     if (screen.height !== bh) screen.height = bh;
+    // Canvas dự phòng (chỉ tồn tại sau khi ngữ cảnh WebGL chết, xem `cpuMake`) phủ đúng lên
+    // `screen`, nên nó phải theo cùng một cỡ vật lý -- lệch một điểm ảnh là lệch cả lưới.
+    if (cpuCv) {
+      if (cpuCv.width !== bw) cpuCv.width = bw;
+      if (cpuCv.height !== bh) cpuCv.height = bh;
+      if (ctx) ctx.imageSmoothingEnabled = false;     // đổi cỡ bộ đệm là reset cả state 2D
+    }
     // Cỡ CSS suy ra *từ* cỡ vật lý, không phải ngược lại. Số có thể lẻ (1520/1.25 = 1216, còn
     // ở dpr 1.5 thì ra 1013,33) -- không sao: nhân lại với dpr là đúng số nguyên bw, nên hộp
     // border-box của #stage rơi chính xác lên lưới điểm ảnh của màn hình.
@@ -1747,9 +1801,18 @@ if (typeof document !== 'undefined') {
     } else {
       world.aim.x = aw.x; world.aim.y = aw.y;
     }
+    // Đường hiện khung được hỏi lại **mỗi khung**, không chỉ lúc nạp: một ngữ cảnh WebGL chết
+    // giữa trận là một canvas đen vĩnh viễn nếu vẫn cứ đẩy `buf` vào nó (xem js/gpu.js). Hỏi ở
+    // đây, trước `renderWorld`, vì chính câu trả lời quyết định khung này có phải giải ra byte
+    // RGBA hay không -- đường GPU dừng ở `buf`, đường CPU đi tới cùng.
+    const useGpu = gpu !== null && gpu.live();
+    if (gpu && !useGpu) { gpuFell(); cpuMake(); }
+    // Ngữ cảnh dựng lại được thì về đường GPU ngay, và canvas dự phòng phải tắt cùng lúc: để nó
+    // đứng đó là một khung CPU đông cứng phủ lên khung GPU đang chạy bên dưới.
+    if (cpuCv && cpuCv.hidden !== useGpu) cpuCv.hidden = useGpu;
     const t0 = performance.now();
     // Đường GPU dừng ở `buf`: tonemap là việc của shader. Đường CPU vẫn giải tới từng byte RGBA.
-    renderWorld(world, gpu ? null : img.data);
+    renderWorld(world, useGpu || !ctx ? null : img.data);
     ms = ms * 0.9 + (performance.now() - t0) * 0.1;
     const sh = world.shake;
     const ox = sh > 0 ? (Math.random() * 2 - 1) * sh : 0;
@@ -1761,15 +1824,18 @@ if (typeof document !== 'undefined') {
     const px = screen.width / W;
     const dx = Math.round(Math.round(ox) * px), dy = Math.round(Math.round(oy) * px);
     const t1 = performance.now();
-    if (gpu) {
+    if (useGpu) {
       gpu.upload(buf);
       gpu.present(dx, dy);
-    } else {
+    } else if (ctx) {
+      // `cpuCv` là canvas phủ lên khi đường GPU chết; không có nó thì đường 2D vẽ thẳng vào
+      // `screen` như bản gốc. Hai cái luôn cùng cỡ (layout()), nên chỉ khác chỗ vẽ vào.
+      const cv = cpuCv || screen;
       octx.putImageData(img, 0, 0);
       ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, screen.width, screen.height);
+      ctx.fillRect(0, 0, cv.width, cv.height);
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(off, dx, dy, screen.width, screen.height);
+      ctx.drawImage(off, dx, dy, cv.width, cv.height);
     }
     pms = pms * 0.9 + (performance.now() - t1) * 0.1;
     const slotName = sel === 0 ? world.wp.name + ' (đánh thường)'
@@ -1779,9 +1845,15 @@ if (typeof document !== 'undefined') {
     // Chỉ vẽ lại nút khi con số đổi: nó là hai lần ghi vào DOM, và mỗi khung một lần trong 60
     // khung/giây là đúng thứ làm trình duyệt tính lại bố cục ngay giữa lúc đánh nhau.
     if (world.newGear !== badgeWas) { badgeWas = world.newGear; paintStatBadge(); }
+    // Đường đang thật sự dùng, không phải đường chốt lúc nạp: nếu ngữ cảnh WebGL chết thì dòng
+    // này là chỗ đầu tiên nói ra. Kèm chốt kiểm `buf`, nên một ảnh chụp màn hình đen đủ để biết
+    // hỏng ở `buf` hay ở đoạn đưa lên màn -- hai chỗ đó cần hai cách sửa khác nhau hẳn.
+    const pathLbl = useGpu ? ' (gpu)' : !gpu ? ' (cpu)'
+                  : gpu.state() === 'dead' ? ' (cpu · GPU ĐÃ CHẾT)' : ' (cpu · GPU MẤT NGỮ CẢNH)';
     hud.textContent =
       'FPS ' + fps.toFixed(0) + '   vẽ ' + ms.toFixed(1) + 'ms   hiện ' + pms.toFixed(1) + 'ms'
-      + (gpu ? ' (gpu)' : ' (cpu)') + '   fx ' + world.fxs.length +
+      + pathLbl + '   fx ' + world.fxs.length
+      + (bufOK() ? '' : '   << BUF HỎNG (NaN/Inf) >>') +
       '\nquái ' + world.foes.length + '   hạ ' + world.kills + '   dmg ' + world.dmg +
       '\ncảnh báo ' + world.tels.length +
       (world.danger > 0 ? '   << ĐANG ĐỨNG TRONG VÙNG (' + world.danger + ') >>' : '') +

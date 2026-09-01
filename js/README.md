@@ -34,7 +34,7 @@ Banner trong mỗi file vẫn giữ số mục cũ, nên có hai mục cùng đ�
 | `gate.js` | cánh cổng boss + phòng boss: `roomApply` (thu `BOUND`/`CAMB`), `openBossGate`, `stepGate`, `enterRoom`/`exitRoom`, `drawGate`/`drawRoom` |
 | `lab.js` | `globalThis.LAB`: cửa cho harness node, không cần DOM |
 | `icons.js` | icon 32×32 vẽ bằng canvas cho hotbar và bảng chọn, cộng `drawBagIcon` cho nút `#btnBag` |
-| `gpu.js` | `gpuMake`: tonemap + dither + phóng to bằng một fragment shader WebGL2, thay `resolve()` trên browser (`resolve()` vẫn là bản tham chiếu của harness) |
+| `gpu.js` | `gpuMake`: tonemap + dither + phóng to bằng một fragment shader WebGL2, thay `resolve()` trên browser (`resolve()` vẫn là bản tham chiếu của harness); tự phát hiện mất ngữ cảnh và dựng lại |
 | `shell.js` | shell browser: layout, menu/hướng dẫn, input, phím cảm ứng, kéo thả trang bị, vòng lặp khung |
 
 ## Lưới điểm ảnh — vì sao game từng trông mờ
@@ -47,7 +47,8 @@ sắc hay mờ:
 > điểm ảnh đó.
 
 Khớp được thì bước cuối (canvas → màn hình) là copy 1:1, và lần phóng cuối trong cả đường đi là
-`ctx.drawImage` với `imageSmoothingEnabled = false`. Gameplay vẫn dùng lưới logic `W×H`, nhưng
+`ctx.drawImage` với `imageSmoothingEnabled = false` — hoặc `texelFetch` trong shader nếu đang chạy
+đường GPU (xem mục dưới); cả hai đều là nearest, nên bất biến trên không phụ thuộc vào đường nào. Gameplay vẫn dùng lưới logic `W×H`, nhưng
 browser vẽ VFX và art nhập ở `RW×RH = 2W×2H`: một điểm gameplay có bốn subpixel render. Nhờ vậy
 frame vũ khí không còn bị thu 300 px xuống 72–100 px trước khi phóng lên, còn sàn/sprite vẽ tay
 vẫn giữ đúng cỡ pixel authored. Harness node không có `document` nên `RENDER_SCALE = 1` và ảnh
@@ -96,12 +97,66 @@ Kiểm nhanh trong console — cả bốn dòng phải đúng:
 ```
 
 Dòng cuối là phép đo trực tiếp: engine lượng hoá về 16 mức mỗi kênh nên mọi giá trị nguồn là
-bội của 17, và một điểm nào **không** phải bội của 17 là bằng chứng có nội suy.
+bội của 17, và một điểm nào **không** phải bội của 17 là bằng chứng có nội suy. Chỉ dòng ấy đòi
+đường CPU: một canvas đã cấp context WebGL2 thì `getContext('2d')` trả `null`, nên muốn đo thì đặt
+`localStorage['sl.gpu'] = '0'` rồi nạp lại; ba dòng trên chạy được ở cả hai đường.
 
 Art boss gốc cao ~1536 px không còn bị hạ thẳng xuống 40 mẫu ảnh. Generator dùng
 `BOSS_ART_SCALE = 2`, sinh thân cao 80 mẫu rồi `blitFine` đưa chúng thẳng vào lưới render 2×;
 `boss-img.js` chia kích cỡ về 40 đơn vị gameplay khi dựng `bw/bh`. Vì vậy ngoại hình có gấp đôi
 chi tiết nhưng hitbox, thanh máu và kích cỡ con boss trong thế giới không đổi.
+
+## Hai đường hiện khung — và cú rơi về CPU giữa phiên
+
+Mỗi khung kết thúc ở một trong hai đường, và cả hai cho ra **cùng** những byte:
+
+| | tonemap + dither + lượng hoá | phóng lên cỡ màn |
+|---|---|---|
+| GPU (`gpu.js`) | fragment shader WebGL2 | `texelFetch` trong chính shader ấy |
+| CPU (`core.js`) | `resolve()` → `putImageData` | `ctx.drawImage`, `imageSmoothingEnabled = false` |
+
+`resolve()` vẫn là **định nghĩa** của một khung: harness ở `tools/` chạy trong node, không có GPU,
+và so ảnh vàng bằng nó. `gpu.readExact()` tồn tại để chứng minh hai cột trên bằng nhau bằng số —
+nó chạy đúng shader ấy vào một FBO cỡ `RW×RH` rồi đọc ngược ra để so từng byte với `resolve()`.
+
+Chọn đường nào phải quyết **trước lời gọi `getContext` đầu tiên**: một canvas chỉ cấp được một
+loại context, xin `2d` rồi thì `webgl2` trả `null` vĩnh viễn. Nên `shell.js` gọi `gpuMake` trước,
+và chỉ dựng đường CPU khi cần (`cpuMake()`). `localStorage['sl.gpu'] = '0'` + nạp lại thì bỏ hẳn
+đường GPU.
+
+Cái mà đường CPU không có là **mất ngữ cảnh**: driver thu hồi context WebGL bất cứ lúc nào nó muốn
+— GPU process sập, driver reset sau một cú treo, máy hết bộ nhớ hình, tab bị đẩy ra nền quá lâu.
+Chuyện này không hiếm trên điện thoại sau vài phút chơi liên tục, và mặc định thì **không có gì
+báo**: mọi lời gọi `gl` thành lệnh rỗng, kể cả `clear`, nên canvas đứng lại ở màu đen trong khi
+vòng khung vẫn 60 FPS, HUD (DOM) vẫn cập nhật, và `hiện` vẫn ra một con số nhỏ đẹp đẽ vì nó đo
+được đúng mấy lệnh rỗng ấy. Đó là màn hình đen duy nhất mà `renderWorld` không thể gây ra: hai lớp
+cuối của mỗi khung (`drawHeroBars`, `drawMinimap`) ghi đục vào `buf`, nên một khung có `buf` đầy đủ
+mà ra đen là bằng chứng lỗi nằm ở bước hiện, không ở bước vẽ.
+
+Bốn thứ dựng nên cách xử lý:
+
+1. **`preventDefault()` trong `webglcontextlost`.** Không gọi thì trình duyệt không bao giờ gửi
+   `webglcontextrestored` và context chết vĩnh viễn — chỉ nạp lại trang mới chơi tiếp được.
+2. **`build()` gọi lại được.** Program, texture, VAO, FBO thuộc về *một* context và chết sạch cùng
+   lúc, nên chúng nằm trong một hàm chứ không rải ra thân `gpuMake`: dựng lại một nửa là một
+   context còn sống mà vẽ ra màn hình đen. Mất lại lần thứ tư thì `gpuMake` chốt `dead` — dựng lại
+   mãi chỉ để đen tiếp là một vòng lặp người chơi không thoát ra được.
+3. **`live()` hỏi cả `gl.isContextLost()`,** không chỉ tin cái cờ: sự kiện tới sau một nhịp, nên
+   chỉ trông vào cờ là còn ít nhất một khung ném vào chỗ không có gì.
+4. **Canvas dự phòng `#screen2`.** `screen` đã là canvas WebGL2 nên không xin `2d` trên nó được;
+   `cpuMake()` chèn một canvas thứ hai phủ đúng lên nó (`position: absolute; inset: 0`) và vòng
+   khung bật/tắt bằng `cpuCv.hidden = useGpu` **mỗi khung** — để nó đứng đó sau khi context dựng
+   lại là một khung CPU đông cứng phủ lên khung GPU đang chạy bên dưới. `#screen2[hidden]` phải
+   khai riêng trong CSS: rule `canvas { display: block }` của tác giả thắng rule `[hidden]` của UA.
+   Đổi cỡ trong `layout()` reset cả state 2D, nên `imageSmoothingEnabled` phải đặt lại ngay sau đó.
+
+Người chơi không phải đoán: `hiện` trên HUD ghi rõ đường đang chạy — `(gpu)`, `(cpu)`,
+`(cpu · GPU MẤT NGỮ CẢNH)`, `(cpu · GPU ĐÃ CHẾT)` — và lần rơi đường đầu tiên hiện một dòng chữ
+giữa màn. Cạnh nó là `<< BUF HỎNG (NaN/Inf) >>`, đọc một điểm ảnh duy nhất: `hudFrame` luôn ghi
+`FR_GLINT` đục vào điểm màn hình (3,3), nên giá trị ở đó ngoài khoảng `(0.01, 64)` là `buf` đã bị
+nhiễm. Vì `setPixS` trộn `buf*inv + col*k` và `NaN*0 = NaN`, một điểm bị nhiễm **không** sơn lại
+được kể cả bằng một nét đục, và cả hai đường tonemap biến NaN thành 0 — tức đen vĩnh viễn. Hai dấu
+hiệu ấy tách hẳn hai nguyên nhân của một khung đen, đọc được từ **một** ảnh chụp.
 
 ## Bề rộng khung chạy theo máy — `H = 180` là bất biến, `W` thì không
 

@@ -48,6 +48,14 @@
   }
   canvas { image-rendering: pixelated; border: 1px solid #222233; display: block }
   #screen { width: 100%; height: 100%; border: 0 }
+  /* Canvas dự phòng, chỉ được dựng khi ngữ cảnh WebGL chết giữa phiên (xem `cpuMake` trong
+     js/shell.js). Nó **phủ lên** #screen chứ không thay #screen: mọi listener chuột/ngón đang
+     cắm trên #screen phải còn nguyên, nên cái mới không được nhận cú chạm nào. Đứng ngay sau
+     #screen trong DOM nên nó vẽ trên #screen mà vẫn dưới #hud / #title / #btnBag. */
+  #screen2 {
+    position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none;
+  }
+  #screen2[hidden] { display: none }
   #hud {
     /* Dời xuống dưới hai thanh máu/mana: chúng được vẽ *trong* pixel buffer ở góc trên trái,
        chiếm 24 dòng đầu của 180 (xem HUD_BOX trong js/render.js -- nó là *cả* hình chữ nhật
