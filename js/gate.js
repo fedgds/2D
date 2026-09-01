@@ -171,8 +171,12 @@ function enterRoom(w) {
   const h = w.hero;
   sweepOrbs(w);
   w.ret = { x: h.x, y: h.y };
-  const cx = clamp(h.x, BOUND0.x0 + ROOM_W * 0.5, BOUND0.x1 - ROOM_W * 0.5);
-  const cy = clamp(h.y, BOUND0.y0 + ROOM_H * 0.5, BOUND0.y1 - ROOM_H * 0.5);
+  // Làm tròn tâm phòng: `h.x`/`h.y` là số thực, và cả `BOUND`, `CAMB`, tường phòng lẫn hai đầu kẹp
+  // camera đều mọc ra từ đúng hai con số này (ROOM_W/ROOM_H chia đôi vẫn nguyên). Phòng nằm trên
+  // lưới điểm ảnh thì mép tường và cạnh kẹp camera cũng nằm trên lưới -- xem chú thích ở `setCam`
+  // trong js/scene.js về cái giá của một cạnh lẻ.
+  const cx = Math.round(clamp(h.x, BOUND0.x0 + ROOM_W * 0.5, BOUND0.x1 - ROOM_W * 0.5));
+  const cy = Math.round(clamp(h.y, BOUND0.y0 + ROOM_H * 0.5, BOUND0.y1 - ROOM_H * 0.5));
   w.room = { cx: cx, cy: cy, x0: cx - ROOM_W * 0.5, x1: cx + ROOM_W * 0.5,
              y0: cy - ROOM_H * 0.5, y1: cy + ROOM_H * 0.5 };
   roomApply(w);

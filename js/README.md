@@ -460,6 +460,10 @@ node tools/check-boss.js
 node tools/check-gear.js
 ```
 
+```bash
+node tools/hunt-nan.js
+```
+
 Tool đọc chính `index.html`, nối các `<script src>` theo đúng thứ tự trong trang rồi chạy
 bằng `node:vm`, nên nó bắt luôn lỗi **thứ tự file** chứ không chỉ lỗi map: một file đặt sai
 chỗ là `ReferenceError` ngay lúc nạp. Phần shell browser nằm sau
@@ -544,6 +548,28 @@ bằng `GEAR_RARITY[].col`, nhịp nhô lên hạ xuống phải đổi khi vẽ
 ánh sáng phải **thật sự sáng**: hai world cùng seed bước cùng số khung, một cái xoá `orbs` đi, rồi
 so số điểm sáng của hai khung — cùng seed nên phần trang trí y hệt và chênh lệch còn lại đúng là
 sáu quả sáng. Một mục "vẽ được, không ném lỗi" thì bỏ qua đúng cái lỗi mà mắt cũng bỏ qua.
+
+## Một điểm ảnh NaN không ném lỗi ở đâu cả
+
+`tools/hunt-nan.js` không kiểm một con số nào. Nó chạy sim thật rồi hỏi đúng một câu sau **mỗi**
+khung: mọi phần tử của `buf` còn hữu hạn không.
+
+Cần một harness riêng cho câu ấy vì một điểm ảnh NaN im lặng hoàn toàn. `setPixS` trộn
+`buf * inv + col * k`, và `NaN * 0 = NaN`, nên một điểm đã nhiễm **không sơn lại được** kể cả bằng
+một nét đục hoàn toàn; `resolve()` và shader đều biến NaN thành 0. Kết quả là một khung đen — hoặc
+một vệt đen — mà mọi mục kiểm về hình học, damage và hoạt ảnh vẫn xanh. `Infinity` cũng vào cùng cửa
+đó: tonemap nhân `Inf * (1/Inf)` ra NaN, nên harness tính cả hai là hỏng.
+
+Chỗ nào hỏng, nó *bisect* ngay tại khung đó: xoá từng danh sách của world (`tels`, `fxs`, `foes`,
+`orbs`, `nums`, `puffs`, `amb`) rồi vẽ lại, mỗi lần **một** lớp, không cộng dồn — nên nó nói ra lớp
+nào là nguồn (và với `FLOOR` thì nói luôn là sàn/camera) thay vì để lại một câu "có NaN ở đâu đó".
+Bốn mục: `setCam` với `CAMB` cố tình lẻ/âm/ngoài map/NaN, 40 phòng boss với người chơi rải khắp sân
+rồi tì vào cả bốn tường, ba mươi giây mỗi bộ boss×vũ khí (vung vũ khí, niệm chiêu, lướt liên tục),
+và từng chiêu boss / từng chiêu hero / từng vũ khí một.
+
+Nó chạy lâu hơn bốn tool kia gộp lại (vẽ vài chục nghìn khung rồi quét cả `buf` mỗi khung), nên nó
+không nằm trong vòng sửa-thử thường ngày — nhưng nó là tool duy nhất bắt được lớp lỗi *đen màn hình*,
+và lớp ấy đã có một ca thật: xem *Cạnh phòng lẻ = cả khung đen*.
 
 ## Khoảng sát thương, và con số chí mạng
 
@@ -1074,8 +1100,9 @@ bake lại 3,6 triệu ô mỗi lần ra vào cổng. Thay vào đó thu hai hì
 * **`BOUND`** (`world.js`) — hơn ba mươi chỗ kẹp vị trí đọc nó: bước đi, dash, cú lao của vũ khí,
   chùm tia, mọi skill, cú hút của boss, cả chỗ món rơi xuống. Thu nó lại là *một* phép gán, và tất
   cả những chỗ đó thu theo, không phải sửa chỗ nào;
-* **`CAMB`** (`core.js`) — mọi phép kẹp camera đi qua `camClampX`/`camClampY`, nên thu nó lại là đủ
-  để khung nhìn không bao giờ trôi ra ngoài phòng.
+* **`CAMB`** (`core.js`) — mọi phép kẹp camera đi qua `camClampX`/`camClampY` (và `camWholeX`/
+  `camWholeY` cho camera *để vẽ*), nên thu nó lại là đủ để khung nhìn không bao giờ trôi ra ngoài
+  phòng. Đổi lại: bốn cạnh ấy phải nguyên — xem *Cạnh phòng lẻ = cả khung đen*.
 
 Thu khung đúng nghĩa hơn *và* rẻ hơn: sàn trong phòng là đúng miếng sàn người chơi vừa đứng, cùng
 props, cùng thời tiết, cùng ánh sáng. Đúng cái map ấy, nhỏ lại.
@@ -1106,6 +1133,44 @@ nhất còn dư. Phòng hẹp hơn khung nhìn thì hai đầu kẹp camera **đ
 
 `ROOM_PAD` là lý do phòng *có tường để nhìn*: kẹp camera đúng vào mép phòng thì mép phòng luôn nằm
 ngoài khung, người chơi chỉ thấy mình dừng lại mà không thấy vì sao.
+
+### Cạnh phòng lẻ = **cả khung đen**
+
+Đây là một lỗi thật đã sống trong bản chơi được, và nó đáng một mục riêng vì nó cho thấy `CAMB` là
+một biến toàn cục *có răng*. Chuỗi ấy như sau:
+
+1. `enterRoom` dựng phòng quanh `h.x`/`h.y` — hai **số thực**, nên bốn cạnh phòng lẻ;
+2. `roomApply` sao bốn cạnh ấy vào `CAMB` mỗi tick;
+3. camera tì vào mép phòng (đi tới tường, hoặc một cú lướt đẩy nó tới đó) thì `camClampY` trả về
+   đúng cái cạnh lẻ ấy — bản cũ làm tròn **trước** rồi mới kẹp, nên phần lẻ lọt qua;
+4. `syncFloor` đọc `TID[(CAMY + y) * WW + CAMX + x]`. Chỉ số lẻ trên một typed array trả
+   `undefined`, `TONE_F[undefined * 3]` là `undefined`, và ghi `undefined` vào `Float32Array` ra
+   **NaN**. Cả `FLOOR` thành NaN trong một lần gọi;
+5. mỗi khung mở đầu bằng `buf.set(FLOOR)`, và `setPixS` trộn `buf * inv + col * k` với `NaN * 0 =
+   NaN` — nên **không nét vẽ nào sơn lại được**, kể cả thanh máu đục hoàn toàn. `resolve()` và shader
+   đều biến NaN thành 0: đen tuyệt đối, không một dòng lỗi nào ở đâu cả.
+
+Triệu chứng đúng như thế: chỉ trong phòng boss (ngoài phòng `CAMB` là `{0, 0, WW-W, WH-H}`, nguyên
+cả bốn), đen từ *một* khung sang khung sau, và tự khỏi khi người chơi rời tường — camera rời cạnh
+kẹp là chỉ số nguyên trở lại. Đứng đánh ở tường thì đen suốt.
+
+Hai chỗ sửa, và cái thứ hai mới là bất biến:
+
+* `enterRoom` làm tròn tâm phòng, nên cạnh phòng, `BOUND` và `CAMB` đều nguyên (`ROOM_W`/`ROOM_H`
+  chia đôi vẫn nguyên). Phòng nằm trên lưới điểm ảnh cũng là chuyện đúng cho `drawRoom`;
+* `camWholeX`/`camWholeY` (`core.js`) — **kẹp theo `CAMB` trước, làm tròn sau, rồi kẹp lần nữa vào
+  `[0, WW-W]`/`[0, WH-H]`**. Lần kẹp thứ hai để phép làm tròn không đẩy camera ra ngoài mảng sàn, và
+  hai phép so viết dạng `!(v >= 0)` nên một `w.cam` đã nhiễm NaN cũng chỉ làm camera về góc map chứ
+  không lan xuống sàn. Nửa điểm ảnh lệch ra ngoài `CAMB` sau khi làm tròn thì không ai thấy; một
+  khung đen thì ai cũng thấy.
+
+`setCam` (`scene.js`, camera để vẽ) và `camInt` (`world.js`, chỗ đổi chuột thành toạ độ thế giới)
+gọi **cùng** hai hàm ấy. Hai bên lệch nhau nửa điểm ảnh là ngắm lệch nửa điểm ảnh so với hình đang
+thấy, nên quy tắc phải nằm ở một chỗ duy nhất.
+
+`tools/hunt-nan.js` giữ cả hai đầu: một mục đánh thẳng vào `setCam` với `CAMB` cố tình lẻ / âm /
+ngoài map / NaN (729 lượt, đòi `CAMX`/`CAMY` nguyên, trong map, và `camInt` khớp), một mục chơi ba
+mươi giây mỗi bộ boss×vũ khí và quét *từng* khung — xem *Một điểm ảnh NaN không ném lỗi ở đâu cả*.
 
 ### Đứng vào rồi đứng yên, không phải một nút
 

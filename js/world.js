@@ -73,7 +73,7 @@ const midY = f => f.y - f.h * 0.5;
 // renderWorld does -- otherwise the mouse would aim half a pixel off the picture.
 function camTarget(w) { return { x: w.hero.x - W * 0.5, y: (w.hero.y - 6) - H * 0.5 }; }
 function camInt(w) {
-  return { x: camClampX(Math.round(w.cam.x)), y: camClampY(Math.round(w.cam.y)) };
+  return { x: camWholeX(w.cam.x), y: camWholeY(w.cam.y) };
 }
 function snapCam(w) {
   const t = camTarget(w);

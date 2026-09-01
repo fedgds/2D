@@ -140,9 +140,15 @@ function syncFloor(force) {
     }
   }
 }
+// `CAMX`/`CAMY` phải là **số nguyên nằm trong map**, không phải "gần đúng là thế". `syncFloor` đọc
+// `TID[(CAMY + y) * WW + CAMX + x]`; một chỉ số lẻ hoặc ngoài mảng trả `undefined`, `TONE_F` của nó
+// là `undefined`, và ghi cái đó vào một Float32Array ra NaN -- tức **cả** khung đen, vì mỗi khung mở
+// đầu bằng `buf.set(FLOOR)`, và `NaN * 0 = NaN` nên kể cả nét đục hoàn toàn cũng không sơn lại được.
+// Nó từng là cái màn hình đen trong phòng boss: `CAMB` mang phần lẻ của hình chữ nhật phòng, camera
+// tì vào mép phòng là nhận đúng phần lẻ ấy. Quy tắc nằm ở `camWholeX/Y` (js/core.js) để `camInt`
+// dùng chung; ở đây chỉ còn việc gọi nó trước khi sàn được đồng bộ.
 function setCam(x, y) {
-  CAMX = camClampX(Math.round(x));
-  CAMY = camClampY(Math.round(y));
+  CAMX = camWholeX(x); CAMY = camWholeY(y);
   syncFloor();
 }
 setCam(0, 0);

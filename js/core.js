@@ -50,6 +50,24 @@ const CAMB = { x0: 0, y0: 0, x1: WW - W, y1: WH - H };
 function camClampX(v) { return v < CAMB.x0 ? CAMB.x0 : (v > CAMB.x1 ? CAMB.x1 : v); }
 function camClampY(v) { return v < CAMB.y0 ? CAMB.y0 : (v > CAMB.y1 ? CAMB.y1 : v); }
 
+// Từ một camera số thực ra camera *để vẽ*: kẹp theo `CAMB`, làm tròn, rồi kẹp lần nữa vào chính
+// map. Cả `setCam` (js/scene.js) lẫn `camInt` (js/world.js, chỗ chuột→thế giới) đều gọi đúng hai
+// hàm này, vì hai bên lệch nhau nửa điểm ảnh là ngắm lệch nửa điểm ảnh so với hình đang thấy.
+//
+// Thứ tự "kẹp trước, tròn sau" là bắt buộc, không phải khẩu vị: `CAMB` bị `roomApply` viết lại mỗi
+// tick từ hình chữ nhật phòng boss, nên tròn trước rồi kẹp sẽ trả về đúng cạnh phòng -- và một cạnh
+// lẻ chảy xuống `syncFloor` thành `TID[chỉ số lẻ]` = `undefined`, tức cả `FLOOR` thành NaN và cả
+// khung đen (xem chú thích dài ở `setCam`). Lần kẹp thứ hai vào [0, WW-W] là để phép làm tròn không
+// đẩy camera ra ngoài mảng sàn, và viết dạng `!(v >= 0)` để NaN cũng rơi về 0 chứ không lan tiếp.
+function camWholeX(x) {
+  const v = Math.round(camClampX(x));
+  return !(v >= 0) ? 0 : (v > WW - W ? WW - W : v);
+}
+function camWholeY(y) {
+  const v = Math.round(camClampY(y));
+  return !(v >= 0) ? 0 : (v > WH - H ? WH - H : v);
+}
+
 const BAYER = new Float32Array(16);
 {
   const b = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
