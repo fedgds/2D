@@ -581,6 +581,30 @@ const noLunge = Object.assign({}, khien); delete noLunge.lunge;
   eq('đứng tại chỗ thì với không tới', without, 0);
 }
 {
+  // Lướt *qua* con quái. Đây là chỗ con khiên từng trượt đòn: cả cú xông chỉ đo cái nón đúng hai
+  // lần và cả hai đều sau khi chân đã dừng, nên con vừa bị xuyên qua lúc đó đã nằm sau lưng và
+  // phép thử góc chối nó -- người chơi thấy cạnh khiên đi hết người con quái mà máu nó không tụt.
+  // `swingHit` gom mẫu mỗi khung suốt quãng lao, nên tập ăn đòn là cái nón *trượt dọc* đường xông.
+  function ram(dx, dy) {
+    const w = bench('khien');
+    const f = target(w, 'slime', dx, dy);
+    f.hp = f.maxhp = 1e6;
+    LAB.swing(w, w.hero.x + 40, w.hero.y);
+    for (let i = 0; i < 60; i++) LAB.step(w, 1 / 60, null);
+    return { dmg: Math.round(1e6 - f.hp), behind: w.hero.x - f.x };
+  }
+  const thru = ram(20, 0);
+  console.log('     xông qua bia ở 20px: ' + thru.dmg + ' dmg · lúc đánh bia ở sau lưng '
+    + thru.behind.toFixed(0) + 'px');
+  // Hai điều khoản này *cùng nhau* mới là cái được kiểm: bia nằm sau lưng xa hơn nửa tầm nón, tức
+  // là hình học lúc đánh không cách nào với tới nó, mà nó vẫn ăn đủ hai nhịp.
+  eq('bị xông qua thì lúc đánh đã ở sau lưng', thru.behind > khien.range * 0.5, true);
+  near('mà vẫn ăn đủ cả hai nhịp', thru.dmg, khien.dmg + khien.dmg * 1.5, 1);
+  // Không phải "cứ ở gần là trúng": con đứng *sau lưng* ngay từ lúc bấm chưa bao giờ nằm trong
+  // hình vẽ, và cái nón trượt cũng không đi qua nó. Gom bằng một vòng tròn quanh chân thì đỏ ở đây.
+  eq('còn con đứng sẵn sau lưng thì không', ram(-30, 0).dmg, 0);
+}
+{
   // Giương khiên: cùng đúng trường `guard` mà đao dùng, nên chỉ cần chứng minh cửa sổ mở đúng
   // bằng bề dài nhát vung và đỡ tốt hơn đao. God mode phải tắt và bất tử phải bằng 0, bằng
   // không đòn bị né và phép nhân không bao giờ chạy tới.

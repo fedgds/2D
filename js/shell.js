@@ -166,10 +166,61 @@ if (typeof document !== 'undefined') {
   function saveTcfg() {
     try { localStorage.setItem('sl.touch', JSON.stringify(tcfg)); } catch (e) { /* đành chịu */ }
   }
+  // ---- Hệ toạ độ khi trang bị quay -----------------------------------------
+  // Chế độ điện thoại *luôn* chơi ngang. `setMob()` xin khoá hướng thật, nhưng khoá đó chỉ chạy khi
+  // đang fullscreen và iPhone thì không có Fullscreen API để vào -- nên có đường thứ hai không cần
+  // trình duyệt đồng ý: cầm dọc thì `body.rot` quay cả trang 90 độ (xem CSS của nó trong
+  // index.html) và game vẫn là một khung ngang, chỉ nằm ngang trên một cái máy đang dựng đứng.
+  //
+  // Giá phải trả là ở đây: `ev.clientX/Y` và mọi `getBoundingClientRect()` nói bằng hệ *màn hình*,
+  // còn tất cả phép tính trong file này -- chỗ đặt joystick, vector đẩy, hướng ngắm, ô nhận món kéo
+  // -- sống trong hệ đã quay. Hai hàm dưới đây là đúng một chỗ đổi qua lại, nên không có chỗ thứ
+  // hai để hai hệ trôi ra khỏi nhau.
+  //
+  // Phép quay đưa `(lx, ly)` tới `(B.right - ly, B.top + lx)`, nên đường về là hoán vị ngược lại.
+  // Đo từ hộp thật của body chứ không giả định nó nằm ở (0, 0): thanh địa chỉ trượt đi hay bàn phím
+  // ảo mở ra đều xê dịch cả trang, và một giả định như thế chỉ sai trên đúng cái máy không thử được.
+  let rotOn = false;
+  function ptLocal(cx, cy) {
+    if (!rotOn) return { x: cx, y: cy };
+    const b = document.body.getBoundingClientRect();
+    return { x: cy - b.top, y: b.right - cx };
+  }
+  // Hộp của một phần tử, đổi sang hệ đã quay. `getBoundingClientRect` trả về hộp *bao* -- với đúng
+  // 90 độ thì hộp bao ấy khít, chỉ hoán hai chiều, nên phép đổi không mất gì. Trả về một object
+  // thường thay vì DOMRect: chỗ dùng chỉ đọc sáu con số này.
+  function rectLocal(r) {
+    if (!rotOn) return r;
+    const b = document.body.getBoundingClientRect();
+    const left = r.top - b.top, top = b.right - r.right;
+    return { left, top, width: r.height, height: r.width,
+             right: left + r.height, bottom: top + r.width };
+  }
+  // Ngón tay ở trong hộp của một phần tử. Hai cú chạm vào joystick đi qua đây, và cả hai đều vô
+  // nghĩa nếu hai lần đổi hệ không đi cùng nhau.
+  function elPt(el, ev) {
+    const r = rectLocal(el.getBoundingClientRect()), p = ptLocal(ev.clientX, ev.clientY);
+    return { x: p.x - r.left, y: p.y - r.top };
+  }
+  // Cỡ viewport trong hệ đã quay. `tcfg` lưu chỗ đặt phím theo *tỉ lệ* của khung ngang, nên hai con
+  // số này phải là hai chiều của khung ngang -- không phải của cái máy đang cầm dọc, bằng không cả
+  // bộ phím người chơi tự xếp sẽ nhảy chỗ mỗi lần quay máy.
+  function vwLocal() { const d = document.documentElement; return rotOn ? d.clientHeight : d.clientWidth; }
+  function vhLocal() { const d = document.documentElement; return rotOn ? d.clientWidth : d.clientHeight; }
   function layout() {
     const dpr = window.devicePixelRatio || 1;
-    const vw = document.documentElement.clientWidth;
-    const vh = document.documentElement.clientHeight;
+    // Cầm dọc trong chế độ điện thoại thì quay cả trang, và hộp *cục bộ* của body là hộp ngang mà
+    // mọi phép tính dưới đây phải đo. Đổi hai con số ở đúng một chỗ này rẻ hơn sửa hai chục chỗ đọc
+    // chúng. `--rw/--rh` là chính hai con số ấy, để CSS dựng hộp đã quay bằng đúng thứ layout() vừa
+    // đo -- không phải bằng 100vh/100vw, hai đơn vị nói về màn hình *chưa* trừ thanh địa chỉ.
+    const cw = document.documentElement.clientWidth;
+    const ch = document.documentElement.clientHeight;
+    rotOn = mobOn && ch > cw;
+    rootStyle.setProperty('--rw', ch + 'px');
+    rootStyle.setProperty('--rh', cw + 'px');
+    document.body.classList.toggle('rot', rotOn);
+    const vw = rotOn ? ch : cw;
+    const vh = rotOn ? cw : ch;
     const rowh = Math.round(clamp((vh - 90) * 0.085, 36, 60));
     let w, h;
     if (mobOn) {
@@ -254,7 +305,13 @@ if (typeof document !== 'undefined') {
     const r = stage.getBoundingClientRect();
     const dx = (Math.round(r.left * dpr) - r.left * dpr) / dpr;
     const dy = (Math.round(r.top * dpr) - r.top * dpr) / dpr;
-    if (dx || dy) stage.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    if (!dx && !dy) return;
+    // Trang đang quay thì `translate` của #stage nằm trong hệ *đã quay*, còn dx/dy vừa đo là hai
+    // con số của màn hình: đẩy sang phải trên màn hình là đẩy *lên* trong hệ của stage. Đổi trục
+    // ngay tại đây, vì đây là chỗ duy nhất trong file ghi transform bằng số đo lấy từ một client
+    // rect -- mọi transform khác là của CSS và đã nằm sẵn trong hệ đúng.
+    stage.style.transform = rotOn ? 'translate(' + dy + 'px,' + (-dx) + 'px)'
+                                  : 'translate(' + dx + 'px,' + dy + 'px)';
   }
   layout();
   window.addEventListener('resize', layout);
@@ -704,7 +761,8 @@ if (typeof document !== 'undefined') {
     if (gdrag.on || ev.button > 0 || !it) return;
     gdrag.on = true; gdrag.live = false; gdrag.id = ev.pointerId;
     gdrag.from = from; gdrag.i = i; gdrag.it = it; gdrag.el = ev.currentTarget;
-    gdrag.x0 = ev.clientX; gdrag.y0 = ev.clientY; gdrag.over = false;
+    const p = ptLocal(ev.clientX, ev.clientY);
+    gdrag.x0 = p.x; gdrag.y0 = p.y; gdrag.over = false;
   }
   // Ngón đã đi đủ xa: dựng cái bóng bay theo tay và sáng chỗ nhận lên.
   function gdragLift() {
@@ -756,16 +814,19 @@ if (typeof document !== 'undefined') {
   }
   function gdragMove(ev) {
     if (!gdrag.on || ev.pointerId !== gdrag.id) return;
+    const p = ptLocal(ev.clientX, ev.clientY);
     if (!gdrag.live) {
-      if (Math.abs(ev.clientX - gdrag.x0) < GDRAG_SLOP &&
-          Math.abs(ev.clientY - gdrag.y0) < GDRAG_SLOP) return;
+      if (Math.abs(p.x - gdrag.x0) < GDRAG_SLOP &&
+          Math.abs(p.y - gdrag.y0) < GDRAG_SLOP) return;
       gdragLift();
     }
     // Chỉ chặn mặc định *sau* khi đã thành cú kéo: trên điện thoại `.panel` cuộn dọc được, và một
     // cú vuốt chưa qua ngưỡng vẫn phải cuộn được cái bảng như thường.
     ev.preventDefault();
-    gdrag.ghost.style.left = ev.clientX + 'px';
-    gdrag.ghost.style.top = ev.clientY + 'px';
+    // Cái bóng là một lớp `position: fixed` con của body, nên lúc trang quay thì left/top của nó
+    // nằm trong hệ đã quay -- đúng cái hệ `ptLocal` vừa trả về.
+    gdrag.ghost.style.left = p.x + 'px';
+    gdrag.ghost.style.top = p.y + 'px';
     const over = gdragHit(ev);
     if (over !== gdrag.over) {
       gdrag.over = over;
@@ -1086,8 +1147,8 @@ if (typeof document !== 'undefined') {
   // it the other way round (storing a world point) would leave the cursor aiming at
   // wherever the ground used to be as soon as the camera moved.
   function aimPoint(ev) {
-    const r = screen.getBoundingClientRect();
-    return { x: (ev.clientX - r.left) / r.width * W, y: (ev.clientY - r.top) / r.height * H };
+    const r = rectLocal(screen.getBoundingClientRect()), p = ptLocal(ev.clientX, ev.clientY);
+    return { x: (p.x - r.left) / r.width * W, y: (p.y - r.top) / r.height * H };
   }
   const aim = { sx: W * 0.66, sy: H * 0.5 };
   function aimWorld() {
@@ -1199,14 +1260,13 @@ if (typeof document !== 'undefined') {
   // vùng nhận là nửa dưới bên trái, và một cái bệ vẽ ra ngoài nó là một cần điều khiển bấm không
   // ăn -- tệ hơn cả chỗ mặc định, vì nó *trông* như bấm được.
   function stickHome() {
-    const r = tstick.getBoundingClientRect(), D = tbase.offsetWidth;
+    const r = rectLocal(tstick.getBoundingClientRect()), D = tbase.offsetWidth;
     if (!r.width || !D) return;                 // lớp đang ẩn -- đo lại lúc vào trận
     const pad = D * 0.28, m = D * 0.5;
     let hx = m + pad, hy = r.height - m - pad;
     if (tcfg.jx !== null) {
-      const doc = document.documentElement;
-      hx = tcfg.jx * doc.clientWidth - r.left;
-      hy = tcfg.jy * doc.clientHeight - r.top;
+      hx = tcfg.jx * vwLocal() - r.left;
+      hy = tcfg.jy * vhLocal() - r.top;
     }
     // clamp() trả về `a` khi a > b, nên hai cái max() ở đây không phải cho đẹp: trên một vùng nhận
     // hẹp hơn cả cái bệ thì lo > hi, và không có max() thì bệ nhảy về đúng mép trái.
@@ -1225,8 +1285,8 @@ if (typeof document !== 'undefined') {
   // trông như bấm được, và đó là kiểu hỏng tệ nhất -- nó chỉ lộ ra lúc cần bấm thật.
   function actsPlace() {
     if (touchLayer.hidden) return;              // lớp đang ẩn: cỡ đo ra 0, đặt lại lúc hiện
-    const doc = document.documentElement, vw = doc.clientWidth, vh = doc.clientHeight;
-    const r = tacts.getBoundingClientRect();
+    const vw = vwLocal(), vh = vhLocal();
+    const r = rectLocal(tacts.getBoundingClientRect());
     for (let n = 0; n < tbtn.length; n++) {
       const el = tbtn[n], p = tcfg.b[n], st = el.style;
       if (!p) {
@@ -1270,14 +1330,14 @@ if (typeof document !== 'undefined') {
     // trượt qua nửa phải màn hình là mất luôn `pointerup`, và nhân vật chạy mãi một hướng.
     try { tstick.setPointerCapture(ev.pointerId); } catch (e) { /* không bắt được thì thôi */ }
     tstick.classList.add('on');
-    const r = tstick.getBoundingClientRect();
-    stickTo(ev.clientX - r.left, ev.clientY - r.top);
+    const p = elPt(tstick, ev);
+    stickTo(p.x, p.y);
   });
   tstick.addEventListener('pointermove', ev => {
     if (!stick.on || ev.pointerId !== stick.id) return;
     ev.preventDefault();
-    const r = tstick.getBoundingClientRect();
-    stickTo(ev.clientX - r.left, ev.clientY - r.top);
+    const p = elPt(tstick, ev);
+    stickTo(p.x, p.y);
   });
   function stickEnd(ev) {
     if (!stick.on || (ev && ev.pointerId !== stick.id)) return;
@@ -1494,8 +1554,11 @@ if (typeof document !== 'undefined') {
     if (hold.on) holdEnd(false);
     hold.on = true; hold.n = n; hold.id = ev.pointerId; hold.el = el; hold.drag = false;
     hold.wp = weapon;
-    hold.ox = ev.clientX; hold.oy = ev.clientY;
-    hold.cx = ev.clientX; hold.cy = ev.clientY;
+    // Toạ độ ngắm lưu trong hệ *đã quay* (xem `ptLocal`): thứ phải khớp nhau là hướng ngón kéo và
+    // hướng đòn bay ra trên khung hình, mà khung hình thì đang quay cùng một góc với ngón.
+    const p0 = ptLocal(ev.clientX, ev.clientY);
+    hold.ox = p0.x; hold.oy = p0.y;
+    hold.cx = p0.x; hold.cy = p0.y;
     try { el.setPointerCapture(ev.pointerId); } catch (e) { /* không bắt được thì thôi */ }
     // Ba skill với lướt né sáng viền ngay từ cú chạm, vì với chúng chạm *là* đã vào ngắm. Đánh
     // thường thì cú chạm là một nhát đánh, và thứ phải thấy ở đó là nút lún xuống (`.tb:active`,
@@ -1526,7 +1589,7 @@ if (typeof document !== 'undefined') {
     aimUI.ky = weapon ? sk.squash : isDash ? 0.75 : GSQ;
     aimUI.col = hexc(theme[0]);
     world.aimUI = aimUI;
-    holdTrack(ev.clientX, ev.clientY);
+    holdTrack(p0.x, p0.y);
   }
   // Điểm ngắm nằm trên *ellipse* bán trục (r, r * ky), không phải trên vòng tròn: sàn nhìn nghiêng
   // nên mọi hình vẽ trên sàn của cả game đều nén trục y. Vẽ vòng tròn thật ở đây là hứa một vùng mà
@@ -1557,8 +1620,9 @@ if (typeof document !== 'undefined') {
   function holdMove(ev) {
     if (!hold.on || ev.pointerId !== hold.id) return;
     ev.preventDefault();
-    hold.cx = ev.clientX; hold.cy = ev.clientY;
-    holdTrack(ev.clientX, ev.clientY);
+    const p = ptLocal(ev.clientX, ev.clientY);
+    hold.cx = p.x; hold.cy = p.y;
+    holdTrack(p.x, p.y);
   }
   function holdUp(ev) {
     if (!hold.on || ev.pointerId !== hold.id) return;
@@ -1598,22 +1662,23 @@ if (typeof document !== 'undefined') {
     // không có phép tính hình học nào ở đây phải khớp lại với cung trong CSS.
     let cx, cy;
     if (what === 'stick') {
-      const r = tstick.getBoundingClientRect();
+      const r = rectLocal(tstick.getBoundingClientRect());
       cx = r.left + stick.hx; cy = r.top + stick.hy;
     } else {
-      const r = tbtn[what].getBoundingClientRect();
+      const r = rectLocal(tbtn[what].getBoundingClientRect());
       cx = r.left + r.width * 0.5; cy = r.top + r.height * 0.5;
     }
     tdrag.on = true; tdrag.id = ev.pointerId; tdrag.what = what;
-    tdrag.ox = ev.clientX - cx; tdrag.oy = ev.clientY - cy;
+    const p = ptLocal(ev.clientX, ev.clientY);
+    tdrag.ox = p.x - cx; tdrag.oy = p.y - cy;
     editMove(ev);
   }
   function editMove(ev) {
-    const doc = document.documentElement;
     // Lưu theo tỉ lệ viewport ngay tại đây, không lưu px rồi đổi lúc ghi: `stickHome`/`actsPlace` đọc
     // đúng cái tỉ lệ này, nên vừa kéo đã thấy đúng thứ mà lần vào trận sau sẽ dựng lại.
-    const fx = c01((ev.clientX - tdrag.ox) / doc.clientWidth);
-    const fy = c01((ev.clientY - tdrag.oy) / doc.clientHeight);
+    const p = ptLocal(ev.clientX, ev.clientY);
+    const fx = c01((p.x - tdrag.ox) / vwLocal());
+    const fy = c01((p.y - tdrag.oy) / vhLocal());
     if (tdrag.what === 'stick') { tcfg.jx = fx; tcfg.jy = fy; stickHome(); }
     else { tcfg.b[tdrag.what] = { x: fx, y: fy }; actsPlace(); }
   }
@@ -1672,6 +1737,10 @@ if (typeof document !== 'undefined') {
   // người dùng, nên chúng ở đây chứ không ở chỗ đọc localStorage lúc nạp trang. Cả hai đều có
   // thể bị từ chối (iOS không có Fullscreen API trên iPhone, khoá hướng chỉ chạy khi đã
   // fullscreen), và đó không phải lỗi: chế độ này vẫn dùng được, chỉ là còn thanh địa chỉ.
+  //
+  // Bị từ chối cũng không còn nghĩa là hết ngang: `layout()` quay cả trang bằng `body.rot` khi máy
+  // đang cầm dọc (xem `ptLocal`), nên khoá hướng chỉ còn là *đường tốt hơn* -- máy tự quay khung
+  // lại cho đúng chiều người đang cầm thay vì để người phải nghiêng đầu -- không phải điều kiện.
   const btnMob = document.getElementById('btnMob');
   function paintMob() {
     btnMob.textContent = 'CHẾ ĐỘ ĐIỆN THOẠI: ' + (mobOn ? 'BẬT' : 'TẮT');
@@ -1690,10 +1759,15 @@ if (typeof document !== 'undefined') {
     const so = window.screen && window.screen.orientation;
     if (on) {
       const el = document.documentElement;
+      // `lock()` vừa có thể ném ngay vừa có thể trả về một promise bị chối, tuỳ trình duyệt, nên
+      // phải chặn cả hai đường. Và nó được gọi cả khi xin fullscreen *thất bại*: một vài máy khoá
+      // được mà không cần fullscreen, còn máy không cho thì chỉ tốn một lời chối đã bắt sẵn.
+      const lock = () => {
+        try { Promise.resolve(so && so.lock && so.lock('landscape')).catch(() => {}); } catch (e) {}
+      };
       if (!document.fullscreenElement && el.requestFullscreen)
-        Promise.resolve(el.requestFullscreen({ navigationUI: 'hide' }))
-          .then(() => so && so.lock && so.lock('landscape'))
-          .catch(() => {});
+        Promise.resolve(el.requestFullscreen({ navigationUI: 'hide' })).then(lock, lock);
+      else lock();
     } else {
       try { if (so && so.unlock) so.unlock(); } catch (e) {}
       if (document.fullscreenElement && document.exitFullscreen)

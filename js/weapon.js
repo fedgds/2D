@@ -703,6 +703,28 @@ function drawHeld(w, back) {
 // on the later beats of a combo, and the last two hits of a scythe would silently whiff.
 function swingHit(w, e) {
   const wp = e.wp, hits = wp.hits, last = hits.length - 1;
+  // Cú lao đưa hero *xuyên qua* con quái, nhưng cái nón chỉ được đo đúng hai lần và cả hai đều sau
+  // khi chân đã dừng: con vừa bị lướt qua lúc ấy nằm sau lưng, lệch gần π so với hướng nhắm, nên
+  // phép thử góc chối đúng cái mà người chơi vừa thấy cạnh khiên đi qua. Nên suốt quãng lao, mỗi
+  // khung lấy một mẫu cái nón và ghi lại những con đang ở trong đó; `also` mang cả tập ấy vào hai
+  // nhịp cũ. Nón trượt dọc 52 px **là** vùng quét thật của cú xông -- một vòng tròn quanh chân thì
+  // dễ viết hơn, nhưng nó sẽ đánh cả con đứng sau lưng lúc bấm, thứ chưa bao giờ nằm trong hình vẽ.
+  //
+  // Sát thương vẫn ở đúng hai nhịp cũ, không trả ngay lúc chạm: mỗi con vẫn ăn đúng hai lần với
+  // đúng hai bậc như một nhát đứng tại chỗ, nên không có con số nào của khiên xê dịch -- chỗ duy
+  // nhất đổi là *tập* những con được tính vào nón. Trả ngay lúc chạm còn phá đúng cái nhịp mà cả
+  // con khiên dựng lên: `lunge.dur` ngắn hơn `hits[0]` để chân dừng lại *rồi* cạnh khiên mới tới.
+  //
+  // Cửa sổ đo bằng `e.t` chứ không bằng `h.dsh`: hero còn bất tử dở của một cú lướt né thì
+  // `reswing` không bẻ hướng nữa, mà quãng lao vẫn chạy -- đọc chân là im lặng tắt mất cả cơ chế
+  // này ở đúng lúc đó. Cùng lý do với `!e.mute`: bản sao vũ khí của đối thủ solo không gây sát
+  // thương, nên nó cũng không cần gom ai.
+  if (wp.lunge && !e.mute && e.t <= wp.lunge.dur) {
+    const o = swingOrigin(w, e);
+    if (!e.ram) e.ram = new Set();
+    for (const f of w.foes)
+      if (!f.dying && inCone(f, o.x, o.y, e.ang, wp.range, wp.arc)) e.ram.add(f);
+  }
   for (let i = 0; i < hits.length; i++) {
     if (!crossed(e, hits[i] / wp.frames)) continue;
     const o = swingOrigin(w, e);
@@ -744,8 +766,11 @@ function swingHit(w, e) {
       cy += Math.sin(e.ang) * wp.slam.dist * wp.squash;
       cr = wp.slam.r; cw = Math.PI;
     }
+    const rid = swingRiders(w, wp, fin, o, step);
+    // Những con đã chạm phải trong lúc lao: tính là trong nón dù giờ đã ở sau lưng.
+    if (e.ram) rid.also = e.ram;
     const n = hitCone(w, cx, cy, e.ang, cr, cw, amount,
-      wp.col, false, wp.push + i * wp.pushStep, swingRiders(w, wp, fin, o, step));
+      wp.col, false, wp.push + i * wp.pushStep, rid);
     if (!n) continue;
     w.shake = Math.max(w.shake, wp.shake * 0.8);
     // Paid in blood rather than in damage, and only on the finisher: the earlier beats are

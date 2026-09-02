@@ -458,26 +458,37 @@ function hitLine(w, x0, y0, x1, y1, thick, amount, col, crit, kb) {
 // to hurt it. Angles use the unsquashed frame (dy / SWING_SQ) so a hit sideways and a hit
 // downwards need the same aim, matching how `arc()` decides which pixels it lights.
 //
+// Phép thử hình học tách riêng vì có chỗ cần *đo* cái nón mà chưa gây sát thương: cú lao của
+// khiên lấy mẫu nó mỗi khung suốt quãng chạy (xem `swingHit` trong js/weapon.js). Hai bản sao của
+// mấy dòng này là hai chỗ để vùng trông thấy và vùng ăn đòn trôi ra khỏi nhau.
+function inCone(f, x, y, ang, range, arc_) {
+  const dx = f.x - x, dy = (midY(f) - y) / SWING_SQ;
+  const d = Math.hypot(dx, dy);
+  if (d > range + f.w * 0.35) return false;
+  if (d <= 1e-3) return true;
+  let da = Math.atan2(dy, dx) - ang;
+  da = Math.abs(((da + Math.PI) % TAU + TAU) % TAU - Math.PI);
+  // Close in, a fixed cone would miss a foe standing on top of you; widen it by the
+  // angle its own body subtends so contact range never feels like a whiff.
+  return da <= arc_ + Math.atan2(f.w * 0.5, Math.max(d, 1));
+}
 // `opt` carries the riders a weapon's identity needs and a skill never does: `amp(f)` adds
 // per-target damage the cone itself cannot know (the saber reads how wounded the target
 // already is), `onHit(f)` runs a side effect that is not damage at all (the gauntlet snuffs
 // a telegraph), and `phys` marks the cone as a weapon swing so gear scales it by +ATK
 // instead of +Magic ATK. All three are optional.
+//
+// `also` là một tập những con **đã** ở trong nón từ trước: chúng ăn đòn dù hình học đo lúc này nói
+// không. Chỉ cú lao của khiên dùng nó, và lý do nằm ở `swingHit`: hero xuyên qua con quái *rồi* mới
+// tới nhịp đánh, nên đo lúc đánh là đo sau khi mục tiêu đã ra sau lưng. Hướng hẩy vẫn tính từ tâm
+// nón như mọi con khác, nên con nằm sau lưng bị đẩy tiếp ra sau -- đúng hướng cái khiên vừa đi qua.
 function hitCone(w, x, y, ang, range, arc_, amount, col, crit, kb, opt) {
   const amp = opt && opt.amp, onHit = opt && opt.onHit, phys = opt && opt.phys;
+  const also = opt && opt.also;
   let n = 0;
   for (const f of w.foes) {
     if (f.dying) continue;
-    const dx = f.x - x, dy = (midY(f) - y) / SWING_SQ;
-    const d = Math.hypot(dx, dy);
-    if (d > range + f.w * 0.35) continue;
-    if (d > 1e-3) {
-      let da = Math.atan2(dy, dx) - ang;
-      da = Math.abs(((da + Math.PI) % TAU + TAU) % TAU - Math.PI);
-      // Close in, a fixed cone would miss a foe standing on top of you; widen it by the
-      // angle its own body subtends so contact range never feels like a whiff.
-      if (da > arc_ + Math.atan2(f.w * 0.5, Math.max(d, 1))) continue;
-    }
+    if (!inCone(f, x, y, ang, range, arc_) && !(also && also.has(f))) continue;
     const a = Math.atan2(midY(f) - y, f.x - x);
     hurt(w, f, amount + (amp ? amp(f) : 0), col, crit,
          Math.cos(a) * (kb || 0), Math.sin(a) * (kb || 0) * 0.5, phys);

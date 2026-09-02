@@ -507,15 +507,26 @@
   /* Chế độ điện thoại thì góc trên phải là chỗ của minimap, nên cái ba lô dời lên cạnh nút MENU
      ở mép trên -- xa hai chỗ đặt ngón cái, tức là không bấm nhầm giữa lúc đánh. */
   body.mob #btnBag { top: 2px; right: auto; left: 50%; transform: translateX(calc(-50% + 62px)) }
-  /* Cầm dọc thì cả bố cục trên vô nghĩa, nên nói thẳng một câu thay vì vẽ một khung 16:9 cao
-     bằng đốt ngón tay. */
-  #rotate {
-    position: fixed; inset: 0; z-index: 60; display: none; place-items: center;
-    padding: 24px; text-align: center; background: #04050af2;
+  /* Cầm dọc thì chế độ điện thoại vẫn chơi ngang: quay chính <body> đúng 90 độ. Chỗ này trước là
+     một câu "QUAY NGANG MÁY" phủ kín màn hình, và với người đang cầm máy dọc thì đó là một cánh
+     cửa khoá -- không làm gì được ngoài lật máy. `setMob()` có xin khoá hướng thật
+     (`screen.orientation.lock`), nhưng khoá đó chỉ chạy khi đang fullscreen và iPhone thì không có
+     Fullscreen API để vào, nên "luôn ngang" cần một đường không phải xin phép ai.
+
+     Quay body chứ không quay #app: một transform trên body làm body thành *khối chứa* của mọi
+     `position: fixed` bên trong, nên lớp phím #touch và cái bóng kéo đồ đi theo mà không cần dòng
+     nào cho riêng chúng. Cỡ hộp lấy từ --rw/--rh do layout() ghi -- chính hai con số nó vốn đo để
+     dựng khung -- chứ không lấy 100vh/100vw: hai đơn vị ấy nói về màn hình *chưa* trừ thanh địa
+     chỉ, và lệch đó là cả khung trôi ra ngoài mép dưới.
+
+     Đúng 90 độ nên phép quay chỉ là một hoán vị điểm ảnh: lưới 320x180 vẫn rơi nguyên vẹn lên lưới
+     màn hình, không thêm lần nội suy nào. Giá phải trả nằm ở js/shell.js -- mọi toạ độ con trỏ giờ
+     đi qua `ptLocal`/`rectLocal`. */
+  body.rot {
+    position: fixed; top: 0; left: 0;
+    width: var(--rw, 100vh); height: var(--rh, 100vw);
+    transform-origin: 0 0; transform: rotate(90deg) translateY(-100%);
   }
-  #rotate b { display: block; font-size: 15px; letter-spacing: .18em; color: #eaf6ff; margin-bottom: 8px }
-  #rotate span { font-size: 10px; line-height: 1.7; letter-spacing: .1em; color: #7f8ea9 }
-  @media (orientation: portrait) { body.mob #rotate { display: grid } }
 </style>
 </head>
 <body>
@@ -799,10 +810,6 @@
   <div id="tacts"></div>
   <button type="button" id="tpause">☰ MENU</button>
 </div>
-<div id="rotate"><div>
-  <b>QUAY NGANG MÁY</b>
-  <span>Chế độ điện thoại chơi ở màn hình ngang.<br>Tắt lại ở MENU → CHẾ ĐỘ ĐIỆN THOẠI.</span>
-</div></div>
 <!-- Arenas. Each file pushes one definition onto globalThis.GAME_MAPS and nothing else,
      so adding a map is adding a file plus a line here -- see map/README.md. Load order
      does not matter: the engine sorts the registry by `order`. -->

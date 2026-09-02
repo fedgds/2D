@@ -393,8 +393,31 @@ Những chỗ đã phải sửa vì *không có chuột*, và tại sao không c
   nên khoá hướng màn hình phải viết đủ `window.screen.orientation`.
 - **Fullscreen và khoá hướng xin trong `setMob()`**, không phải lúc nạp trang: cả hai đòi một cử
   chỉ của người dùng. Cả hai đều có thể bị từ chối (iPhone không có Fullscreen API), và đó không
-  phải lỗi — chế độ này vẫn chơi được, chỉ là còn thanh địa chỉ. Cầm dọc thì `#rotate` (một
-  `@media (orientation: portrait)`) nói một câu thay vì vẽ một khung ngang cao bằng đốt ngón tay.
+  phải lỗi — chế độ này vẫn chơi được, chỉ là còn thanh địa chỉ. `lock('landscape')` vì thế gọi cả
+  trên nhánh `requestFullscreen` **thất bại**: vài máy khoá được mà không cần fullscreen, còn máy
+  không cho thì chỉ tốn một lời chối đã bắt sẵn — và phải bắt cả hai đường, vì tuỳ trình duyệt mà
+  nó ném đồng bộ hoặc chối promise.
+- **Bị từ chối không còn nghĩa là hết ngang — `body.rot`.** Trước đây cầm dọc là một tấm che "hãy
+  quay ngang" (`#rotate`, một `@media (orientation: portrait)`) và ván đấu dừng lại: một cái cửa
+  khoá đúng lúc người chơi muốn vào, trên đúng cái máy không cho khoá hướng. Giờ `layout()` quay
+  **cả trang** 90° khi `mobOn && clientHeight > clientWidth`, nên "chế độ điện thoại" đọc ra là
+  *luôn ngang*, còn khoá hướng thật chỉ còn là đường **tốt hơn** — máy tự quay khung lại cho đúng
+  chiều người đang cầm thay vì để người phải nghiêng đầu. Ba lựa chọn trong bốn dòng CSS ấy: quay
+  `body` chứ không quay `#app`, vì một `transform` trên `body` khiến nó thành containing block của
+  mọi `position: fixed` bên trong, nên lớp phím `#touch` và cái bóng kéo đồ `.gghost` quay theo mà
+  không cần thêm dòng nào; khung lấy `--rw`/`--rh` (viewport **đảo cạnh**, `layout()` ghi) chứ không
+  `100vh`/`100vw`, vì trên điện thoại `100vh` là chiều cao *khi thanh địa chỉ chưa co*; và đúng 90°
+  nên phép biến đổi chỉ là một phép đổi chỗ điểm ảnh — nét pixel không mất gì, khác hẳn một góc lẻ.
+- **Cái giá của `body.rot` là toạ độ: `ptLocal` / `rectLocal` / `elPt` / `vwLocal` / `vhLocal`.** Khi
+  trang đã quay, `ev.clientX/Y` và `getBoundingClientRect()` nói tiếng của màn hình **dọc**, còn
+  joystick, tâm ngắm, ô đồ và bảng sắp xếp phím đều nghĩ bằng hệ **ngang** của khung game. Một chỗ
+  quên đổi là một chỗ lệch đúng 90°, và nó không hiện ra như một lỗi vẽ mà như "cần điều khiển bị
+  loạn". Nên mọi chỗ đọc pointer đi qua đúng năm hàm ấy, `snapStage()` đẩy `(dy, −dx)` vì trục của
+  nó cũng đã quay, và `tcfg` lưu theo *tỉ lệ* viewport nên phải chia bằng `vwLocal()`, không phải
+  `clientWidth`. Đúng một ngoại lệ có chủ ý: `gdragHit` đưa `ev.clientX/Y` **thẳng** cho
+  `document.elementFromPoint`, vì hàm đó đọc hệ màn hình chứ không đọc hệ của ta. Kiểm bằng cách cầm
+  dọc rồi đẩy joystick về phía tay phải *của khung hình*: knob phải lệch đúng hướng đó, và kéo một
+  nút trong bảng sắp xếp phím phải ghi vào `tcfg` đúng tỉ lệ của chỗ vừa thả.
 - **Một cái nút cho cả chuột và ngón tay: `#btnBag`.** Đường vào bảng trang bị từng là **hai** nút —
   `#btnStat` chữ "▣ TRANG BỊ (I)" trên thanh tiêu đề cho desktop, `#tstat` chữ "▣ ĐỒ" trong `#touch`
   cho điện thoại — và cả hai đều sai theo cùng một cách: trên điện thoại thanh tiêu đề bị ẩn nên nút
@@ -682,6 +705,25 @@ tục thì hero đi được 90 px/s — **nhanh hơn đi bộ**. Đó là chỗ
 thành vũ khí áp sát. `dur` phải giữ nguyên: nhịp đầu ở khung 7 của tấm 28 fps rơi vào giây 0,25,
 tức chân vừa đứng lại thì cạnh khiên vừa tới, còn kéo dài quãng trượt là đẩy cú đánh ra sau lúc
 chân còn đang đi.
+
+Chính cái nhịp ấy là chỗ khiên từng **lướt qua mà không đau**. Hai nhịp của nó (khung 7 và 11 của
+tấm 28 fps, tức 0,25 s và 0,393 s) đều rơi **sau** khi quãng lao 0,22 s đã hết, mà `hitCone` thì đo
+cái nón từ chỗ hero đang đứng *lúc đánh* — nên một con nằm giữa đường lao bị hero **xuyên qua** rồi
+mới tới lúc đo, và lúc đó nó ở sau lưng: lệch góc ≈ π, trong khi phép nới theo bề ngang thân
+(`atan2(f.w/2, d)`) chỉ cho thêm ≈ 0,19 rad ở 30 px. Cái nón không sai; nó chỉ đo **một khoảnh
+khắc** cho một đòn đi qua **một quãng**.
+
+Chỗ sửa giữ nguyên hai nhịp và không đổi con số nào: trong lúc `e.t <= lunge.dur`, `swingHit` lấy
+mẫu đúng cái nón ấy **mỗi khung** và gom con nào chạm phải vào `e.ram`; tới nhịp đánh, tập đó đi kèm
+`opt.also` và `hitCone` tính chúng là trong nón dù hình học lúc ấy nói không. Tức là cái nón được
+**quét dọc đường lao**, chứ không phải bị đổi thành một hình tròn quanh hero: con đứng sẵn sau lưng
+lúc bấm vẫn ăn 0, vì nó chưa từng nằm trong hình vẽ nào. Ba điều khoản đi kèm: `inCone` tách khỏi
+`hitCone` để chỗ *đo* và chỗ *ăn* dùng chung một phép thử (hai bản sao là hai chỗ để chúng trôi ra
+khỏi nhau); cửa sổ đo bằng `e.t` chứ không bằng `h.dsh`, vì bất tử còn dư của một cú lướt né sẽ âm
+thầm tắt nó; và `!e.mute` để bản soi gương của đối thủ solo vẫn đúng luật "chỉ để nhìn". Mỗi con vẫn
+ăn 20 + 30 = 50, chỉ là giờ ăn cả khi hero đã đi qua nó — `check-weapons.js` ghim đúng ba câu ấy:
+xông qua bia ở 20 px ăn đủ hai nhịp, lúc đánh thì bia thật sự đã ở sau lưng, và bia đứng sẵn sau
+lưng 30 px ăn 0.
 
 Ba trường mới của ba vũ khí mới đều **không có mã mới**: `maul` ghi vào `f.slow`, cái trường mà
 chiêu độc đã dùng từ trước; `tip` là một `amp` đọc `Math.hypot` — cùng phép đo mà `hitCone` vừa
